@@ -3,12 +3,23 @@ package auth
 import (
 	"bytes"
 	"errors"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
 	"time"
 )
+
+type partialErrorReader struct {
+	buffer []byte
+}
+
+func (reader *partialErrorReader) Read(buffer []byte) (int, error) {
+	reader.buffer = buffer
+	buffer[0] = 0x7f
+	return 1, errors.New("random source failed")
+}
 
 func TestSetPasswordStoresHashAndRotatesSessions(t *testing.T) {
 	now := func() time.Time { return time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC) }
@@ -69,6 +80,21 @@ func TestSetPasswordReturnsPersistenceError(t *testing.T) {
 	store := NewFileStore(filepath.Join(parent, "auth.json"), time.Now, bytes.NewReader(nil))
 	if err := store.SetPassword([]byte("a-strong-password")); err == nil {
 		t.Fatal("SetPassword() error = nil, want persistence error")
+	}
+}
+
+func TestSetPasswordClearsPartiallyFilledSessionKey(t *testing.T) {
+	reader := &partialErrorReader{}
+	random := io.MultiReader(bytes.NewReader(bytes.Repeat([]byte{1}, 16)), reader)
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), time.Now, random)
+	if err := store.SetPassword([]byte("a-strong-password")); err == nil {
+		t.Fatal("SetPassword() error = nil, want random source error")
+	}
+	if len(reader.buffer) != 32 {
+		t.Fatalf("session key buffer length = %d, want 32", len(reader.buffer))
+	}
+	if !bytes.Equal(reader.buffer, make([]byte, 32)) {
+		t.Fatalf("session key buffer was not cleared: %x", reader.buffer)
 	}
 }
 

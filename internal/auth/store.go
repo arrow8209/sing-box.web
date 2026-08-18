@@ -45,6 +45,7 @@ func (store *FileStore) SetPassword(password []byte) error {
 		return err
 	}
 	sessionKey := make([]byte, 32)
+	defer clear(sessionKey)
 	if _, err := io.ReadFull(store.random, sessionKey); err != nil {
 		return err
 	}
@@ -55,7 +56,6 @@ func (store *FileStore) SetPassword(password []byte) error {
 		SessionEpoch: previous.SessionEpoch + 1,
 		UpdatedAt:    store.now().UTC(),
 	}
-	clear(sessionKey)
 	return atomicfile.WriteJSON(store.path, 0o600, record)
 }
 
