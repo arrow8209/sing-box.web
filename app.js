@@ -594,6 +594,7 @@
 
   function formInboundCard(item) {
     const config = item.config;
+    const enabled = item.enabled !== false;
     const listener = config.interface_name || config.listen || "由类型配置定义";
     const endpoint = config.listen_port ? `${listener}:${config.listen_port}` : listener;
     const descriptions = {
@@ -605,7 +606,7 @@
     };
     return `<div class="entry-card" data-entry="${item.id}">
       <span class="entry-drag">${icon("grip")}</span><div class="entry-icon">${icon(config.type === "tun" ? "shield" : "inbound")}</div>
-      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(config.tag || `${config.type} 入站`)}</span><span class="type-badge">${escapeHtml(config.type)}</span><span class="status-badge status-online">启用</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>${descriptions[config.type] || "表单配置"}</span></div></div>
+      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(config.tag || `${config.type} 入站`)}</span><span class="type-badge">${escapeHtml(config.type)}</span><span class="status-badge ${enabled ? "status-online" : "badge-orange"}">${enabled ? "启用" : "停用"}</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>${descriptions[config.type] || "表单配置"}</span></div></div>
       <div class="entry-actions"><button class="entry-action" data-action="edit-entry" title="编辑">${icon("edit")}</button><button class="entry-action" data-action="duplicate-entry" title="复制">${icon("copy")}</button><button class="entry-action danger" data-action="remove-form-inbound" data-id="${item.id}" title="删除">${icon("trash")}</button></div>
     </div>`;
   }
@@ -919,12 +920,28 @@
   }
 
   function inboundInput(label, name, value, options = {}) {
-    const { type = "text", full = false, hint = "", required = false } = options;
-    return `<label class="form-field ${full ? "full" : ""}"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><input class="field-input" name="${name}" type="${type}" value="${escapeHtml(value)}" ${required ? "required" : ""} /></label>`;
+    const { type = "text", full = false, hint = "", required = false, placeholder = "" } = options;
+    return `<label class="form-field ${full ? "full" : ""}"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><input class="field-input" name="${name}" type="${type}" value="${escapeHtml(value)}" placeholder="${escapeHtml(placeholder)}" ${required ? "required" : ""} /></label>`;
   }
 
   function inboundSelect(label, name, value, items, options = {}) {
     return `<label class="form-field ${options.full ? "full" : ""}"><span class="field-label">${label}${options.hint ? `<small>${options.hint}</small>` : ""}</span><select class="field-select" name="${name}" ${options.dataAttribute || ""}>${items.map(([itemValue, itemLabel]) => `<option value="${itemValue}" ${String(itemValue) === String(value) ? "selected" : ""}>${itemLabel}</option>`).join("")}</select></label>`;
+  }
+
+  function inboundToggle(label, description, name, checked = false) {
+    return `<div class="tun-toggle-card"><div class="tun-toggle-copy"><strong>${label}</strong><span>${description}</span></div><label class="form-switch"><input type="checkbox" name="${name}" value="true" ${checked ? "checked" : ""} /><span class="switch"></span></label></div>`;
+  }
+
+  function inboundStackControl(value = "mixed") {
+    return `<div class="form-field full"><span class="field-label">TUN 模式堆栈<small>stack</small></span><div class="tun-stack-control">${[["system", "System"], ["gvisor", "gVisor"], ["mixed", "Mixed"]].map(([stackValue, label]) => `<label><input type="radio" name="stack" value="${stackValue}" ${value === stackValue ? "checked" : ""} /><span>${label}</span></label>`).join("")}</div></div>`;
+  }
+
+  function tunListItem(name, value) {
+    return `<div class="tun-list-item"><input class="field-input" name="${name}" value="${escapeHtml(value)}" aria-label="${name}" /><button class="tun-list-remove" type="button" data-action="remove-tun-list-item" title="删除">${icon("close")}</button></div>`;
+  }
+
+  function tunListField(label, name, values, placeholder, hint) {
+    return `<div class="form-field full tun-list-field" data-tun-list-field data-list-name="${name}"><span class="field-label">${label}<small>${hint}</small></span><div class="tun-list-items" data-tun-list-items>${values.map((value) => tunListItem(name, value)).join("")}</div><div class="tun-list-add"><input class="field-input" data-tun-list-input placeholder="${escapeHtml(placeholder)}" /><button type="button" data-action="add-tun-list-item" title="添加">${icon("plus")}</button></div></div>`;
   }
 
   function renderCustomInboundEditor(json = customInboundExample) {
@@ -941,14 +958,22 @@
     const booleanOptions = [["true", "启用"], ["false", "关闭"]];
     if (type === "custom") return renderCustomInboundEditor(customJson);
     if (type === "tun") {
-      return `<div class="form-grid">
-        ${inboundInput("网卡名称", "interface_name", "singtun0", { required: true })}
-        ${inboundInput("接口地址", "address", "172.19.0.1/30", { required: true, hint: "CIDR" })}
-        ${inboundInput("MTU", "mtu", "9000", { type: "number" })}
-        ${inboundSelect("协议栈", "stack", "mixed", [["system", "system"], ["gvisor", "gVisor"], ["mixed", "mixed"]])}
-        ${inboundSelect("自动路由", "auto_route", "true", booleanOptions)}
-        ${inboundSelect("严格路由", "strict_route", "true", booleanOptions)}
-      </div><div class="info-callout inbound-type-note">${icon("shield")}<span>TUN 入站通过虚拟网卡接管系统流量，因此使用网卡、地址、MTU 和自动路由参数。</span></div>`;
+      return `<div class="tun-settings">
+        <div class="tun-toggle-grid">
+          ${inboundToggle("启用", "允许此入站监听并接管流量", "enabled", true)}
+          ${inboundToggle("自动设置全局路由", "由 sing-box 自动写入系统路由", "auto_route", true)}
+          ${inboundToggle("严格路由", "减少流量泄漏并强化路由约束", "strict_route", false)}
+          ${inboundToggle("独立于端点的 NAT", "为 UDP 使用 endpoint-independent NAT", "endpoint_independent_nat", false)}
+        </div>
+        <div class="form-grid tun-basic-grid">
+          ${inboundInput("TUN 网卡名称", "interface_name", "", { hint: "无", placeholder: "留空由系统自动命名" })}
+          ${inboundInput("最大传输单元", "mtu", "9000", { type: "number", hint: "MTU" })}
+          ${inboundStackControl("mixed")}
+          ${tunListField("IPv4 和 IPv6 前缀", "address", ["11.11.11.1/30"], "例如 fd00::1/126", "address")}
+          ${tunListField("自定义路由", "route_address", [], "例如 0.0.0.0/1 或 ::/1", "route_address")}
+          ${tunListField("排除自定义路由", "route_exclude_address", ["172.100.0.0/16", "192.168.0.0/16", "172.17.0.0/16", "172.22.0.0/16"], "例如 fc00::/7", "route_exclude_address")}
+        </div>
+      </div><div class="info-callout inbound-type-note">${icon("shield")}<span>TUN 地址与路由字段支持多个 IPv4/IPv6 CIDR；点击加号添加，列表中的值可直接编辑或删除。</span></div>`;
     }
     if (type === "socks") {
       return `<div class="form-grid">
@@ -1026,15 +1051,23 @@
       return value === "" ? null : Number(value);
     };
     const asBoolean = (name) => read(name) === "true";
+    const readList = (name) => data.getAll(name).map((value) => String(value).trim()).filter(Boolean);
     const config = { type, tag: read("tag") };
 
     if (type === "tun") {
-      config.interface_name = read("interface_name");
-      config.address = [read("address")];
-      config.mtu = asNumber("mtu");
+      const interfaceName = read("interface_name");
+      const mtu = asNumber("mtu");
+      const routeAddress = readList("route_address");
+      const routeExcludeAddress = readList("route_exclude_address");
+      if (interfaceName) config.interface_name = interfaceName;
+      config.address = readList("address");
+      if (mtu !== null) config.mtu = mtu;
       config.stack = read("stack");
       config.auto_route = asBoolean("auto_route");
       config.strict_route = asBoolean("strict_route");
+      config.endpoint_independent_nat = asBoolean("endpoint_independent_nat");
+      if (routeAddress.length) config.route_address = routeAddress;
+      if (routeExcludeAddress.length) config.route_exclude_address = routeExcludeAddress;
       return config;
     }
 
@@ -1154,6 +1187,30 @@
     document.documentElement.style.setProperty("--primary-soft", state.theme === "dark" ? darkSoft : soft);
     writeStorage("singbox-accent", accent);
   }
+
+  modalRoot.addEventListener("click", (event) => {
+    const addButton = event.target.closest('[data-action="add-tun-list-item"]');
+    if (addButton) {
+      event.stopPropagation();
+      const field = addButton.closest("[data-tun-list-field]");
+      const input = field?.querySelector("[data-tun-list-input]");
+      const value = input?.value.trim();
+      if (!field || !input || !value) {
+        input?.focus();
+        return;
+      }
+      field.querySelector("[data-tun-list-items]")?.insertAdjacentHTML("beforeend", tunListItem(field.dataset.listName, value));
+      input.value = "";
+      input.focus();
+      return;
+    }
+
+    const removeButton = event.target.closest('[data-action="remove-tun-list-item"]');
+    if (removeButton) {
+      event.stopPropagation();
+      removeButton.closest(".tun-list-item")?.remove();
+    }
+  });
 
   document.addEventListener("click", (event) => {
     const command = event.target.closest("[data-command-page]");
@@ -1422,10 +1479,16 @@
         showToast(existing ? "自定义入站已更新" : "自定义入站已添加", `${result.config.tag || result.config.type} 已加入当前配置草稿，请保存后应用。`, "success");
       } else {
         const config = buildInboundConfig(form, inboundType);
+        if (inboundType === "tun" && !config.address.length) {
+          showToast("缺少 TUN 地址", "请至少添加一个 IPv4 或 IPv6 前缀。", "info");
+          form.querySelector('[data-list-name="address"] [data-tun-list-input]')?.focus();
+          return;
+        }
         if (state.editingCustomInboundId) {
           state.customInbounds = state.customInbounds.filter((inbound) => inbound.id !== state.editingCustomInboundId);
         }
-        state.formInbounds.push({ id: `form-in-${Date.now()}`, config });
+        const enabled = inboundType !== "tun" || new FormData(form).get("enabled") === "true";
+        state.formInbounds.push({ id: `form-in-${Date.now()}`, config, enabled });
         state.dirty = true;
         closeModal();
         render();
@@ -1457,6 +1520,11 @@
   });
 
   document.addEventListener("keydown", (event) => {
+    if (event.target.matches("[data-tun-list-input]") && event.key === "Enter") {
+      event.preventDefault();
+      event.target.closest("[data-tun-list-field]")?.querySelector('[data-action="add-tun-list-item"]')?.click();
+      return;
+    }
     if (event.target.matches("[data-custom-inbound-json]") && event.key === "Tab") {
       event.preventDefault();
       const textarea = event.target;
