@@ -7239,6 +7239,7 @@ svg {
   }
 
   .proxy-node-grid {
+    grid-template-columns: repeat(6, minmax(0, 1fr));
     gap: 7px;
     padding: 0 13px 11px 51px;
   }
