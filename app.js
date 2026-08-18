@@ -70,6 +70,16 @@
     return `<span class="icon ${className}" aria-hidden="true"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${path}</svg></span>`;
   }
 
+  function escapeHtml(value) {
+    return String(value).replace(/[&<>"']/g, (character) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#039;",
+    })[character]);
+  }
+
   function readStorage(key, fallback) {
     try {
       return window.localStorage.getItem(key) || fallback;
@@ -94,6 +104,15 @@
     { id: "dns", label: "DNS 设置", icon: "dns" },
   ];
 
+  const customInboundExample = `{
+  "type": "mixed",
+  "tag": "custom-in",
+  "listen": "127.0.0.1",
+  "listen_port": 7891,
+  "sniff": true,
+  "sniff_override_destination": false
+}`;
+
   const initialRoute = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const initialPage = ["dashboard", "config", "subscriptions", "rulesets", "settings"].includes(initialRoute[0])
     ? initialRoute[0]
@@ -117,6 +136,8 @@
     accent: readStorage("singbox-accent", "blue"),
     dirty: false,
     lastSaved: "10:24",
+    customInbounds: [],
+    editingCustomInboundId: null,
     rulesetSearch: "",
     rulesetType: "all",
     settingsSection: "core-settings",
@@ -370,7 +391,7 @@
               <div class="profile-name">自定义配置 A</div>
               <div class="profile-description">规则模式 · 最后应用于今天 10:24</div>
               <div class="profile-stats">
-                <div class="profile-stat"><strong>3</strong><span>入站</span></div>
+                <div class="profile-stat"><strong>${3 + state.customInbounds.length}</strong><span>入站</span></div>
                 <div class="profile-stat"><strong>12</strong><span>出站</span></div>
                 <div class="profile-stat"><strong>16</strong><span>路由规则</span></div>
               </div>
@@ -487,7 +508,7 @@
         <article class="card">
           <div class="card-head"><div><h3 class="card-title">配置摘要</h3><p class="card-subtitle">当前配置结构</p></div></div>
           <div class="card-body setting-list">
-            ${summarySetting("入站", "3 个监听器", "inbound")}
+            ${summarySetting("入站", `${3 + state.customInbounds.length} 个监听器`, "inbound")}
             ${summarySetting("出站", "12 个节点 / 4 个组", "outbound")}
             ${summarySetting("路由", "16 条规则", "route")}
             ${summarySetting("DNS", "4 个服务器", "dns")}
@@ -521,11 +542,12 @@
     return `<div class="config-layout">
       <div class="config-main">
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">入站监听器</h3><p class="card-subtitle">流量进入 sing-box 的入口</p></div><button class="btn btn-sm btn-primary" data-modal="inbound">${icon("plus")}新增入站</button></div>
+          <div class="card-head"><div><h3 class="card-title">入站监听器</h3><p class="card-subtitle">流量进入 sing-box 的入口</p></div><div class="card-actions"><button class="btn btn-sm" data-modal="custom-inbound">${icon("code")}自定义</button><button class="btn btn-sm btn-primary" data-modal="inbound">${icon("plus")}新增入站</button></div></div>
           <div class="entry-list">
             ${entryCard("mixed-in", "Mixed Proxy", "mixed", "127.0.0.1:7890", "HTTP 与 SOCKS 复合代理", "inbound", "")}
             ${entryCard("tun-in", "TUN Interface", "tun", "singtun0 · 172.19.0.1/30", "自动路由 · 严格路由", "shield", "cyan")}
             ${entryCard("dns-in", "DNS Listener", "direct", "127.0.0.1:5353", "DNS 劫持入口", "dns", "green")}
+            ${state.customInbounds.map(customInboundCard).join("")}
           </div>
         </article>
       </div>
@@ -548,6 +570,19 @@
       <span class="entry-drag">${icon("grip")}</span><div class="entry-icon ${tone}">${icon(iconName)}</div>
       <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${title}</span><span class="type-badge">${type}</span><span class="status-badge status-online">启用</span></div><div class="entry-meta"><span>${meta}</span><span class="dot-separator"></span><span>${description}</span></div></div>
       <div class="entry-actions"><button class="entry-action" data-action="edit-entry" title="编辑">${icon("edit")}</button><button class="entry-action" data-action="duplicate-entry" title="复制">${icon("copy")}</button><button class="entry-action danger" data-action="remove-entry" title="删除">${icon("trash")}</button></div>
+    </div>`;
+  }
+
+  function customInboundCard(item) {
+    const config = item.config;
+    const title = escapeHtml(config.tag || "自定义入站");
+    const type = escapeHtml(config.type);
+    const listener = config.listen || config.interface_name || "由完整 JSON 定义";
+    const endpoint = config.listen_port ? `${listener}:${config.listen_port}` : listener;
+    return `<div class="entry-card" data-entry="${item.id}">
+      <span class="entry-drag">${icon("grip")}</span><div class="entry-icon violet">${icon("code")}</div>
+      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${title}</span><span class="type-badge">${type}</span><span class="badge badge-primary">自定义 JSON</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>完整配置 · ${Object.keys(config).length} 个字段</span></div></div>
+      <div class="entry-actions"><button class="entry-action" data-modal="custom-inbound" data-id="${item.id}" title="编辑 JSON">${icon("edit")}</button><button class="entry-action" data-action="copy-custom-inbound" data-id="${item.id}" title="复制 JSON">${icon("copy")}</button><button class="entry-action danger" data-action="remove-custom-inbound" data-id="${item.id}" title="删除">${icon("trash")}</button></div>
     </div>`;
   }
 
@@ -808,9 +843,11 @@
     return `<div class="setting-row"><div class="setting-copy"><div class="setting-name">${name}</div><div class="setting-desc">${description}</div></div><div class="settings-control"><button class="btn btn-sm" data-action="${action}">${button}</button></div></div>`;
   }
 
-  function openModal(type) {
+  function openModal(type, itemId = null) {
     let content = "";
+    state.editingCustomInboundId = type === "custom-inbound" ? itemId : null;
     if (type === "subscription") content = subscriptionModal();
+    else if (type === "custom-inbound") content = customInboundModal(itemId);
     else if (type === "inbound") content = genericModal("新增入站", "创建新的流量监听入口", "inbound", [
       ["入站名称", "Mixed Proxy 2"], ["入站类型", "mixed", "select", ["mixed", "tun", "socks", "http", "direct"]], ["监听地址", "127.0.0.1"], ["监听端口", "7891", "number"]
     ]);
@@ -830,11 +867,77 @@
     else if (type === "command") content = commandModal();
     modalRoot.innerHTML = content;
     document.body.style.overflow = "hidden";
-    window.setTimeout(() => modalRoot.querySelector("input, select, button")?.focus(), 30);
+    window.setTimeout(() => modalRoot.querySelector(".modal-body input, .modal-body select, .modal-body textarea")?.focus(), 30);
   }
 
-  function modalFrame(title, description, body, footer = "") {
-    return `<div class="modal-backdrop" data-action="modal-backdrop"><section class="modal" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><div class="modal-title-wrap"><h2 class="modal-title" id="modal-title">${title}</h2><p class="modal-description">${description}</p></div><button class="modal-close" data-action="close-modal" aria-label="关闭">${icon("close")}</button></div>${body}${footer}</section></div>`;
+  function modalFrame(title, description, body, footer = "", modalClass = "") {
+    return `<div class="modal-backdrop" data-action="modal-backdrop"><section class="modal ${modalClass}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><div class="modal-title-wrap"><h2 class="modal-title" id="modal-title">${title}</h2><p class="modal-description">${description}</p></div><button class="modal-close" data-action="close-modal" aria-label="关闭">${icon("close")}</button></div>${body}${footer}</section></div>`;
+  }
+
+  function validateCustomInboundJson(json) {
+    try {
+      const config = JSON.parse(json);
+      if (!config || typeof config !== "object" || Array.isArray(config)) {
+        return { valid: false, message: "请输入单个入站 JSON 对象，不能使用数组。" };
+      }
+      if (typeof config.type !== "string" || !config.type.trim()) {
+        return { valid: false, message: "入站配置必须包含非空的 type 字段。" };
+      }
+      return {
+        valid: true,
+        config,
+        message: `JSON 有效 · ${config.tag ? `标签 ${config.tag}` : "未设置 tag"} · 类型 ${config.type}`,
+      };
+    } catch (error) {
+      return { valid: false, message: `JSON 语法错误：${error.message}` };
+    }
+  }
+
+  function customValidationMarkup(result) {
+    return `<div class="custom-json-validation ${result.valid ? "valid" : "invalid"}" id="custom-json-validation">${icon(result.valid ? "check" : "info")}<span>${escapeHtml(result.message)}</span></div>`;
+  }
+
+  function customInboundModal(itemId) {
+    const item = state.customInbounds.find((inbound) => inbound.id === itemId);
+    const json = item?.json || customInboundExample;
+    const validation = validateCustomInboundJson(json);
+    const body = `<form class="modal-body" id="custom-inbound-form" data-form="custom-inbound">
+      <div class="custom-json-editor">
+        <div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>单个入站对象</span></div><div class="inline-actions"><button class="editor-action" type="button" data-action="reset-custom-json">示例</button><button class="editor-action" type="button" data-action="format-custom-json">${icon("sparkles")}格式化</button></div></div>
+        <textarea class="custom-json-textarea" name="inbound-json" data-custom-inbound-json aria-describedby="custom-json-validation" aria-invalid="${!validation.valid}" spellcheck="false">${escapeHtml(json)}</textarea>
+      </div>
+      ${customValidationMarkup(validation)}
+      <div class="info-callout custom-json-help">${icon("info")}<span>请输入一个完整的 sing-box 入站对象，而不是整个配置文件或 inbounds 数组。除 JSON 语法外，原型会检查必需的 <code>type</code> 字段。</span></div>
+    </form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="custom-inbound-submit" type="submit" form="custom-inbound-form" ${validation.valid ? "" : "disabled"}>${icon(item ? "save" : "plus")}${item ? "保存自定义入站" : "添加自定义入站"}</button></div>`;
+    return modalFrame(item ? "编辑自定义入站" : "自定义入站", "输入完整的 sing-box 入站 JSON 配置", body, footer, "modal-wide");
+  }
+
+  function updateCustomInboundValidation(textarea) {
+    const result = validateCustomInboundJson(textarea.value);
+    textarea.classList.toggle("invalid", !result.valid);
+    textarea.setAttribute("aria-invalid", String(!result.valid));
+    const feedback = document.querySelector("#custom-json-validation");
+    if (feedback) feedback.outerHTML = customValidationMarkup(result);
+    const submit = document.querySelector("#custom-inbound-submit");
+    if (submit) submit.disabled = !result.valid;
+    return result;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).catch(() => copyTextFallback(text));
+    copyTextFallback(text);
+    return Promise.resolve();
+  }
+
+  function copyTextFallback(text) {
+    const textarea = document.createElement("textarea");
+    textarea.value = text;
+    textarea.style.cssText = "position:fixed;left:-9999px;top:0";
+    document.body.append(textarea);
+    textarea.select();
+    document.execCommand("copy");
+    textarea.remove();
   }
 
   function subscriptionModal() {
@@ -858,7 +961,7 @@
   }
 
   function jsonModal() {
-    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>配置结构检查通过，共包含 3 个入站、12 个出站与 16 条路由规则。</span></div></div>`;
+    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>配置结构检查通过，共包含 ${3 + state.customInbounds.length} 个入站、12 个出站与 16 条路由规则。</span></div></div>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="copy-json">${icon("copy")}复制 JSON</button><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
     return modalFrame("配置 JSON 预览", "由当前表单实时生成，只读展示", body, footer);
   }
@@ -872,13 +975,14 @@
 
   function closeModal() {
     modalRoot.innerHTML = "";
+    state.editingCustomInboundId = null;
     document.body.style.overflow = "";
   }
 
   function showToast(title, message, type = "success") {
     const toast = document.createElement("div");
     toast.className = "toast";
-    toast.innerHTML = `<div class="toast-icon ${type === "info" ? "info" : ""}">${icon(type === "info" ? "info" : "check")}</div><div class="toast-copy"><div class="toast-title">${title}</div><div class="toast-message">${message}</div></div>`;
+    toast.innerHTML = `<div class="toast-icon ${type === "info" ? "info" : ""}">${icon(type === "info" ? "info" : "check")}</div><div class="toast-copy"><div class="toast-title">${escapeHtml(title)}</div><div class="toast-message">${escapeHtml(message)}</div></div>`;
     toastStack.append(toast);
     window.setTimeout(() => {
       toast.classList.add("leaving");
@@ -936,7 +1040,7 @@
 
     const modalTarget = event.target.closest("[data-modal]");
     if (modalTarget) {
-      openModal(modalTarget.dataset.modal);
+      openModal(modalTarget.dataset.modal, modalTarget.dataset.id || null);
       return;
     }
 
@@ -1026,8 +1130,36 @@
       closeModal();
     } else if (action === "copy-json") {
       const text = '{"log":{"level":"info"},"route":{"final":"节点选择"}}';
-      navigator.clipboard?.writeText(text).catch(() => {});
+      copyText(text);
       showToast("已复制", "配置 JSON 已复制到剪贴板。", "success");
+    } else if (action === "format-custom-json") {
+      const textarea = document.querySelector("[data-custom-inbound-json]");
+      if (!textarea) return;
+      const result = updateCustomInboundValidation(textarea);
+      if (!result.valid) {
+        showToast("暂时无法格式化", "请先修正 JSON 语法错误。", "info");
+        return;
+      }
+      textarea.value = JSON.stringify(result.config, null, 2);
+      updateCustomInboundValidation(textarea);
+      textarea.focus();
+    } else if (action === "reset-custom-json") {
+      const textarea = document.querySelector("[data-custom-inbound-json]");
+      if (!textarea) return;
+      textarea.value = customInboundExample;
+      updateCustomInboundValidation(textarea);
+      textarea.focus();
+    } else if (action === "copy-custom-inbound") {
+      const item = state.customInbounds.find((inbound) => inbound.id === actionTarget.dataset.id);
+      if (!item) return;
+      copyText(item.json);
+      showToast("已复制自定义入站", "完整入站 JSON 已复制到剪贴板。", "success");
+    } else if (action === "remove-custom-inbound") {
+      const item = state.customInbounds.find((inbound) => inbound.id === actionTarget.dataset.id);
+      state.customInbounds = state.customInbounds.filter((inbound) => inbound.id !== actionTarget.dataset.id);
+      state.dirty = true;
+      render();
+      showToast("已移除自定义入站", `${item?.config.tag || "自定义入站"} 已从配置草稿移除。`, "info");
     } else if (action === "sync-subscription") {
       const item = state.subscriptions.find((sub) => sub.id === actionTarget.dataset.id);
       if (item) item.updated = "刚刚";
@@ -1071,6 +1203,9 @@
   });
 
   document.addEventListener("input", (event) => {
+    if (event.target.matches("[data-custom-inbound-json]")) {
+      updateCustomInboundValidation(event.target);
+    }
     if (event.target.matches("[data-config-field], [data-settings-input]")) {
       state.dirty = true;
       const button = document.querySelector("#save-config-button");
@@ -1102,7 +1237,24 @@
     if (!form) return;
     event.preventDefault();
     const type = form.dataset.form;
-    if (type === "subscription") {
+    if (type === "custom-inbound") {
+      const textarea = form.querySelector("[data-custom-inbound-json]");
+      const result = updateCustomInboundValidation(textarea);
+      if (!result.valid) return;
+      const json = JSON.stringify(result.config, null, 2);
+      const editingId = state.editingCustomInboundId;
+      const existing = state.customInbounds.find((inbound) => inbound.id === editingId);
+      if (existing) {
+        existing.json = json;
+        existing.config = result.config;
+      } else {
+        state.customInbounds.push({ id: `custom-in-${Date.now()}`, json, config: result.config });
+      }
+      state.dirty = true;
+      closeModal();
+      render();
+      showToast(existing ? "自定义入站已更新" : "自定义入站已添加", `${result.config.tag || result.config.type} 已加入当前配置草稿，请保存后应用。`, "success");
+    } else if (type === "subscription") {
       const data = new FormData(form);
       state.subscriptions.push({
         id: `sub-${Date.now()}`,
@@ -1128,6 +1280,19 @@
   });
 
   document.addEventListener("keydown", (event) => {
+    if (event.target.matches("[data-custom-inbound-json]") && event.key === "Tab") {
+      event.preventDefault();
+      const textarea = event.target;
+      textarea.setRangeText("  ", textarea.selectionStart, textarea.selectionEnd, "end");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if (event.target.matches("[data-custom-inbound-json]") && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      const submit = document.querySelector("#custom-inbound-submit");
+      if (!submit?.disabled) document.querySelector("#custom-inbound-form")?.requestSubmit();
+      return;
+    }
     if (event.key === "Escape" && modalRoot.innerHTML) closeModal();
     if ((event.metaKey || event.ctrlKey) && event.key.toLowerCase() === "k") {
       event.preventDefault();
