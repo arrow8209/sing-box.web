@@ -106,12 +106,37 @@
   }
 
   const configTabs = [
-    { id: "general", label: "通用配置", icon: "general" },
-    { id: "inbounds", label: "入站配置", icon: "inbound" },
-    { id: "outbounds", label: "出站配置", icon: "outbound" },
-    { id: "routing", label: "路由设置", icon: "route" },
-    { id: "dns", label: "DNS 设置", icon: "dns" },
+    { id: "general", label: "配置概览", shortLabel: "概览", icon: "general" },
+    { id: "dns", label: "DNS", shortLabel: "DNS", icon: "dns" },
+    { id: "inbounds", label: "入站", shortLabel: "入站", icon: "inbound" },
+    { id: "outbounds", label: "出站", shortLabel: "出站", icon: "outbound" },
+    { id: "endpoints", label: "端点", shortLabel: "端点", icon: "route" },
+    { id: "routing", label: "路由", shortLabel: "路由", icon: "route" },
+    { id: "services", label: "服务", shortLabel: "服务", icon: "server" },
+    { id: "advanced", label: "高级", shortLabel: "高级", icon: "settings" },
   ];
+
+  // 与 sing-box 官方 JSON Schema 的顶层结构保持一致。常用模块提供结构化表单，
+  // 低频或平台相关模块通过完整 JSON 片段编辑，避免丢失未来版本字段。
+  const officialConfigSections = [
+    { key: "$schema", label: "Schema", type: "string", group: "advanced", icon: "code", description: "JSON Schema 地址" },
+    { key: "log", label: "日志", type: "object", group: "general", icon: "terminal", description: "日志等级与输出" },
+    { key: "dns", label: "DNS", type: "object", group: "dns", icon: "dns", description: "服务器、规则与缓存" },
+    { key: "ntp", label: "NTP", type: "object", group: "advanced", icon: "clock", description: "时间同步" },
+    { key: "certificate", label: "证书", type: "object", group: "advanced", icon: "lock", description: "系统与自定义证书" },
+    { key: "certificate_providers", label: "证书提供器", type: "array", group: "advanced", icon: "shield", description: "ACME、Tailscale 等" },
+    { key: "http_clients", label: "HTTP 客户端", type: "array", group: "advanced", icon: "globe", description: "可复用下载客户端" },
+    { key: "network_namespaces", label: "网络命名空间", type: "array", group: "advanced", icon: "folder", description: "default 与 unshare" },
+    { key: "endpoints", label: "端点", type: "array", group: "endpoints", icon: "route", description: "VPN 与组网端点" },
+    { key: "inbounds", label: "入站", type: "array", group: "inbounds", icon: "inbound", description: "流量入口" },
+    { key: "outbounds", label: "出站", type: "array", group: "outbounds", icon: "outbound", description: "出口与策略组" },
+    { key: "route", label: "路由", type: "object", group: "routing", icon: "route", description: "规则与规则集" },
+    { key: "services", label: "服务", type: "array", group: "services", icon: "server", description: "API 与后台服务" },
+    { key: "experimental", label: "实验性", type: "object", group: "advanced", icon: "sparkles", description: "Clash API、缓存等" },
+  ];
+
+  const endpointTypes = ["wireguard", "tailscale", "openconnect", "openvpn-client", "openvpn-server"];
+  const serviceTypes = ["api", "derp", "resolved", "ssm-api", "ccm", "ocm", "oom-killer", "hysteria-realm", "usbip-client", "usbip-server"];
 
   const customInboundExample = `{
   "type": "mixed",
@@ -122,7 +147,20 @@
   "sniff_override_destination": false
 }`;
 
+  const customOutboundExample = `{
+  "type": "hysteria2",
+  "tag": "proxy-hy2",
+  "server": "example.com",
+  "server_port": 443,
+  "password": "change-me",
+  "tls": {
+    "enabled": true,
+    "server_name": "example.com"
+  }
+}`;
+
   const profileJsonExample = `{
+  "$schema": "https://sing-box.sagernet.org/schema.json",
   "log": {
     "level": "info"
   },
@@ -453,6 +491,7 @@
     routeFinal: "outbound-select",
     editingRouteRuleId: null,
     editingRouteRulesetId: null,
+    editingConfigSection: null,
     routeRuleSets: [
       { id: "rs-category-ads", tag: "Category-Ads", type: "remote", format: "binary", url: "https://example.com/category-ads.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
       { id: "rs-geosite-private", tag: "GeoSite-Private", type: "local", format: "source", url: "", download_detour: "", update_interval: "", path: "4", rules: "" },
@@ -718,6 +757,7 @@
   function currentProfileConfigObject() {
     const profile = activeProfile();
     const config = profile.rawConfig ? cloneData(profile.rawConfig) : {};
+    if (!config.$schema) config.$schema = "https://sing-box.sagernet.org/schema.json";
     config.log = { ...(config.log || {}), level: state.configFields.logLevel };
     const builtIn = state.builtInInbounds
       ? [
@@ -746,6 +786,30 @@
     if (state.routeDefaultDns) config.route.default_domain_resolver = state.routeDefaultDns;
     else delete config.route.default_domain_resolver;
     if (!config.dns) config.dns = { servers: [], rules: [] };
+    if (!state.ipv6) config.dns.strategy = "ipv4_only";
+    else if (config.dns.strategy === "ipv4_only") delete config.dns.strategy;
+
+    const experimental = { ...(config.experimental || {}) };
+    if (state.clashApi) {
+      experimental.clash_api = {
+        ...(experimental.clash_api || {}),
+        external_controller: `127.0.0.1:${Number(state.configFields.apiPort) || 9090}`,
+      };
+    } else {
+      delete experimental.clash_api;
+    }
+    if (state.configFields.cacheFile || state.fakeIp) {
+      experimental.cache_file = {
+        ...(experimental.cache_file || {}),
+        enabled: true,
+        path: state.configFields.cacheFile || "cache.db",
+        store_fakeip: state.fakeIp,
+      };
+    } else {
+      delete experimental.cache_file;
+    }
+    if (Object.keys(experimental).length) config.experimental = experimental;
+    else delete config.experimental;
     return config;
   }
 
@@ -803,6 +867,37 @@
 
   function routeRuleCount() {
     return state.routeRules.filter((rule) => rule.type !== "insertion").length;
+  }
+
+  function configSectionMeta(key) {
+    return officialConfigSections.find((section) => section.key === key);
+  }
+
+  function configSectionValue(key) {
+    return currentProfileConfigObject()[key];
+  }
+
+  function configSectionCount(key, value = configSectionValue(key)) {
+    if (Array.isArray(value)) return value.length;
+    if (value && typeof value === "object") {
+      if (key === "dns") return Array.isArray(value.servers) ? value.servers.length : 0;
+      if (key === "route") return Array.isArray(value.rules) ? value.rules.length : 0;
+      return Object.keys(value).length;
+    }
+    return value ? 1 : 0;
+  }
+
+  function configSectionSummary(section, value = configSectionValue(section.key)) {
+    if (value === undefined || value === null) return "未配置";
+    if (section.type === "array") return `${configSectionCount(section.key, value)} 个项目`;
+    if (section.type === "object") return `${configSectionCount(section.key, value)} 个字段`;
+    return String(value).replace(/^https?:\/\//, "");
+  }
+
+  function hasConfigSection(section, value = configSectionValue(section.key)) {
+    if (Array.isArray(value)) return value.length > 0;
+    if (value && typeof value === "object") return Object.keys(value).length > 0;
+    return value !== undefined && value !== null && value !== "";
   }
 
   function applyTheme() {
@@ -1105,29 +1200,37 @@
 
   function configIntro() {
     const profile = activeProfile();
-    return `<div class="page-intro">
-      <div class="page-intro-copy"><h2>配置工作台</h2><p>通过表单管理 sing-box 配置，保存后可直接应用到运行中的核心。</p></div>
-      <div class="page-actions">
-        <button class="btn" data-modal="json">${icon("code")}JSON 预览</button>
-        <button class="btn btn-primary" id="save-config-button" data-action="save-config">${icon("save")}${state.dirty ? "保存更改" : "保存并应用"}</button>
+    const configured = officialConfigSections.filter((section) => hasConfigSection(section)).length;
+    return `<article class="card config-context-bar">
+      <div class="config-context-icon">${icon("config")}</div>
+      <div class="config-context-copy">
+        <div class="config-context-title"><strong>${escapeHtml(profile.name)}</strong><span class="status-badge status-online">当前</span>${state.dirty ? '<span class="status-badge badge-orange">未保存</span>' : ""}</div>
+        <div class="config-context-meta"><span>${escapeHtml(profile.source)}</span><i></i><span>v${profile.version}</span><i></i><span>${configured}/14 个顶层模块</span><i></i><span>${escapeHtml(state.lastSaved)}</span></div>
       </div>
-    </div>
-    <article class="card profile-banner">
-      <div class="profile-banner-icon">${icon("config")}</div>
-      <div class="profile-banner-copy"><div class="profile-banner-title">${escapeHtml(profile.name)} <span class="badge badge-success">当前配置</span></div><div class="profile-banner-desc">${escapeHtml(profile.source)} · ${escapeHtml(profile.id)}</div></div>
-      <div class="profile-banner-meta"><div><span class="faint">最后保存</span><strong>${escapeHtml(state.lastSaved)}</strong></div><div><span class="faint">配置版本</span><strong>v${profile.version}</strong></div><button class="btn btn-sm" data-modal="profile-manage" data-id="${escapeHtml(profile.id)}">${icon("edit")}管理</button></div>
+      <div class="config-context-actions desktop-config-actions">
+        <button class="btn btn-sm" data-modal="profile-manage" data-id="${escapeHtml(profile.id)}">${icon("edit")}管理</button>
+        <button class="btn btn-sm" data-modal="json">${icon("code")}JSON</button>
+        <button class="btn btn-sm btn-primary" id="save-config-button" data-action="save-config">${icon("save")}${state.dirty ? "保存更改" : "保存并应用"}</button>
+      </div>
     </article>
     <nav class="config-tabs" aria-label="配置分类">
-      ${configTabs.map((tab) => `<button class="config-tab ${state.activeConfig === tab.id ? "active" : ""}" data-config="${tab.id}">${icon(tab.icon)}${tab.label}</button>`).join("")}
-    </nav>`;
+      ${configTabs.map((tab) => `<button class="config-tab ${state.activeConfig === tab.id ? "active" : ""}" data-config="${tab.id}" ${state.activeConfig === tab.id ? 'aria-current="page"' : ""}>${icon(tab.icon)}<span class="config-tab-label">${tab.label}</span><span class="config-tab-short">${tab.shortLabel}</span></button>`).join("")}
+    </nav>
+    <div class="config-mobile-actions" aria-label="配置操作">
+      <button class="btn" data-modal="json">${icon("code")}JSON</button>
+      <button class="btn btn-primary" id="save-config-mobile-button" data-action="save-config">${icon("save")}${state.dirty ? "保存更改" : "保存并应用"}</button>
+    </div>`;
   }
 
   function renderConfigPage() {
     let content = renderGeneralConfig();
     if (state.activeConfig === "inbounds") content = renderInboundConfig();
     if (state.activeConfig === "outbounds") content = renderOutboundConfig();
+    if (state.activeConfig === "endpoints") content = renderEndpointsConfig();
     if (state.activeConfig === "routing") content = renderRoutingConfig();
     if (state.activeConfig === "dns") content = renderDnsConfig();
+    if (state.activeConfig === "services") content = renderServicesConfig();
+    if (state.activeConfig === "advanced") content = renderAdvancedConfig();
     return `<section>${configIntro()}${content}</section>`;
   }
 
@@ -1144,10 +1247,33 @@
   }
 
   function renderGeneralConfig() {
-    return `<div class="config-layout">
+    const config = currentProfileConfigObject();
+    const configured = officialConfigSections.filter((section) => hasConfigSection(section, config[section.key])).length;
+    return `<div class="config-health-strip" aria-label="配置摘要">
+      <div><span>${icon("check")}</span><strong>${configured}<small>/14</small></strong><em>已配置模块</em></div>
+      <div><span>${icon("inbound")}</span><strong>${inboundCount()}</strong><em>入站</em></div>
+      <div><span>${icon("outbound")}</span><strong>${state.outbounds.length}</strong><em>出站</em></div>
+      <div><span>${icon("route")}</span><strong>${routeRuleCount()}</strong><em>路由规则</em></div>
+    </div>
+    <div class="config-layout config-overview-layout">
       <div class="config-main">
+        <article class="card config-map-card">
+          <div class="card-head"><div><h3 class="card-title">完整配置结构</h3><p class="card-subtitle">依据 sing-box 官方 Schema · 14 个顶层模块</p></div><span class="type-badge">schema.json</span></div>
+          <div class="config-map">
+            ${officialConfigSections.map((section) => {
+              const value = config[section.key];
+              const active = hasConfigSection(section, value);
+              return `<button class="config-map-item ${active ? "is-configured" : ""}" data-config="${section.group}">
+                <span class="config-map-icon">${icon(section.icon)}</span>
+                <span class="config-map-copy"><strong>${section.label}</strong><code>${section.key}</code></span>
+                <span class="config-map-state">${escapeHtml(configSectionSummary(section, value))}</span>
+                ${icon("chevron", "config-map-chevron")}
+              </button>`;
+            }).join("")}
+          </div>
+        </article>
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">基础参数</h3><p class="card-subtitle">配置名称、日志与服务端口</p></div><span class="type-badge">general</span></div>
+          <div class="card-head"><div><h3 class="card-title">常用参数</h3><p class="card-subtitle">名称、日志、监听与控制端口</p></div><span class="type-badge">log</span></div>
           <div class="card-body"><div class="form-grid">
             ${formField("配置名称", "profileName", state.configFields.profileName, { hint: "保存后同步更新配置列表" })}
             ${formField("日志等级", "logLevel", state.configFields.logLevel, { type: "select", items: ["debug", "info", "warn", "error", "panic"] })}
@@ -1157,26 +1283,17 @@
             ${formField("网络接口", "interface", state.configFields.interface, { type: "select", items: ["自动选择", "eth0", "wlan0", "en0"] })}
           </div></div>
         </article>
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">核心功能</h3><p class="card-subtitle">常用实验特性与兼容选项</p></div></div>
-          <div class="card-body setting-list">
-            ${settingToggle("启用 IPv6", "允许 DNS 与出站连接使用 IPv6 网络", "ipv6")}
-            ${settingToggle("Clash API 兼容", "开放外部控制接口与流量统计", "clashApi")}
-            ${settingToggle("FakeIP 持久化", "在核心重启后保留 FakeIP 映射", "fakeIp")}
-          </div>
-        </article>
       </div>
       <aside class="config-aside">
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">配置摘要</h3><p class="card-subtitle">当前配置结构</p></div></div>
+          <div class="card-head"><div><h3 class="card-title">核心功能</h3><p class="card-subtitle">常用兼容与网络选项</p></div></div>
           <div class="card-body setting-list">
-            ${summarySetting("入站", `${inboundCount()} 个监听器`, "inbound")}
-            ${summarySetting("出站", `${state.outbounds.length} 个项目`, "outbound")}
-            ${summarySetting("路由", `${routeRuleCount()} 条规则`, "route")}
-            ${summarySetting("DNS", "4 个服务器", "dns")}
+            ${settingToggle("启用 IPv6", "允许 DNS 与出站连接使用 IPv6", "ipv6")}
+            ${settingToggle("Clash API", "开放控制接口与流量统计", "clashApi")}
+            ${settingToggle("FakeIP 持久化", "核心重启后保留映射", "fakeIp")}
           </div>
         </article>
-        <div class="info-callout">${icon("info")}<span>配置保存前会执行语法检查。应用失败时将自动回滚到上一个可用版本。</span></div>
+        <div class="info-callout">${icon("shield")}<span>低频模块使用完整 JSON 片段编辑，未建模字段会原样保留。应用前仍应使用目标版本的 <code>sing-box check</code> 校验。</span></div>
         ${renderCodePreview(false)}
       </aside>
     </div>`;
@@ -1321,6 +1438,86 @@
     return cleanName.slice(0, 2) || "--";
   }
 
+  function collectionConfigRow(item, index, iconName) {
+    const type = String(item?.type || "custom");
+    const tag = String(item?.tag || `${type}-${index + 1}`);
+    const detail = item?.server || item?.listen || item?.address || `${Object.keys(item || {}).length} 个字段`;
+    return `<div class="collection-config-row">
+      <span class="collection-config-icon">${icon(iconName)}</span>
+      <div class="collection-config-copy"><strong>${escapeHtml(tag)}</strong><span>${escapeHtml(String(detail))}</span></div>
+      <span class="type-badge">${escapeHtml(type)}</span>
+      <button class="entry-action" data-modal="config-section" data-id="${iconName === "server" ? "services" : "endpoints"}" title="编辑完整 JSON">${icon("edit")}</button>
+    </div>`;
+  }
+
+  function renderCollectionConfig(key, title, subtitle, iconName, supportedTypes) {
+    const value = configSectionValue(key);
+    const items = Array.isArray(value) ? value : [];
+    return `<div class="config-layout">
+      <div class="config-main">
+        <article class="card">
+          <div class="card-head"><div><h3 class="card-title">${title}</h3><p class="card-subtitle">${subtitle}</p></div><button class="btn btn-sm btn-primary" data-modal="config-section" data-id="${key}">${icon("code")}${items.length ? "编辑 JSON" : "添加配置"}</button></div>
+          <div class="collection-config-list">
+            ${items.length ? items.map((item, index) => collectionConfigRow(item, index, iconName)).join("") : `<button class="config-empty-state" data-modal="config-section" data-id="${key}">${icon(iconName)}<strong>尚未配置${title}</strong><span>使用完整 JSON 数组添加，所有官方字段均可保留</span></button>`}
+          </div>
+        </article>
+      </div>
+      <aside class="config-aside">
+        <article class="card">
+          <div class="card-head"><div><h3 class="card-title">官方类型</h3><p class="card-subtitle">当前 Schema 支持的 type</p></div><span class="type-badge">${key}</span></div>
+          <div class="card-body"><div class="type-chip-list">${supportedTypes.map((type) => `<code>${type}</code>`).join("")}</div></div>
+        </article>
+        <div class="info-callout">${icon("info")}<span>${key === "endpoints" ? "端点用于 WireGuard、Tailscale、OpenVPN 与 OpenConnect 等组网连接，并可被路由规则引用。" : "服务独立于代理入站运行，包括 API、DERP、Resolved、OOM Killer 与 USB/IP 等能力。"}</span></div>
+        ${renderCodePreview(false)}
+      </aside>
+    </div>`;
+  }
+
+  function renderEndpointsConfig() {
+    return renderCollectionConfig("endpoints", "端点", "VPN 与组网接口，可参与路由匹配", "route", endpointTypes);
+  }
+
+  function renderServicesConfig() {
+    return renderCollectionConfig("services", "服务", "独立后台服务与控制 API", "server", serviceTypes);
+  }
+
+  function renderAdvancedConfig() {
+    const keys = ["$schema", "ntp", "certificate", "certificate_providers", "http_clients", "network_namespaces", "experimental"];
+    const config = currentProfileConfigObject();
+    return `<div class="config-layout">
+      <div class="config-main">
+        <article class="card">
+          <div class="card-head"><div><h3 class="card-title">高级与共享模块</h3><p class="card-subtitle">平台相关配置以完整 JSON 片段维护</p></div><span class="type-badge">7 modules</span></div>
+          <div class="advanced-section-list">
+            ${keys.map((key) => {
+              const section = configSectionMeta(key);
+              const value = config[key];
+              const active = hasConfigSection(section, value);
+              return `<button class="advanced-section-row" data-modal="config-section" data-id="${key}">
+                <span class="advanced-section-icon">${icon(section.icon)}</span>
+                <span class="advanced-section-copy"><strong>${section.label}</strong><code>${section.key}</code><small>${section.description}</small></span>
+                <span class="advanced-section-status ${active ? "is-configured" : ""}"><i></i>${escapeHtml(configSectionSummary(section, value))}</span>
+                ${icon("chevron", "advanced-section-chevron")}
+              </button>`;
+            }).join("")}
+          </div>
+        </article>
+      </div>
+      <aside class="config-aside">
+        <article class="card compact-guide-card">
+          <div class="card-head"><div><h3 class="card-title">编辑策略</h3><p class="card-subtitle">完整性优先</p></div></div>
+          <div class="card-body compact-guide-list">
+            <div>${icon("check")}<span><strong>字段无损</strong><small>未知与未来版本字段原样保存</small></span></div>
+            <div>${icon("shield")}<span><strong>类型校验</strong><small>保存前检查对象、数组或字符串</small></span></div>
+            <div>${icon("code")}<span><strong>标准 JSON</strong><small>可直接复制到 sing-box 配置</small></span></div>
+          </div>
+        </article>
+        <div class="info-callout">${icon("info")}<span>不同核心版本、平台与编译标签支持的字段可能不同；部署前请以实际核心的 Schema 和检查结果为准。</span></div>
+        ${renderCodePreview(false)}
+      </aside>
+    </div>`;
+  }
+
   function renderRoutingConfig() {
     const enabledRules = state.routeRules.filter((rule) => rule.type !== "insertion" && rule.enable).length;
     return `<div class="route-workspace">
@@ -1452,45 +1649,55 @@
   }
 
   function renderDnsConfig() {
+    const dns = configSectionValue("dns") || {};
+    const servers = Array.isArray(dns.servers) ? dns.servers : [];
+    const rules = Array.isArray(dns.rules) ? dns.rules : [];
+    const serverTypes = ["local", "hosts", "udp", "tcp", "tls", "https", "h3", "quic", "dhcp", "fakeip", "tailscale", "resolved"];
     return `<div class="config-layout">
       <div class="config-main">
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">DNS 服务器</h3><p class="card-subtitle">解析器与传输协议</p></div><button class="btn btn-sm btn-primary" data-modal="dns">${icon("plus")}新增服务器</button></div>
+          <div class="card-head"><div><h3 class="card-title">DNS 服务器</h3><p class="card-subtitle">${servers.length} 个解析器 · 支持本地、传统与加密传输</p></div><button class="btn btn-sm btn-primary" data-modal="config-section" data-id="dns">${icon("code")}${servers.length ? "编辑 DNS" : "添加 DNS"}</button></div>
           <div class="dns-server-grid">
-            ${dnsServer("Cloudflare DoH", "https://1.1.1.1/dns-query", "remote", "globe", "")}
-            ${dnsServer("AliDNS DoH", "https://223.5.5.5/dns-query", "domestic", "dns", "cyan")}
-            ${dnsServer("FakeIP", "fakeip", "virtual", "sparkles", "orange")}
-            ${dnsServer("本地 DNS", "local", "bootstrap", "server", "green")}
+            ${servers.length ? servers.map(dnsServerConfig).join("") : `<button class="config-empty-state" data-modal="config-section" data-id="dns">${icon("dns")}<strong>尚未配置 DNS 服务器</strong><span>点击编辑完整 dns 对象</span></button>`}
           </div>
         </article>
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">DNS 规则</h3><p class="card-subtitle">为不同域名选择解析器</p></div><button class="btn btn-sm" data-modal="dns-rule">${icon("plus")}新增规则</button></div>
-          <div class="entry-list">
-            ${dnsRouteRule(1, "中国大陆域名", "rule_set", "geosite-cn", "AliDNS DoH", "green")}
-            ${dnsRouteRule(2, "国外域名", "rule_set", "geosite-geolocation-!cn", "Cloudflare DoH", "")}
-            ${dnsRouteRule(3, "默认解析", "final", "未命中规则", "Cloudflare DoH", "orange")}
-          </div>
+          <div class="card-head"><div><h3 class="card-title">DNS 规则</h3><p class="card-subtitle">按顺序匹配，动作由 action 字段定义</p></div><span class="route-section-badge">${rules.length} 条</span></div>
+          <div class="entry-list">${rules.length ? rules.map(dnsRuleConfig).join("") : `<button class="config-empty-state" data-modal="config-section" data-id="dns">${icon("rules")}<strong>尚未配置 DNS 规则</strong><span>未命中时使用 final 或默认服务器</span></button>`}</div>
         </article>
       </div>
       <aside class="config-aside">
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">DNS 行为</h3><p class="card-subtitle">缓存与独立解析策略</p></div></div>
-          <div class="card-body setting-list">
-            ${settingToggle("启用 DNS 缓存", "减少重复查询并降低延迟", "fakeIp")}
-            ${settingToggle("独立缓存", "每个 DNS 服务器使用独立缓存", "clashApi")}
-            ${settingToggle("反向映射", "记录 IP 与域名映射供路由使用", "ipv6")}
+          <div class="card-head"><div><h3 class="card-title">DNS 行为</h3><p class="card-subtitle">当前对象摘要</p></div></div>
+          <div class="card-body compact-kv-list">
+            <div><span>默认服务器</span><strong>${escapeHtml(String(dns.final || "由规则决定"))}</strong></div>
+            <div><span>地址策略</span><strong>${escapeHtml(String(dns.strategy || "default"))}</strong></div>
+            <div><span>独立缓存</span><strong>${dns.independent_cache ? "开启" : "关闭"}</strong></div>
+            <div><span>反向映射</span><strong>${dns.reverse_mapping ? "开启" : "关闭"}</strong></div>
           </div>
         </article>
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">FakeIP 地址池</h3><p class="card-subtitle">虚拟地址分配范围</p></div></div>
-          <div class="card-body"><div class="form-grid" style="grid-template-columns:1fr">${formField("IPv4 范围", "fakeip4", "198.18.0.0/15")}${formField("IPv6 范围", "fakeip6", "fc00::/18")}</div></div>
+          <div class="card-head"><div><h3 class="card-title">服务器类型</h3><p class="card-subtitle">当前 Schema 常用类型</p></div></div>
+          <div class="card-body"><div class="type-chip-list">${serverTypes.map((type) => `<code>${type}</code>`).join("")}</div></div>
         </article>
       </aside>
     </div>`;
   }
 
-  function dnsServer(name, address, tag, iconName, tone) {
-    return `<div class="dns-server"><div class="entry-icon ${tone}">${icon(iconName)}</div><div class="dns-server-copy"><strong>${name}</strong><span>${address}</span></div><span class="type-badge">${tag}</span><button class="entry-action" data-action="edit-entry">${icon("more")}</button></div>`;
+  function dnsServerConfig(server, index) {
+    const type = String(server?.type || "legacy");
+    const tag = String(server?.tag || `dns-${index + 1}`);
+    const address = server?.server || server?.address || server?.path || type;
+    const tone = ["https", "h3", "quic", "tls"].includes(type) ? "cyan" : type === "fakeip" ? "orange" : "";
+    return `<div class="dns-server"><div class="entry-icon ${tone}">${icon(type === "fakeip" ? "sparkles" : "dns")}</div><div class="dns-server-copy"><strong>${escapeHtml(tag)}</strong><span>${escapeHtml(String(address))}</span></div><span class="type-badge">${escapeHtml(type)}</span><button class="entry-action" data-modal="config-section" data-id="dns" title="编辑完整 DNS">${icon("edit")}</button></div>`;
+  }
+
+  function dnsRuleConfig(rule, index) {
+    const action = typeof rule?.action === "string" ? rule.action : rule?.action?.type || "route";
+    const matchKey = Object.keys(rule || {}).find((key) => !["action", "invert"].includes(key)) || "default";
+    const rawValue = rule?.[matchKey];
+    const value = Array.isArray(rawValue) ? rawValue.join(", ") : typeof rawValue === "object" ? JSON.stringify(rawValue) : String(rawValue ?? "全部查询");
+    return `<div class="entry-card dns-rule-config"><span class="rule-order">${index + 1}</span><div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(matchKey)}</span><span class="type-badge">${escapeHtml(action)}</span>${rule?.invert ? '<span class="badge badge-orange">反向</span>' : ""}</div><div class="entry-meta"><span>${escapeHtml(value)}</span></div></div><button class="entry-action" data-modal="config-section" data-id="dns" title="编辑完整 DNS">${icon("edit")}</button></div>`;
   }
 
   function getSubscriptionNodes(subscription) {
@@ -1694,6 +1901,7 @@
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
     state.editingSubscriptionId = type === "subscription" ? itemId : null;
     state.editingResourceRulesetId = type === "resource-ruleset" ? itemId : null;
+    state.editingConfigSection = type === "config-section" ? itemId : null;
     if (type === "profile-new") content = profileCreateModal();
     else if (type === "profile-manage") content = profileManageModal(itemId);
     else if (type === "profile-delete") content = profileDeleteModal(itemId);
@@ -1706,6 +1914,7 @@
     else if (type === "outbound") content = outboundModal(itemId);
     else if (type === "route") content = routeRuleModal(itemId);
     else if (type === "route-ruleset") content = routeRulesetModal(itemId);
+    else if (type === "config-section") content = configSectionModal(itemId);
     else if (type === "dns-rule") content = genericModal("新增 DNS 规则", "规则将添加到当前列表末尾", "rule", [
       ["规则名称", "新规则"], ["匹配类型", "domain_suffix", "select", ["domain", "domain_suffix", "ip_cidr", "rule_set", "process_name"]], ["匹配内容", ""], ["目标出站", "节点选择", "select", ["节点选择", "自动选择", "direct", "block"]]
     ]);
@@ -1721,6 +1930,97 @@
 
   function modalFrame(title, description, body, footer = "", modalClass = "") {
     return `<div class="modal-backdrop" data-action="modal-backdrop"><section class="modal ${modalClass}" role="dialog" aria-modal="true" aria-labelledby="modal-title"><div class="modal-head"><div class="modal-title-wrap"><h2 class="modal-title" id="modal-title">${title}</h2><p class="modal-description">${description}</p></div><button class="modal-close" data-action="close-modal" aria-label="关闭">${icon("close")}</button></div>${body}${footer}</section></div>`;
+  }
+
+  function defaultConfigSectionValue(section) {
+    if (section.key === "$schema") return "https://sing-box.sagernet.org/schema.json";
+    if (section.key === "dns") return { servers: [], rules: [] };
+    if (section.key === "ntp") return { enabled: true, server: "time.apple.com", server_port: 123, interval: "30m" };
+    if (section.type === "array") return [];
+    return {};
+  }
+
+  function validateConfigSectionJson(key, json) {
+    const section = configSectionMeta(key);
+    if (!section) return { valid: false, message: "无法识别该顶层模块。" };
+    try {
+      const value = JSON.parse(json);
+      const validType = section.type === "array"
+        ? Array.isArray(value)
+        : section.type === "object"
+          ? Boolean(value) && typeof value === "object" && !Array.isArray(value)
+          : typeof value === section.type;
+      if (!validType) {
+        const expected = { array: "JSON 数组", object: "JSON 对象", string: "JSON 字符串" }[section.type];
+        return { valid: false, message: `${section.key} 必须是${expected}。` };
+      }
+      const detail = section.type === "array" ? `${value.length} 个项目` : section.type === "object" ? `${Object.keys(value).length} 个字段` : "字符串有效";
+      return { valid: true, value, message: `JSON 有效 · ${detail} · 保存后写入 ${section.key}` };
+    } catch (error) {
+      return { valid: false, message: `JSON 语法错误：${error.message}` };
+    }
+  }
+
+  function configSectionValidationMarkup(result) {
+    return `<div class="custom-json-validation ${result.valid ? "valid" : "invalid"}" id="config-section-validation">${icon(result.valid ? "check" : "info")}<span>${escapeHtml(result.message)}</span></div>`;
+  }
+
+  function updateConfigSectionValidation(textarea) {
+    const result = validateConfigSectionJson(textarea.dataset.sectionKey, textarea.value);
+    textarea.classList.toggle("invalid", !result.valid);
+    textarea.setAttribute("aria-invalid", String(!result.valid));
+    const feedback = document.querySelector("#config-section-validation");
+    if (feedback) feedback.outerHTML = configSectionValidationMarkup(result);
+    const submit = document.querySelector("#config-section-submit");
+    if (submit) submit.disabled = !result.valid;
+    return result;
+  }
+
+  function configSectionModal(key) {
+    const section = configSectionMeta(key);
+    if (!section) return modalFrame("配置模块不存在", "无法识别请求的顶层字段", '<div class="modal-body"></div>');
+    const existing = configSectionValue(key);
+    const value = existing === undefined ? defaultConfigSectionValue(section) : existing;
+    const textValue = JSON.stringify(value, null, 2);
+    const validation = validateConfigSectionJson(key, textValue);
+    const body = `<form class="modal-body config-section-editor-body" id="config-section-form" data-form="config-section" data-key="${escapeHtml(key)}">
+      <div class="config-section-editor-meta"><span class="config-section-editor-icon">${icon(section.icon)}</span><div><strong>${escapeHtml(section.label)}</strong><code>${escapeHtml(section.key)}</code><small>${escapeHtml(section.description)}</small></div><span class="type-badge">${section.type}</span></div>
+      <div class="custom-json-editor"><div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>顶层配置片段</span></div><button class="editor-action" type="button" data-action="format-config-section">${icon("sparkles")}格式化</button></div><textarea class="custom-json-textarea config-section-textarea" name="config-section-json" data-config-section-json data-section-key="${escapeHtml(key)}" aria-describedby="config-section-validation" spellcheck="false">${escapeHtml(textValue)}</textarea></div>
+      ${configSectionValidationMarkup(validation)}
+      <div class="info-callout">${icon("shield")}<span>编辑器只检查 JSON 容器类型；字段、平台与版本兼容性请在部署前使用目标核心执行 <code>sing-box check</code>。</span></div>
+    </form>`;
+    const hasExisting = hasConfigSection(section, existing);
+    const footer = `<div class="modal-footer">${hasExisting && key !== "$schema" ? `<button class="btn btn-danger" type="button" data-action="clear-config-section" data-key="${escapeHtml(key)}">${icon("trash")}清空模块</button>` : ""}<span class="modal-footer-spacer"></span><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="config-section-submit" type="submit" form="config-section-form">${icon("save")}保存片段</button></div>`;
+    return modalFrame(`编辑${section.label}`, `完整维护 config.${section.key}`, body, footer, "modal-wide modal-config-section");
+  }
+
+  function syncStructuredStateFromSection(key, value) {
+    if (key === "dns") {
+      state.ipv6 = value?.strategy !== "ipv4_only";
+    }
+    if (key === "experimental") {
+      state.clashApi = Boolean(value?.clash_api);
+      state.fakeIp = Boolean(value?.cache_file?.store_fakeip);
+      state.configFields.cacheFile = String(value?.cache_file?.path || "");
+      const controller = String(value?.clash_api?.external_controller || "");
+      if (controller) state.configFields.apiPort = controller.split(":").pop() || state.configFields.apiPort;
+    }
+  }
+
+  function setConfigSectionValue(key, value) {
+    syncStructuredStateFromSection(key, value);
+    const config = currentProfileConfigObject();
+    config[key] = cloneData(value);
+    activeProfile().rawConfig = config;
+    state.dirty = true;
+  }
+
+  function clearConfigSectionValue(key) {
+    if (key === "experimental") syncStructuredStateFromSection(key, {});
+    const config = currentProfileConfigObject();
+    delete config[key];
+    activeProfile().rawConfig = config;
+    state.dirty = true;
   }
 
   function validateCustomInboundJson(json) {
@@ -1744,6 +2044,39 @@
 
   function customValidationMarkup(result) {
     return `<div class="custom-json-validation ${result.valid ? "valid" : "invalid"}" id="custom-json-validation">${icon(result.valid ? "check" : "info")}<span>${escapeHtml(result.message)}</span></div>`;
+  }
+
+  function validateCustomOutboundJson(json) {
+    try {
+      const config = JSON.parse(json);
+      if (!config || typeof config !== "object" || Array.isArray(config)) {
+        return { valid: false, message: "请输入单个出站 JSON 对象，不能使用数组。" };
+      }
+      if (typeof config.type !== "string" || !config.type.trim()) {
+        return { valid: false, message: "出站配置必须包含非空的 type 字段。" };
+      }
+      if (typeof config.tag !== "string" || !config.tag.trim()) {
+        return { valid: false, message: "出站配置必须包含非空的 tag 字段。" };
+      }
+      return { valid: true, config, message: `JSON 有效 · 标签 ${config.tag} · 类型 ${config.type}` };
+    } catch (error) {
+      return { valid: false, message: `JSON 语法错误：${error.message}` };
+    }
+  }
+
+  function customOutboundValidationMarkup(result) {
+    return `<div class="custom-json-validation ${result.valid ? "valid" : "invalid"}" id="custom-outbound-validation">${icon(result.valid ? "check" : "info")}<span>${escapeHtml(result.message)}</span></div>`;
+  }
+
+  function updateCustomOutboundValidation(textarea) {
+    const result = validateCustomOutboundJson(textarea.value);
+    textarea.classList.toggle("invalid", !result.valid);
+    textarea.setAttribute("aria-invalid", String(!result.valid));
+    const feedback = document.querySelector("#custom-outbound-validation");
+    if (feedback) feedback.outerHTML = customOutboundValidationMarkup(result);
+    const submit = document.querySelector("#outbound-submit");
+    if (submit) submit.disabled = !result.valid;
+    return result;
   }
 
   function inboundInput(label, name, value, options = {}) {
@@ -1926,6 +2259,7 @@
       ["block", "阻断", "shield"],
       ["selector", "手动选择", "globe"],
       ["urltest", "自动选择", "gauge"],
+      ["custom", "完整 JSON", "code"],
     ];
     return `<div class="outbound-type-control">${options.map(([type, label, iconName]) => `<label><input type="radio" name="outbound-type" value="${type}" data-outbound-type ${type === value ? "checked" : ""} /><span>${icon(iconName)}${label}</span></label>`).join("")}</div>`;
   }
@@ -2004,19 +2338,24 @@
       tolerance: 150,
       refs: [],
     };
-    const isPolicy = ["selector", "urltest"].includes(outbound.type);
+    const formTypes = new Set(["direct", "block", "selector", "urltest"]);
+    const editorType = formTypes.has(outbound.type) ? outbound.type : "custom";
+    const isPolicy = ["selector", "urltest"].includes(editorType);
+    const customConfig = existing && editorType === "custom" ? outboundConfigForExport(outbound) : JSON.parse(customOutboundExample);
+    const customJson = JSON.stringify(customConfig, null, 2);
+    const customValidation = validateCustomOutboundJson(customJson);
     const selectedKeys = new Set((outbound.refs || []).map((reference) => `${reference.groupId}:${reference.id}`));
     const referenceGroups = outboundReferenceGroups(outbound);
     const body = `<form class="modal-body outbound-editor-body" id="outbound-form" data-form="outbound">
       <div class="outbound-editor-fields">
-        <label class="outbound-editor-row"><span class="outbound-editor-label">名称<small>tag</small></span><input class="field-input" name="tag" value="${escapeHtml(outbound.tag)}" placeholder="例如 🚀 节点选择" required /></label>
-        <div class="outbound-editor-row"><span class="outbound-editor-label">类型<small>type</small></span>${outboundTypeControl(outbound.type)}</div>
+        <label class="outbound-editor-row ${editorType === "custom" ? "is-hidden" : ""}" data-outbound-name-row><span class="outbound-editor-label">名称<small>tag</small></span><input class="field-input" name="tag" value="${escapeHtml(outbound.tag)}" placeholder="例如 🚀 节点选择" required ${editorType === "custom" ? "disabled" : ""} /></label>
+        <div class="outbound-editor-row"><span class="outbound-editor-label">类型<small>type</small></span>${outboundTypeControl(editorType)}</div>
         <div data-outbound-policy-fields ${isPolicy ? "" : "hidden"}>
           <div class="outbound-editor-row"><span class="outbound-editor-label">隐藏<small>仅控制面板</small></span><div class="outbound-toggle-control"><span>不在代理组快捷选择中显示</span><label class="form-switch"><input type="checkbox" name="hidden" value="true" ${outbound.hidden ? "checked" : ""} /><span class="switch"></span></label></div></div>
           <label class="outbound-editor-row"><span class="outbound-editor-label">包含<small>include</small></span><input class="field-input" name="include" value="${escapeHtml(outbound.include || "")}" placeholder="keywords1|keywords2" /></label>
           <label class="outbound-editor-row"><span class="outbound-editor-label">排除<small>exclude</small></span><input class="field-input" name="exclude" value="${escapeHtml(outbound.exclude || "")}" placeholder="keywords1|keywords2" /></label>
           <label class="outbound-editor-row"><span class="outbound-editor-label">图标<small>icon</small></span><span class="outbound-icon-control"><span class="outbound-icon-preview ${outbound.icon ? "" : "is-empty"}" data-outbound-icon-preview>${outbound.icon ? `<img src="${escapeHtml(outbound.icon)}" alt="" />` : icon("globe")}</span><input class="field-input" name="icon" value="${escapeHtml(outbound.icon || "")}" placeholder="https://" data-outbound-icon-input /></span></label>
-          <div class="outbound-urltest-fields" data-outbound-urltest-fields ${outbound.type === "urltest" ? "" : "hidden"}>
+          <div class="outbound-urltest-fields" data-outbound-urltest-fields ${editorType === "urltest" ? "" : "hidden"}>
             <label class="outbound-editor-row"><span class="outbound-editor-label">测延迟链接<small>url</small></span><input class="field-input" name="url" value="${escapeHtml(outbound.url || "")}" placeholder="https://www.gstatic.com/generate_204" /></label>
             <label class="outbound-editor-row"><span class="outbound-editor-label">测试间隔<small>interval</small></span><input class="field-input" name="interval" value="${escapeHtml(outbound.interval || "3m")}" placeholder="3m" /></label>
             <label class="outbound-editor-row"><span class="outbound-editor-label">测试容差<small>tolerance</small></span><span class="input-suffix-wrap"><input class="field-input" name="tolerance" type="number" min="0" value="${escapeHtml(outbound.tolerance ?? 150)}" /><span class="input-suffix">ms</span></span></label>
@@ -2024,10 +2363,15 @@
           <div class="outbound-reference-divider"><span>引用出站 &amp; 引用订阅</span><strong data-outbound-reference-total>已选 ${selectedKeys.size}</strong></div>
           <div class="outbound-reference-list">${referenceGroups.map((group) => outboundReferenceGroup(group, selectedKeys)).join("")}</div>
         </div>
-        <div class="outbound-no-options" data-outbound-no-options ${isPolicy ? "hidden" : ""}>${icon(outbound.type === "block" ? "shield" : "lightning")}<strong data-outbound-empty-title>${outbound.type === "block" ? "阻断出站无需额外参数" : "直连出站无需额外参数"}</strong><span>保存后会生成只包含 <code>type</code> 与 <code>tag</code> 的 sing-box 出站对象。</span></div>
+        <div class="outbound-no-options" data-outbound-no-options ${isPolicy || editorType === "custom" ? "hidden" : ""}>${icon(editorType === "block" ? "shield" : "lightning")}<strong data-outbound-empty-title>${editorType === "block" ? "阻断出站无需额外参数" : "直连出站无需额外参数"}</strong><span>保存后会生成只包含 <code>type</code> 与 <code>tag</code> 的 sing-box 出站对象。</span></div>
+        <div class="outbound-custom-section" data-outbound-custom-section ${editorType === "custom" ? "" : "hidden"} data-custom-json="${escapeHtml(customJson)}">
+          <div class="custom-json-editor"><div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>完整出站对象</span></div><button class="editor-action" type="button" data-action="format-custom-outbound">${icon("sparkles")}格式化</button></div><textarea class="custom-json-textarea outbound-custom-textarea" name="custom-outbound-json" data-custom-outbound-json aria-describedby="custom-outbound-validation" spellcheck="false">${escapeHtml(customJson)}</textarea></div>
+          ${customOutboundValidationMarkup(customValidation)}
+          <div class="info-callout inbound-type-note">${icon("info")}<span>可使用当前 Schema 支持的任意出站类型；完整字段会原样写入 outbounds。</span></div>
+        </div>
       </div>
     </form>`;
-    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="outbound-submit" type="submit" form="outbound-form">${icon(existing ? "save" : "check")}${existing ? "保存" : "确认添加"}</button></div>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="outbound-submit" type="submit" form="outbound-form" ${editorType === "custom" && !customValidation.valid ? "disabled" : ""}>${icon(existing ? "save" : "check")}${existing ? "保存" : "确认添加"}</button></div>`;
     return modalFrame("出站", existing ? "编辑出站类型、筛选条件及引用关系" : "创建内置出站或节点选择策略组", body, footer, "modal-outbound");
   }
 
@@ -2036,11 +2380,25 @@
     const policyFields = form.querySelector("[data-outbound-policy-fields]");
     const urltestFields = form.querySelector("[data-outbound-urltest-fields]");
     const emptyState = form.querySelector("[data-outbound-no-options]");
+    const customSection = form.querySelector("[data-outbound-custom-section]");
+    const nameRow = form.querySelector("[data-outbound-name-row]");
+    const nameInput = nameRow?.querySelector("input");
     if (policyFields) policyFields.hidden = !isPolicy;
     if (urltestFields) urltestFields.hidden = type !== "urltest";
-    if (emptyState) emptyState.hidden = isPolicy;
+    if (emptyState) emptyState.hidden = isPolicy || type === "custom";
+    if (customSection) customSection.hidden = type !== "custom";
+    nameRow?.classList.toggle("is-hidden", type === "custom");
+    if (nameInput) {
+      nameInput.disabled = type === "custom";
+      nameInput.required = type !== "custom";
+    }
     const emptyTitle = form.querySelector("[data-outbound-empty-title]");
     if (emptyTitle) emptyTitle.textContent = type === "block" ? "阻断出站无需额外参数" : "直连出站无需额外参数";
+    const submit = form.ownerDocument.querySelector("#outbound-submit");
+    if (submit) {
+      const textarea = form.querySelector("[data-custom-outbound-json]");
+      submit.disabled = type === "custom" && textarea ? !updateCustomOutboundValidation(textarea).valid : false;
+    }
   }
 
   function updateOutboundReferenceCount(form) {
@@ -2547,7 +2905,7 @@
       if (!config || typeof config !== "object" || Array.isArray(config)) {
         return { valid: false, message: "完整配置必须是一个 JSON 对象。" };
       }
-      const knownKeys = ["log", "dns", "inbounds", "outbounds", "route", "experimental"];
+      const knownKeys = officialConfigSections.map((section) => section.key);
       if (!knownKeys.some((key) => Object.hasOwn(config, key))) {
         return { valid: false, message: "没有找到 sing-box 配置字段，请检查输入内容。" };
       }
@@ -2556,6 +2914,11 @@
       }
       if (config.outbounds !== undefined && !Array.isArray(config.outbounds)) {
         return { valid: false, message: "outbounds 必须是数组。" };
+      }
+      for (const key of ["certificate_providers", "http_clients", "network_namespaces", "endpoints", "services"]) {
+        if (config[key] !== undefined && !Array.isArray(config[key])) {
+          return { valid: false, message: `${key} 必须是数组。` };
+        }
       }
       if (config.route !== undefined && (!config.route || typeof config.route !== "object" || Array.isArray(config.route))) {
         return { valid: false, message: "route 必须是对象。" };
@@ -2566,7 +2929,8 @@
       const inboundTotal = config.inbounds?.length || 0;
       const outboundTotal = config.outbounds?.length || 0;
       const ruleTotal = Array.isArray(config.route?.rules) ? config.route.rules.length : 0;
-      return { valid: true, config, message: `JSON 有效 · ${inboundTotal} 个入站 · ${outboundTotal} 个出站 · ${ruleTotal} 条路由规则` };
+      const extensionTotal = (config.endpoints?.length || 0) + (config.services?.length || 0);
+      return { valid: true, config, message: `JSON 有效 · ${inboundTotal} 个入站 · ${outboundTotal} 个出站 · ${ruleTotal} 条路由规则 · ${extensionTotal} 个端点/服务` };
     } catch (error) {
       return { valid: false, message: `JSON 语法错误：${error.message}` };
     }
@@ -2639,14 +3003,16 @@
   }
 
   function jsonModal() {
-    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>配置结构检查通过，共包含 ${inboundCount()} 个入站、${state.outbounds.length} 个出站与 ${routeRuleCount()} 条路由规则。</span></div></div>`;
+    const config = currentProfileConfigObject();
+    const configured = officialConfigSections.filter((section) => hasConfigSection(section, config[section.key])).length;
+    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>已生成 ${configured}/14 个顶层模块，包含 ${inboundCount()} 个入站、${state.outbounds.length} 个出站、${config.endpoints?.length || 0} 个端点、${config.services?.length || 0} 个服务与 ${routeRuleCount()} 条路由规则。</span></div></div>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="copy-json">${icon("copy")}复制 JSON</button><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
     return modalFrame("配置 JSON 预览", "由当前表单实时生成，只读展示", body, footer);
   }
 
   function commandModal() {
     const body = `<div class="modal-body"><label class="search-wrap" style="display:block"><span class="icon">${icon("search")}</span><input class="search-input" style="height:43px" placeholder="输入页面名称..." autofocus /></label><div class="entry-list" style="padding:12px 0 0">${[
-      ["dashboard", "仪表盘", "dashboard"], ["config", "通用配置", "general"], ["config", "入站配置", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "路由设置", "routing"], ["config", "DNS 设置", "dns"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
+      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "DNS", "dns"], ["config", "入站配置", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "端点", "endpoints"], ["config", "路由设置", "routing"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
     ].map(([page, label, iconName]) => `<button class="entry-card" data-command-page="${page}" data-command-config="${page === "config" ? iconName : ""}" style="width:100%;text-align:left"><div class="entry-icon">${icon(iconName)}</div><div class="entry-copy"><div class="entry-title">${label}</div><div class="entry-meta">快速跳转</div></div>${icon("chevron", "faint")}</button>`).join("")}</div></div>`;
     return modalFrame("快速跳转", "选择要打开的控制台页面", body);
   }
@@ -2660,6 +3026,7 @@
     state.editingRouteRulesetId = null;
     state.editingSubscriptionId = null;
     state.editingResourceRulesetId = null;
+    state.editingConfigSection = null;
     document.body.style.overflow = "";
   }
 
@@ -2972,6 +3339,17 @@
       textarea.value = customInboundExample;
       updateCustomInboundValidation(textarea);
       textarea.focus();
+    } else if (action === "format-custom-outbound") {
+      const textarea = document.querySelector("[data-custom-outbound-json]");
+      if (!textarea) return;
+      const result = updateCustomOutboundValidation(textarea);
+      if (!result.valid) {
+        showToast("暂时无法格式化", "请先修正出站 JSON 的语法或必填字段。", "info");
+        return;
+      }
+      textarea.value = JSON.stringify(result.config, null, 2);
+      updateCustomOutboundValidation(textarea);
+      textarea.focus();
     } else if (action === "format-profile-json") {
       const textarea = document.querySelector("[data-profile-json]");
       if (!textarea) return;
@@ -2983,6 +3361,25 @@
       textarea.value = JSON.stringify(result.config, null, 2);
       updateProfileJsonValidation(textarea);
       textarea.focus();
+    } else if (action === "format-config-section") {
+      const textarea = document.querySelector("[data-config-section-json]");
+      if (!textarea) return;
+      const result = updateConfigSectionValidation(textarea);
+      if (!result.valid) {
+        showToast("暂时无法格式化", "请先修正配置片段的 JSON 语法。", "info");
+        return;
+      }
+      textarea.value = JSON.stringify(result.value, null, 2);
+      updateConfigSectionValidation(textarea);
+      textarea.focus();
+    } else if (action === "clear-config-section") {
+      const key = actionTarget.dataset.key;
+      const section = configSectionMeta(key);
+      if (!section) return;
+      clearConfigSectionValue(key);
+      closeModal();
+      render();
+      showToast("模块已清空", `${section.label}已从当前配置草稿移除。`, "info");
     } else if (action === "format-subscription-json") {
       const textarea = document.querySelector("[data-subscription-json]");
       if (!textarea) return;
@@ -3126,11 +3523,17 @@
   });
 
   document.addEventListener("input", (event) => {
+    if (event.target.matches("[data-config-section-json]")) {
+      updateConfigSectionValidation(event.target);
+    }
     if (event.target.matches("[data-profile-json]")) {
       updateProfileJsonValidation(event.target);
     }
     if (event.target.matches("[data-custom-inbound-json]")) {
       updateCustomInboundValidation(event.target);
+    }
+    if (event.target.matches("[data-custom-outbound-json]")) {
+      updateCustomOutboundValidation(event.target);
     }
     if (event.target.matches("[data-subscription-json]")) {
       updateSubscriptionValidation(event.target);
@@ -3149,8 +3552,9 @@
         state.configFields[event.target.dataset.configField] = event.target.value;
       }
       state.dirty = true;
-      const button = document.querySelector("#save-config-button");
-      if (button) button.innerHTML = `${icon("save")}保存更改`;
+      document.querySelectorAll('[data-action="save-config"]').forEach((button) => {
+        button.innerHTML = `${icon("save")}保存更改`;
+      });
     }
     if (event.target.matches("[data-ruleset-search]")) {
       state.rulesetSearch = event.target.value;
@@ -3207,8 +3611,9 @@
     if (event.target.matches("[data-route-common]")) {
       state[event.target.name] = event.target.value;
       state.dirty = true;
-      const button = document.querySelector("#save-config-button");
-      if (button) button.innerHTML = `${icon("save")}保存更改`;
+      document.querySelectorAll('[data-action="save-config"]').forEach((button) => {
+        button.innerHTML = `${icon("save")}保存更改`;
+      });
       return;
     }
     if (event.target.matches("[data-route-rule-enabled]")) {
@@ -3385,6 +3790,17 @@
       closeModal();
       render();
       showToast("配置已重命名", `“${oldName}”已更名为“${name}”。`, "success");
+    } else if (type === "config-section") {
+      const textarea = form.querySelector("[data-config-section-json]");
+      const result = textarea ? updateConfigSectionValidation(textarea) : { valid: false };
+      if (!result.valid) return;
+      const key = form.dataset.key;
+      const section = configSectionMeta(key);
+      if (!section) return;
+      setConfigSectionValue(key, result.value);
+      closeModal();
+      render();
+      showToast("配置片段已保存", `${section.label}已写入当前草稿，请保存后应用。`, "success");
     } else if (type === "inbound") {
       const inboundType = form.querySelector("[data-inbound-type]").value;
       if (inboundType === "custom") {
@@ -3421,7 +3837,19 @@
         showToast("入站已添加", `${config.tag}（${config.type}）已加入当前配置草稿，请保存后应用。`, "success");
       }
     } else if (type === "outbound") {
-      const config = buildOutboundConfig(form, state.editingOutboundId);
+      const selectedType = form.querySelector('[name="outbound-type"]:checked')?.value || "selector";
+      let config;
+      if (selectedType === "custom") {
+        const textarea = form.querySelector("[data-custom-outbound-json]");
+        const result = textarea ? updateCustomOutboundValidation(textarea) : { valid: false };
+        if (!result.valid) return;
+        const refs = Array.isArray(result.config.outbounds)
+          ? result.config.outbounds.map((tag) => ({ groupId: "custom", id: String(tag), tag: String(tag), type: "Custom" }))
+          : [];
+        config = { ...cloneData(result.config), id: state.editingOutboundId || `outbound-${Date.now()}`, refs };
+      } else {
+        config = buildOutboundConfig(form, state.editingOutboundId);
+      }
       if (["selector", "urltest"].includes(config.type) && !config.refs.length) {
         showToast("缺少引用项目", "手动选择和自动选择至少需要引用一个出站、订阅或订阅节点。", "info");
         form.querySelector('[name="outbound-ref"]')?.focus();
@@ -3645,6 +4073,20 @@
       event.preventDefault();
       const submit = document.querySelector("#inbound-submit");
       if (!submit?.disabled) document.querySelector("#inbound-form")?.requestSubmit();
+      return;
+    }
+    if (event.target.matches("[data-custom-outbound-json], [data-config-section-json]") && event.key === "Tab") {
+      event.preventDefault();
+      const textarea = event.target;
+      textarea.setRangeText("  ", textarea.selectionStart, textarea.selectionEnd, "end");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if (event.target.matches("[data-custom-outbound-json], [data-config-section-json]") && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      const isSection = event.target.matches("[data-config-section-json]");
+      const submit = document.querySelector(isSection ? "#config-section-submit" : "#outbound-submit");
+      if (!submit?.disabled) document.querySelector(isSection ? "#config-section-form" : "#outbound-form")?.requestSubmit();
       return;
     }
     if (event.key === "Escape" && modalRoot.innerHTML) closeModal();
