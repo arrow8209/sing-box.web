@@ -2752,6 +2752,23 @@
     return state.rulesets.some((item) => item.hubId === itemId && item.format === format);
   }
 
+  function rulesetHubCategoryLabel(category) {
+    return category === "geoip" ? "GeoIP" : category === "geosite" ? "GeoSite" : "全部";
+  }
+
+  function rulesetHubCategoryCount(category) {
+    return category === "all" ? rulesetHubItems.length : rulesetHubItems.filter((item) => item.category === category).length;
+  }
+
+  function rulesetHubImportedCount() {
+    return rulesetHubItems.filter((item) => isRulesetHubItemAdded(item.id, "source") || isRulesetHubItemAdded(item.id, "binary")).length;
+  }
+
+  function rulesetHubFilterButton(category) {
+    const active = state.rulesetHubCategory === category;
+    return `<button class="ruleset-hub-filter ${active ? "active" : ""}" type="button" data-action="filter-ruleset-hub" data-category="${category}" aria-pressed="${active}"><span>${rulesetHubCategoryLabel(category)}</span><small>${rulesetHubCategoryCount(category)}</small></button>`;
+  }
+
   function rulesetHubPreviewContent(item) {
     const rules = item.category === "geoip"
       ? [{ ip_cidr: ["203.0.113.0/24", "2001:db8::/32"] }]
@@ -2762,32 +2779,34 @@
   function rulesetHubCard(item) {
     const sourceAdded = isRulesetHubItemAdded(item.id, "source");
     const binaryAdded = isRulesetHubItemAdded(item.id, "binary");
-    return `<article class="ruleset-hub-card">
-      <div class="ruleset-hub-card-head"><span class="ruleset-hub-card-icon ${item.category}">${icon(item.category === "geoip" ? "globe" : "rules")}</span><div><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.source)}</span></div><span class="type-badge">${escapeHtml(item.category)}</span></div>
+    return `<article class="ruleset-hub-card ${sourceAdded || binaryAdded ? "is-installed" : ""}">
+      <div class="ruleset-hub-card-head"><span class="ruleset-hub-card-icon ${item.category}">${icon(item.category === "geoip" ? "globe" : "rules")}</span><div><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.source)}</span></div><span class="ruleset-hub-card-type ${item.category}">${rulesetHubCategoryLabel(item.category)}</span></div>
       <p>${escapeHtml(item.description)}</p>
-      <div class="ruleset-hub-card-meta"><span>${icon("database")} ${formatRulesetCount(item.count)} 条</span><button data-modal="ruleset-hub-preview" data-id="${escapeHtml(item.id)}">预览</button></div>
-      <div class="ruleset-hub-card-actions"><button class="btn btn-sm btn-quiet" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="source" ${sourceAdded ? "disabled" : ""}>${icon(sourceAdded ? "check" : "plus")}${sourceAdded ? "source 已添加" : "添加 source"}</button><button class="btn btn-sm ${binaryAdded ? "btn-quiet" : "btn-primary"}" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="binary" ${binaryAdded ? "disabled" : ""}>${icon(binaryAdded ? "check" : "download")}${binaryAdded ? "binary 已添加" : "添加 binary"}</button></div>
+      <div class="ruleset-hub-card-meta"><span class="ruleset-hub-card-count">${icon("database")}<strong>${formatRulesetCount(item.count)}</strong><small>条规则</small></span><button class="ruleset-hub-preview-button" type="button" data-modal="ruleset-hub-preview" data-id="${escapeHtml(item.id)}">${icon("code")}预览结构</button></div>
+      <div class="ruleset-hub-card-actions"><button class="btn btn-sm ruleset-hub-format-action ${sourceAdded ? "is-added" : ""}" type="button" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="source" ${sourceAdded ? "disabled" : ""}>${icon(sourceAdded ? "check" : "plus")}${sourceAdded ? "已添加 Source" : "添加 Source"}</button><button class="btn btn-sm ruleset-hub-format-action ${binaryAdded ? "is-added" : "btn-primary"}" type="button" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="binary" ${binaryAdded ? "disabled" : ""}>${icon(binaryAdded ? "check" : "download")}${binaryAdded ? "已添加 Binary" : "添加 Binary"}</button></div>
     </article>`;
   }
 
   function rulesetHubResultsMarkup() {
     const items = filteredRulesetHubItems();
-    return `<div class="ruleset-hub-results-head"><span>显示 ${items.length} / ${rulesetHubItems.length} 个模板</span><small>中心更新于 ${escapeHtml(state.rulesetHubUpdated)}</small></div>${items.length ? `<div class="ruleset-hub-grid">${items.map(rulesetHubCard).join("")}</div>` : `<div class="ruleset-hub-empty">${icon("search")}<strong>没有匹配的规则模板</strong><span>尝试更换关键词或分类。</span></div>`}`;
+    return `<div class="ruleset-hub-results-head"><span><strong>${items.length}</strong> 个可用模板</span><small><i></i>更新于 ${escapeHtml(state.rulesetHubUpdated)}</small></div>${items.length ? `<div class="ruleset-hub-grid">${items.map(rulesetHubCard).join("")}</div>` : `<div class="ruleset-hub-empty">${icon("search")}<strong>没有匹配的规则模板</strong><span>换一个关键词，或清除当前分类筛选。</span><button class="btn btn-sm" type="button" data-action="reset-ruleset-hub">${icon("rotate")}清除筛选</button></div>`}`;
   }
 
   function updateRulesetHubResults() {
     const container = document.querySelector("[data-ruleset-hub-results]");
     if (container) container.innerHTML = rulesetHubResultsMarkup();
+    const importedCount = document.querySelector("[data-ruleset-hub-imported-count]");
+    if (importedCount) importedCount.textContent = String(rulesetHubImportedCount());
   }
 
   function rulesetHubModal() {
     const body = `<div class="modal-body ruleset-hub-body">
-      <div class="ruleset-hub-toolbar"><label class="search-wrap">${icon("search")}<input class="search-input" data-ruleset-hub-search value="${escapeHtml(state.rulesetHubSearch)}" placeholder="搜索名称、分类或说明..." /></label><select class="field-select" data-ruleset-hub-category><option value="all" ${state.rulesetHubCategory === "all" ? "selected" : ""}>全部分类</option><option value="geosite" ${state.rulesetHubCategory === "geosite" ? "selected" : ""}>GeoSite</option><option value="geoip" ${state.rulesetHubCategory === "geoip" ? "selected" : ""}>GeoIP</option></select><button class="btn btn-sm" data-action="refresh-ruleset-hub">${icon("rotate")}刷新中心</button></div>
-      <div class="ruleset-hub-callout">${icon("database")}<div><strong>规则集中心</strong><span>从公共模板快速创建网络规则集；导入后可单独设置定时更新周期。</span></div></div>
+      <div class="ruleset-hub-overview"><span class="ruleset-hub-overview-icon">${icon("database")}</span><div class="ruleset-hub-overview-copy"><strong>精选公共规则模板</strong><span>来自 SagerNet 社区仓库，导入后可独立设置更新周期。</span></div><div class="ruleset-hub-overview-stats"><span><strong>${rulesetHubItems.length}</strong><small>全部模板</small></span><span><strong data-ruleset-hub-imported-count>${rulesetHubImportedCount()}</strong><small>已导入</small></span></div></div>
+      <div class="ruleset-hub-toolbar"><label class="search-wrap">${icon("search")}<input class="search-input" data-ruleset-hub-search value="${escapeHtml(state.rulesetHubSearch)}" placeholder="搜索名称、来源或用途..." /></label><div class="ruleset-hub-filters" role="group" aria-label="规则模板分类">${["all", "geosite", "geoip"].map(rulesetHubFilterButton).join("")}</div><button class="btn btn-sm ruleset-hub-refresh" type="button" data-action="refresh-ruleset-hub" title="刷新规则集中心">${icon("rotate")}<span>刷新</span></button></div>
       <div data-ruleset-hub-results>${rulesetHubResultsMarkup()}</div>
     </div>`;
-    const footer = `<div class="modal-footer"><span class="modal-footer-note">source 可查看源码，binary 体积更小</span><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
-    return modalFrame("规则集中心", "参照 GUI.for.SingBox 的 Ruleset Hub 组织模板并快速导入", body, footer, "modal-ruleset-hub");
+    const footer = `<div class="modal-footer ruleset-hub-footer"><span class="modal-footer-note"><span>${icon("code")}<b>Source</b> 可读、便于审查</span><span>${icon("lightning")}<b>Binary</b> 更小、加载更快</span></span><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
+    return modalFrame("规则集中心", "发现、预览并快速导入社区维护的规则模板", body, footer, "modal-ruleset-hub");
   }
 
   function rulesetHubPreviewModal(itemId) {
@@ -2795,8 +2814,8 @@
     if (!item) return modalFrame("模板不存在", "规则集中心中未找到该项目", `<div class="modal-body"></div>`);
     const sourceAdded = isRulesetHubItemAdded(item.id, "source");
     const binaryAdded = isRulesetHubItemAdded(item.id, "binary");
-    const body = `<div class="modal-body ruleset-hub-preview-body"><div class="ruleset-preview-summary"><span class="ruleset-hub-card-icon ${item.category}">${icon(item.category === "geoip" ? "globe" : "rules")}</span><div><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.description)} · ${formatRulesetCount(item.count)} 条规则</span></div><span class="type-badge">${escapeHtml(item.category)}</span></div><div class="custom-json-editor"><div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>source 格式结构预览</span></div></div><pre class="ruleset-preview-code">${escapeHtml(rulesetHubPreviewContent(item))}</pre></div><div class="info-callout custom-json-help">${icon("info")}<span>这是结构预览；实际导入由网络 URL 获取完整的 ${formatRulesetCount(item.count)} 条规则。</span></div></div>`;
-    const footer = `<div class="modal-footer"><button class="btn" data-modal="ruleset-hub">${icon("arrowDown")}返回中心</button><button class="btn btn-quiet" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="source" ${sourceAdded ? "disabled" : ""}>${sourceAdded ? "source 已添加" : "添加 source"}</button><button class="btn btn-primary" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="binary" ${binaryAdded ? "disabled" : ""}>${binaryAdded ? "binary 已添加" : "添加 binary"}</button></div>`;
+    const body = `<div class="modal-body ruleset-hub-preview-body"><div class="ruleset-preview-summary"><span class="ruleset-hub-card-icon ${item.category}">${icon(item.category === "geoip" ? "globe" : "rules")}</span><div><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.description)} · ${formatRulesetCount(item.count)} 条规则</span></div><span class="ruleset-hub-card-type ${item.category}">${rulesetHubCategoryLabel(item.category)}</span></div><div class="custom-json-editor"><div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>Source 格式结构预览</span></div></div><pre class="ruleset-preview-code">${escapeHtml(rulesetHubPreviewContent(item))}</pre></div><div class="info-callout custom-json-help">${icon("info")}<span>这是结构预览；实际导入由网络 URL 获取完整的 ${formatRulesetCount(item.count)} 条规则。</span></div></div>`;
+    const footer = `<div class="modal-footer"><button class="btn ruleset-preview-back" data-modal="ruleset-hub">${icon("chevron")}返回中心</button><button class="btn ruleset-hub-format-action ${sourceAdded ? "is-added" : ""}" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="source" ${sourceAdded ? "disabled" : ""}>${icon(sourceAdded ? "check" : "plus")}${sourceAdded ? "已添加 Source" : "添加 Source"}</button><button class="btn ruleset-hub-format-action ${binaryAdded ? "is-added" : "btn-primary"}" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="binary" ${binaryAdded ? "disabled" : ""}>${icon(binaryAdded ? "check" : "download")}${binaryAdded ? "已添加 Binary" : "添加 Binary"}</button></div>`;
     return modalFrame("规则模板预览", escapeHtml(item.source), body, footer, "modal-wide modal-ruleset-preview");
   }
 
@@ -3447,6 +3466,25 @@
       openModal("subscription-nodes", actionTarget.dataset.id);
     } else if (action === "edit-subscription") {
       openModal("subscription", actionTarget.dataset.id);
+    } else if (action === "filter-ruleset-hub") {
+      state.rulesetHubCategory = ["all", "geosite", "geoip"].includes(actionTarget.dataset.category) ? actionTarget.dataset.category : "all";
+      document.querySelectorAll(".ruleset-hub-filter").forEach((button) => {
+        const active = button.dataset.category === state.rulesetHubCategory;
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      updateRulesetHubResults();
+    } else if (action === "reset-ruleset-hub") {
+      state.rulesetHubSearch = "";
+      state.rulesetHubCategory = "all";
+      const search = document.querySelector("[data-ruleset-hub-search]");
+      if (search) search.value = "";
+      document.querySelectorAll(".ruleset-hub-filter").forEach((button) => {
+        const active = button.dataset.category === "all";
+        button.classList.toggle("active", active);
+        button.setAttribute("aria-pressed", String(active));
+      });
+      updateRulesetHubResults();
     } else if (action === "refresh-ruleset-hub") {
       state.rulesetHubUpdated = "刚刚";
       updateRulesetHubResults();
@@ -3594,11 +3632,6 @@
     if (event.target.matches("[data-config-field]")) {
       state.configFields[event.target.dataset.configField] = event.target.value;
       state.dirty = true;
-      return;
-    }
-    if (event.target.matches("[data-ruleset-hub-category]")) {
-      state.rulesetHubCategory = event.target.value;
-      updateRulesetHubResults();
       return;
     }
     if (event.target.matches('[name="resource-ruleset-type"]')) {
