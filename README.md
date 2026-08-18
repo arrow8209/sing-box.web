@@ -23,6 +23,24 @@ npm run dev
 
 然后访问 <http://localhost:4173>。也可以直接在浏览器中打开 `index.html`。
 
+如需从局域网中的其他设备访问：
+
+```bash
+npm run dev -- --bind 0.0.0.0
+```
+
+## 项目结构
+
+```text
+.
+├── index.html       # 页面入口
+├── package.json     # 开发与检查命令
+├── README.md
+└── src/
+    ├── app.js       # 页面数据与交互
+    └── styles.css   # 全局样式与响应式布局
+```
+
 当前页面使用演示数据，按钮、导航、主题切换、弹窗、配置保存、订阅同步和规则集更新均提供原型交互，不会修改真实的 sing-box 配置。
 
 低频模块的片段编辑器负责 JSON 语法和顶层容器类型校验。不同 sing-box 版本、平台及编译标签支持的字段可能不同，部署前仍需使用目标核心执行 `sing-box check`。
