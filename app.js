@@ -300,6 +300,76 @@
     fakeIp: true,
     clashApi: true,
     routeMode: "rule",
+    proxyTesting: false,
+    proxyGroups: [
+      {
+        id: "node-select",
+        icon: "🚀",
+        name: "节点选择",
+        type: "Selector",
+        selected: "nas-ss",
+        expanded: true,
+        members: [
+          { id: "nas-ss", name: "nas-ss", type: "Shadowsocks", network: "udp", latency: 206 },
+          { id: "vless-60016", name: "vless-60016", type: "VLESS", network: "udp", latency: 0 },
+          { id: "ssh-nas-600001", name: "ssh-nas-600001", type: "SSH", network: "", latency: 0 },
+        ],
+      },
+      {
+        id: "auto-select",
+        icon: "📍",
+        name: "自动选择",
+        type: "URLTest",
+        selected: "node-select-ref",
+        expanded: true,
+        members: [
+          { id: "node-select-ref", name: "节点选择", type: "Selector", network: "udp", latency: 206, icon: "🚀", groupId: "node-select" },
+        ],
+      },
+      {
+        id: "global-direct",
+        icon: "🎯",
+        name: "全球直连",
+        type: "Selector",
+        selected: "direct",
+        expanded: false,
+        members: [{ id: "direct", name: "direct", type: "Direct", network: "", latency: 4 }],
+      },
+      {
+        id: "global-block",
+        icon: "🛑",
+        name: "全球拦截",
+        type: "Selector",
+        selected: "block",
+        expanded: false,
+        members: [{ id: "block", name: "block", type: "Block", network: "", latency: null }],
+      },
+      {
+        id: "fallback",
+        icon: "🐟",
+        name: "漏网之鱼",
+        type: "Selector",
+        selected: "nas-ss",
+        expanded: false,
+        members: [
+          { id: "nas-ss", name: "nas-ss", type: "Shadowsocks", network: "udp", latency: 206 },
+          { id: "vless-60016", name: "vless-60016", type: "VLESS", network: "udp", latency: 0 },
+          { id: "direct", name: "direct", type: "Direct", network: "", latency: 4 },
+        ],
+      },
+      {
+        id: "global",
+        icon: "🌐",
+        name: "GLOBAL",
+        type: "Selector",
+        selected: "global-direct-ref",
+        expanded: false,
+        members: [
+          { id: "global-direct-ref", name: "全球直连", type: "Selector", network: "", latency: 4, icon: "🎯", groupId: "global-direct" },
+          { id: "direct", name: "direct", type: "Direct", network: "", latency: 4 },
+        ],
+      },
+    ],
     theme: readStorage("singbox-theme", "light"),
     accent: readStorage("singbox-accent", "blue"),
     dirty: false,
@@ -956,23 +1026,7 @@
             </article>
           </div>
 
-          <article class="card connection-card">
-            <div class="card-head">
-              <div><h3 class="card-title">最近连接</h3><p class="card-subtitle">当前 128 条活动连接</p></div>
-              <button class="btn btn-sm btn-quiet" data-action="view-connections">查看全部 ${icon("chevron")}</button>
-            </div>
-            <div class="table-wrap">
-              <table class="data-table">
-                <thead><tr><th>目标地址</th><th>协议</th><th>路由规则</th><th>出站</th><th>速度</th></tr></thead>
-                <tbody>
-                  ${connectionRow("G", "github.com:443", "TCP · TLS", "geosite-github", "节点选择 / HK-02", "2.8 MB/s")}
-                  ${connectionRow("Y", "youtube.com:443", "UDP · QUIC", "geosite-youtube", "自动选择 / JP-01", "5.1 MB/s")}
-                  ${connectionRow("C", "api.openai.com:443", "TCP · TLS", "domain-suffix", "节点选择 / US-03", "846 KB/s")}
-                  ${connectionRow("B", "bilibili.com:443", "TCP · TLS", "geosite-cn", "direct", "1.3 MB/s")}
-                </tbody>
-              </table>
-            </div>
-          </article>
+          ${renderProxySelector()}
         </div>
       </div>
     </section>`;
@@ -986,12 +1040,67 @@
     </div>`;
   }
 
-  function connectionRow(letter, domain, protocol, rule, outbound, speed) {
-    return `<tr>
-      <td><div class="domain-cell"><span class="domain-favicon">${letter}</span><span class="table-primary">${domain}</span></div></td>
-      <td>${protocol}</td><td><span class="type-badge">${rule}</span></td><td>${outbound}</td>
-      <td><span class="speed-cell text-green">${icon("download")}${speed}</span></td>
-    </tr>`;
+  function proxyGroupSelectedLabel(group) {
+    const selected = group.members.find((member) => member.id === group.selected);
+    if (!selected) return "未选择";
+    if (!selected.groupId) return selected.name;
+    const referencedGroup = state.proxyGroups.find((item) => item.id === selected.groupId);
+    const referencedNode = referencedGroup?.members.find((member) => member.id === referencedGroup.selected);
+    return referencedNode ? `${selected.name} / ${referencedNode.name}` : selected.name;
+  }
+
+  function proxyLatencyMarkup(member) {
+    if (state.proxyTesting) return `<span class="proxy-latency testing">${icon("rotate")}测速中</span>`;
+    if (member.latency === null) return `<span class="proxy-latency unavailable">不适用</span>`;
+    if (!member.latency) return `<span class="proxy-latency timeout">超时</span>`;
+    const tone = member.latency <= 100 ? "fast" : member.latency <= 300 ? "medium" : "slow";
+    return `<span class="proxy-latency ${tone}">${member.latency} ms</span>`;
+  }
+
+  function proxyNodeCard(group, member) {
+    const selected = member.id === group.selected;
+    const initial = member.icon || (/^[a-z]/i.test(member.name) ? member.name.slice(0, 2).toUpperCase() : member.name.slice(0, 1));
+    return `<button class="proxy-node-card ${selected ? "selected" : ""}" data-proxy-node="${escapeHtml(member.id)}" data-group="${escapeHtml(group.id)}" aria-pressed="${selected}">
+      <span class="proxy-node-avatar ${member.icon ? "emoji" : ""}">${escapeHtml(initial)}</span>
+      <span class="proxy-node-copy"><strong>${escapeHtml(member.name)}</strong>${proxyLatencyMarkup(member)}<small>${escapeHtml(member.type)}${member.network ? ` · ${escapeHtml(member.network)}` : ""}</small></span>
+      <span class="proxy-node-check">${selected ? icon("check") : ""}</span>
+    </button>`;
+  }
+
+  function renderProxyGroup(group) {
+    return `<section class="proxy-group ${group.expanded ? "expanded" : ""}" data-proxy-group-section="${escapeHtml(group.id)}">
+      <div class="proxy-group-head">
+        <button class="proxy-group-main" data-proxy-group="${escapeHtml(group.id)}" aria-expanded="${group.expanded}">
+          <span class="proxy-group-avatar">${escapeHtml(group.icon)}</span>
+          <span class="proxy-group-copy"><strong>${escapeHtml(group.name)}</strong><small><b>${escapeHtml(group.type)}</b><i></i>${escapeHtml(proxyGroupSelectedLabel(group))}</small></span>
+        </button>
+        <div class="proxy-group-actions">
+          <button class="proxy-icon-button" data-action="test-proxy-group" data-id="${escapeHtml(group.id)}" title="测试该组延迟" aria-label="测试 ${escapeHtml(group.name)} 延迟">${icon("gauge")}</button>
+          <button class="proxy-icon-button proxy-expand-button" data-proxy-group="${escapeHtml(group.id)}" aria-expanded="${group.expanded}" title="${group.expanded ? "收起" : "展开"}">${icon("chevron")}</button>
+        </div>
+      </div>
+      ${group.expanded ? `<div class="proxy-node-grid">${group.members.map((member) => proxyNodeCard(group, member)).join("")}</div>` : ""}
+    </section>`;
+  }
+
+  function renderProxySelector() {
+    const onlineNodes = state.proxyGroups.flatMap((group) => group.members).filter((member) => Number(member.latency) > 0).length;
+    return `<article class="card proxy-selector-card">
+      <div class="card-head proxy-selector-head">
+        <div><h3 class="card-title">节点选择</h3><p class="card-subtitle">选择策略组当前使用的出站节点</p></div>
+        <div class="proxy-selector-actions"><span class="proxy-online-summary"><i></i>${onlineNodes} 个节点可用</span><button class="btn btn-sm" data-action="test-all-proxies" ${state.proxyTesting ? "disabled" : ""}>${icon("gauge")}${state.proxyTesting ? "测速中" : "全部测速"}</button></div>
+      </div>
+      <div class="proxy-group-list">${state.proxyGroups.map(renderProxyGroup).join("")}</div>
+    </article>`;
+  }
+
+  function refreshProxyLatencies(groups) {
+    groups.forEach((group, groupIndex) => {
+      group.members.forEach((member, memberIndex) => {
+        if (member.latency === null) return;
+        member.latency = 28 + ((groupIndex * 61 + memberIndex * 97 + Date.now()) % 330);
+      });
+    });
   }
 
   function configIntro() {
@@ -2673,6 +2782,26 @@
       return;
     }
 
+    const proxyNodeTarget = event.target.closest("[data-proxy-node]");
+    if (proxyNodeTarget) {
+      const group = state.proxyGroups.find((item) => item.id === proxyNodeTarget.dataset.group);
+      const member = group?.members.find((item) => item.id === proxyNodeTarget.dataset.proxyNode);
+      if (!group || !member) return;
+      group.selected = member.id;
+      render();
+      showToast("节点已切换", `${group.name} → ${member.name}`, "success");
+      return;
+    }
+
+    const proxyGroupTarget = event.target.closest("[data-proxy-group]");
+    if (proxyGroupTarget) {
+      const group = state.proxyGroups.find((item) => item.id === proxyGroupTarget.dataset.proxyGroup);
+      if (!group) return;
+      group.expanded = !group.expanded;
+      render();
+      return;
+    }
+
     const command = event.target.closest("[data-command-page]");
     if (command) {
       navigate(command.dataset.commandPage, command.dataset.commandConfig || null);
@@ -2774,6 +2903,22 @@
       }, 900);
     } else if (action === "refresh-dashboard") {
       showToast("状态已刷新", "流量、连接与核心状态均已更新。", "info");
+    } else if (action === "test-proxy-group") {
+      const group = state.proxyGroups.find((item) => item.id === actionTarget.dataset.id);
+      if (!group) return;
+      refreshProxyLatencies([group]);
+      render();
+      showToast("延迟测试完成", `${group.name} 的 ${group.members.length} 个候选节点已更新。`, "success");
+    } else if (action === "test-all-proxies") {
+      if (state.proxyTesting) return;
+      state.proxyTesting = true;
+      render();
+      window.setTimeout(() => {
+        refreshProxyLatencies(state.proxyGroups);
+        state.proxyTesting = false;
+        render();
+        showToast("全部测速完成", "所有策略组的节点延迟已更新。", "success");
+      }, 700);
     } else if (action === "save-config") {
       const name = String(state.configFields.profileName || "").trim();
       if (!name) {
@@ -2970,12 +3115,11 @@
       showToast("原型操作", "正式接入后此处将打开密码修改流程。", "info");
     } else if (action === "project-info") {
       showToast("SingBox Control", "当前为交互原型，后续可对接 sing-box 与 Clash API。", "info");
-    } else if (["edit-entry", "duplicate-entry", "remove-entry", "view-connections"].includes(action)) {
+    } else if (["edit-entry", "duplicate-entry", "remove-entry"].includes(action)) {
       const messages = {
         "edit-entry": "编辑面板将在正式版本中读取完整配置字段。",
         "duplicate-entry": "已复制一个配置项草稿。",
         "remove-entry": "原型不会删除现有配置项。",
-        "view-connections": "连接详情页已预留，可接入 Clash API。",
       };
       showToast("原型交互", messages[action], "info");
     }
