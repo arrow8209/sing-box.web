@@ -163,6 +163,46 @@
   const cloudRouteNodes = createDemoSubscriptionNodes("Cloud Route", 42);
   const edgeNetworkNodes = createDemoSubscriptionNodes("Edge Network", 18, 3);
 
+  const manualRulesetExample = `{
+  "version": 3,
+  "rules": [
+    {
+      "domain_suffix": [
+        "example.com",
+        "example.org"
+      ]
+    },
+    {
+      "ip_cidr": [
+        "10.0.0.0/8",
+        "192.168.0.0/16"
+      ]
+    }
+  ]
+}`;
+
+  const rulesetUpdateIntervals = [
+    ["manual", "仅手动更新"],
+    ["15m", "每 15 分钟"],
+    ["1h", "每 1 小时"],
+    ["6h", "每 6 小时"],
+    ["12h", "每 12 小时"],
+    ["1d", "每天"],
+    ["7d", "每 7 天"],
+  ];
+
+  const rulesetHubItems = [
+    { id: "geosite-cn", name: "geosite-cn", category: "geosite", count: 124632, source: "SagerNet/sing-geosite", description: "中国大陆常用域名集合" },
+    { id: "geosite-private", name: "geosite-private", category: "geosite", count: 1934, source: "SagerNet/sing-geosite", description: "局域网与私有域名集合" },
+    { id: "geosite-geolocation-not-cn", name: "geosite-geolocation-!cn", category: "geosite", count: 86319, source: "SagerNet/sing-geosite", description: "中国大陆以外的域名集合" },
+    { id: "geosite-category-ads-all", name: "geosite-category-ads-all", category: "geosite", count: 216804, source: "SagerNet/sing-geosite", description: "广告与跟踪域名集合" },
+    { id: "geosite-google", name: "geosite-google", category: "geosite", count: 11482, source: "SagerNet/sing-geosite", description: "Google 服务域名集合" },
+    { id: "geosite-github", name: "geosite-github", category: "geosite", count: 1246, source: "SagerNet/sing-geosite", description: "GitHub 及相关服务域名" },
+    { id: "geoip-cn", name: "geoip-cn", category: "geoip", count: 8926, source: "SagerNet/sing-geoip", description: "中国大陆 IPv4 与 IPv6 地址段" },
+    { id: "geoip-private", name: "geoip-private", category: "geoip", count: 32, source: "SagerNet/sing-geoip", description: "私有网络 IP 地址段" },
+    { id: "geoip-cloudflare", name: "geoip-cloudflare", category: "geoip", count: 486, source: "SagerNet/sing-geoip", description: "Cloudflare 网络地址段" },
+  ];
+
   const routeRuleTypeOptions = [
     ["inbound", "入站 (inbound)"],
     ["network", "网络 (network)"],
@@ -308,6 +348,10 @@
     ],
     rulesetSearch: "",
     rulesetType: "all",
+    rulesetHubSearch: "",
+    rulesetHubCategory: "all",
+    rulesetHubUpdated: "今天 09:42",
+    editingResourceRulesetId: null,
     settingsSection: "core-settings",
     subscriptions: [
       {
@@ -332,11 +376,11 @@
       },
     ],
     rulesets: [
-      { id: 1, name: "geosite-cn", source: "SagerNet/sing-geosite", type: "remote", format: "binary", count: "124,632", size: "3.8 MB", updated: "今天 09:42" },
-      { id: 2, name: "geoip-cn", source: "SagerNet/sing-geoip", type: "remote", format: "binary", count: "8,926", size: "1.2 MB", updated: "今天 09:42" },
-      { id: 3, name: "geosite-geolocation-!cn", source: "SagerNet/sing-geosite", type: "remote", format: "binary", count: "86,319", size: "4.6 MB", updated: "昨天 22:16" },
-      { id: 4, name: "private", source: "本地规则", type: "local", format: "source", count: "32", size: "4.1 KB", updated: "8 月 16 日" },
-      { id: 5, name: "ads-all", source: "privacy-protection", type: "remote", format: "binary", count: "216,804", size: "6.7 MB", updated: "8 月 17 日" },
+      { id: 1, hubId: "geosite-cn", name: "geosite-cn", source: "SagerNet/sing-geosite", type: "remote", format: "binary", count: 124632, size: "3.8 MB", updated: "今天 09:42", url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs", updateInterval: "6h", nextUpdate: "约 6 小时后", disabled: false },
+      { id: 2, hubId: "geoip-cn", name: "geoip-cn", source: "SagerNet/sing-geoip", type: "remote", format: "binary", count: 8926, size: "1.2 MB", updated: "今天 09:42", url: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs", updateInterval: "12h", nextUpdate: "约 12 小时后", disabled: false },
+      { id: 3, hubId: "geosite-geolocation-not-cn", name: "geosite-geolocation-!cn", source: "SagerNet/sing-geosite", type: "remote", format: "binary", count: 86319, size: "4.6 MB", updated: "昨天 22:16", url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs", updateInterval: "1d", nextUpdate: "约 1 天后", disabled: false },
+      { id: 4, name: "private-custom", source: "手工规则 · JSON", type: "manual", format: "source", count: 4, size: "238 B", updated: "8 月 16 日", url: "", updateInterval: "manual", nextUpdate: "手工维护", disabled: false, content: manualRulesetExample },
+      { id: 5, hubId: "geosite-category-ads-all", name: "ads-all", source: "privacy-protection", type: "remote", format: "binary", count: 216804, size: "6.7 MB", updated: "8 月 17 日", url: "https://example.com/rules/ads-all.srs", updateInterval: "7d", nextUpdate: "约 7 天后", disabled: false },
     ],
   };
 
@@ -344,7 +388,7 @@
     dashboard: { title: "仪表盘", parent: "控制台" },
     config: { title: "自定义配置 A", parent: "配置" },
     subscriptions: { title: "订阅配置", parent: "资源管理" },
-    rulesets: { title: "规则集", parent: "资源管理" },
+    rulesets: { title: "规则集中心", parent: "资源管理" },
     settings: { title: "设置", parent: "系统" },
   };
 
@@ -1054,32 +1098,78 @@
     </article>`;
   }
 
+  function rulesetCountValue(item) {
+    if (typeof item.count === "number") return item.count;
+    return Number(String(item.count || 0).replace(/,/g, "")) || 0;
+  }
+
+  function formatRulesetCount(value) {
+    return Number(value || 0).toLocaleString("zh-CN");
+  }
+
+  function rulesetTypeMeta(type) {
+    return {
+      remote: { label: "网络", iconName: "globe", badge: "badge-primary" },
+      manual: { label: "纯手工", iconName: "code", badge: "badge-success" },
+    }[type] || { label: type, iconName: "rules", badge: "" };
+  }
+
+  function rulesetIntervalLabel(interval) {
+    return rulesetUpdateIntervals.find(([value]) => value === interval)?.[1] || interval || "仅手动更新";
+  }
+
+  function rulesetNextUpdateLabel(interval) {
+    return {
+      "15m": "约 15 分钟后",
+      "1h": "约 1 小时后",
+      "6h": "约 6 小时后",
+      "12h": "约 12 小时后",
+      "1d": "约 1 天后",
+      "7d": "约 7 天后",
+    }[interval] || "等待手动更新";
+  }
+
   function renderRulesets() {
     const filtered = state.rulesets.filter((item) => {
-      const matchesSearch = `${item.name} ${item.source}`.toLowerCase().includes(state.rulesetSearch.toLowerCase());
+      const matchesSearch = `${item.name} ${item.source} ${item.url || ""}`.toLowerCase().includes(state.rulesetSearch.toLowerCase());
       const matchesType = state.rulesetType === "all" || item.type === state.rulesetType;
       return matchesSearch && matchesType;
     });
+    const remoteRulesets = state.rulesets.filter((item) => item.type === "remote");
+    const scheduledRulesets = remoteRulesets.filter((item) => item.updateInterval && item.updateInterval !== "manual");
+    const manualRulesets = state.rulesets.filter((item) => item.type === "manual");
+    const totalRules = state.rulesets.reduce((total, item) => total + rulesetCountValue(item), 0);
+    const nextScheduled = scheduledRulesets[0];
     return `<section>
-      <div class="page-intro"><div class="page-intro-copy"><h2>规则集</h2><p>维护可复用的域名与 IP 规则资源，用于路由和 DNS 策略。</p></div><div class="page-actions"><button class="btn" data-action="update-rulesets">${icon("rotate")}更新全部</button><button class="btn btn-primary" data-modal="ruleset">${icon("plus")}添加规则集</button></div></div>
+      <div class="page-intro"><div class="page-intro-copy"><h2>规则集中心</h2><p>集中导入、更新和维护 sing-box 域名与 IP 规则资源。</p></div><div class="page-actions"><button class="btn" data-modal="ruleset-hub">${icon("database")}规则集中心</button><button class="btn" data-action="update-rulesets">${icon("rotate")}更新网络规则</button><button class="btn btn-primary" data-modal="resource-ruleset">${icon("plus")}添加规则集</button></div></div>
       <div class="summary-grid">
-        ${summaryMetric("database", "", state.rulesets.length, "规则集", "4 个远程资源")}
-        ${summaryMetric("rules", "cyan", "436,713", "规则条目", "已加载到内存")}
-        ${summaryMetric("memory", "orange", "16.3 MB", "磁盘占用", "缓存状态正常")}
+        ${summaryMetric("database", "", state.rulesets.length, "规则集", `${formatRulesetCount(totalRules)} 条规则`)}
+        ${summaryMetric("clock", "cyan", scheduledRulesets.length, "定时更新", `${remoteRulesets.length} 个网络资源`)}
+        ${summaryMetric("code", "orange", manualRulesets.length, "纯手工规则", "直接编辑 JSON 源文件")}
       </div>
-      <div class="card toolbar">
-        <label class="search-wrap">${icon("search")}<input class="search-input" type="search" placeholder="搜索规则集名称或来源..." value="${state.rulesetSearch}" data-ruleset-search /></label>
-        <select class="field-select filter-select" data-ruleset-type><option value="all" ${state.rulesetType === "all" ? "selected" : ""}>全部类型</option><option value="remote" ${state.rulesetType === "remote" ? "selected" : ""}>远程规则</option><option value="local" ${state.rulesetType === "local" ? "selected" : ""}>本地规则</option></select>
-        <button class="btn btn-sm" data-action="ruleset-filter">${icon("config")}筛选</button>
+      <article class="card ruleset-schedule-banner">
+        <div class="ruleset-schedule-icon">${icon("clock")}</div>
+        <div class="ruleset-schedule-copy"><strong>网络规则定时更新已启用</strong><span>${nextScheduled ? `最近计划：${escapeHtml(nextScheduled.name)} · ${escapeHtml(nextScheduled.nextUpdate)}` : "尚未配置自动更新周期"}</span></div>
+        <div class="ruleset-schedule-stats"><span><strong>${scheduledRulesets.length}</strong> 个计划</span><span><strong>${remoteRulesets.length - scheduledRulesets.length}</strong> 个仅手动</span></div>
+      </article>
+      <div class="card toolbar ruleset-toolbar">
+        <label class="search-wrap">${icon("search")}<input class="search-input" type="search" placeholder="搜索规则集名称、来源或 URL..." value="${escapeHtml(state.rulesetSearch)}" data-ruleset-search /></label>
+        <select class="field-select filter-select" data-ruleset-type><option value="all" ${state.rulesetType === "all" ? "selected" : ""}>全部来源</option><option value="remote" ${state.rulesetType === "remote" ? "selected" : ""}>网络规则集</option><option value="manual" ${state.rulesetType === "manual" ? "selected" : ""}>纯手工规则</option></select>
+        <span class="ruleset-result-count">${filtered.length} / ${state.rulesets.length}</span>
       </div>
       <article class="card ruleset-table-card">
-        ${filtered.length ? `<div class="table-wrap"><table class="data-table"><thead><tr><th>规则集</th><th>类型</th><th>格式</th><th>规则数</th><th>大小</th><th>最近更新</th><th style="text-align:right">操作</th></tr></thead><tbody>${filtered.map(ruleSetRow).join("")}</tbody></table></div>` : `<div class="empty-state"><div><div class="empty-icon">${icon("search")}</div><h3>没有匹配的规则集</h3><p>调整搜索关键词或筛选条件后重试</p><button class="btn btn-sm" data-action="clear-ruleset-filter">清除筛选</button></div></div>`}
+        ${filtered.length ? `<div class="table-wrap"><table class="data-table ruleset-data-table"><thead><tr><th>规则集</th><th>来源</th><th>格式</th><th>规则数</th><th>更新策略</th><th>最近更新</th><th style="text-align:right">操作</th></tr></thead><tbody>${filtered.map(ruleSetRow).join("")}</tbody></table></div>` : `<div class="empty-state"><div><div class="empty-icon">${icon("search")}</div><h3>没有匹配的规则集</h3><p>调整搜索关键词或来源筛选后重试</p><button class="btn btn-sm" data-action="clear-ruleset-filter">清除筛选</button></div></div>`}
       </article>
     </section>`;
   }
 
   function ruleSetRow(item) {
-    return `<tr><td><div class="ruleset-name"><span class="ruleset-icon">${icon(item.type === "remote" ? "globe" : "folder")}</span><div><div class="ruleset-main">${item.name}</div><div class="ruleset-sub">${item.source}</div></div></div></td><td><span class="badge ${item.type === "remote" ? "badge-primary" : "badge-orange"}">${item.type === "remote" ? "远程" : "本地"}</span></td><td><span class="type-badge">${item.format}</span></td><td><span class="rule-count">${item.count}</span></td><td>${item.size}</td><td>${item.updated}</td><td><div class="table-actions"><button class="entry-action" data-action="refresh-ruleset" data-id="${item.id}" title="更新">${icon("rotate")}</button><button class="entry-action" data-action="edit-entry" title="编辑">${icon("edit")}</button><button class="entry-action" title="更多">${icon("more")}</button></div></td></tr>`;
+    const meta = rulesetTypeMeta(item.type);
+    const sourceTitle = item.type === "remote" ? item.url : "Web 中手工维护的 JSON 规则";
+    const schedule = item.type === "remote"
+      ? `<div class="ruleset-update-plan"><span class="${item.updateInterval !== "manual" ? "is-scheduled" : ""}">${icon("clock")}${escapeHtml(rulesetIntervalLabel(item.updateInterval))}</span><small>${escapeHtml(item.nextUpdate || rulesetNextUpdateLabel(item.updateInterval))}</small></div>`
+      : `<div class="ruleset-update-plan"><span>${icon("edit")}手工维护</span><small>直接编辑规则内容</small></div>`;
+    return `<tr data-ruleset-row data-id="${escapeHtml(item.id)}"><td><div class="ruleset-name"><span class="ruleset-icon ${item.type}">${icon(meta.iconName)}</span><div><div class="ruleset-main">${escapeHtml(item.name)}</div><div class="ruleset-sub" title="${escapeHtml(sourceTitle || item.source)}">${escapeHtml(item.source)}</div></div></div></td><td><span class="badge ${meta.badge}">${meta.label}</span></td><td><span class="type-badge">${escapeHtml(item.format)}</span></td><td><span class="rule-count">${formatRulesetCount(rulesetCountValue(item))}</span><small class="ruleset-size">${escapeHtml(item.size || "--")}</small></td><td>${schedule}</td><td><div class="ruleset-updated"><strong>${escapeHtml(item.updated || "尚未更新")}</strong><span>${item.type === "remote" ? "网络内容" : "手工内容"}</span></div></td><td><div class="table-actions">${item.type === "remote" ? `<button class="entry-action" data-action="refresh-ruleset" data-id="${escapeHtml(item.id)}" title="立即更新">${icon("rotate")}</button>` : ""}<button class="entry-action" data-modal="resource-ruleset" data-id="${escapeHtml(item.id)}" title="${item.type === "manual" ? "编辑规则内容" : "编辑规则集"}">${icon(item.type === "manual" ? "code" : "edit")}</button></div></td></tr>`;
   }
 
   function renderSettings() {
@@ -1160,8 +1250,12 @@
     state.editingRouteRuleId = type === "route" ? itemId : null;
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
     state.editingSubscriptionId = type === "subscription" ? itemId : null;
+    state.editingResourceRulesetId = type === "resource-ruleset" ? itemId : null;
     if (type === "subscription") content = subscriptionModal(itemId);
     else if (type === "subscription-nodes") content = subscriptionNodesModal(itemId);
+    else if (type === "ruleset-hub") content = rulesetHubModal();
+    else if (type === "ruleset-hub-preview") content = rulesetHubPreviewModal(itemId);
+    else if (type === "resource-ruleset") content = resourceRulesetModal(itemId);
     else if (type === "inbound") content = inboundModal(itemId);
     else if (type === "outbound") content = outboundModal(itemId);
     else if (type === "route") content = routeRuleModal(itemId);
@@ -1171,9 +1265,6 @@
     ]);
     else if (type === "dns") content = genericModal("新增 DNS 服务器", "配置上游 DNS 解析器", "dns", [
       ["服务器标签", "dns-remote"], ["服务器类型", "https", "select", ["https", "tls", "quic", "udp", "local"]], ["服务器地址", "https://1.1.1.1/dns-query"], ["解析路由", "节点选择", "select", ["节点选择", "direct"]]
-    ]);
-    else if (type === "ruleset") content = genericModal("添加规则集", "从远程 URL 或本地文件加载规则", "ruleset", [
-      ["规则集标签", "new-ruleset"], ["来源类型", "remote", "select", ["remote", "local"]], ["资源 URL", "https://example.com/rules.srs"], ["格式", "binary", "select", ["binary", "source"]]
     ]);
     else if (type === "json") content = jsonModal();
     else if (type === "command") content = commandModal();
@@ -1838,6 +1929,156 @@
     return modalFrame("全部订阅节点", `${escapeHtml(item.name)} 中的所有节点`, body, footer, "modal-wide modal-subscription-nodes");
   }
 
+  function filteredRulesetHubItems() {
+    const keyword = state.rulesetHubSearch.trim().toLowerCase();
+    return rulesetHubItems.filter((item) => {
+      const categoryMatched = state.rulesetHubCategory === "all" || item.category === state.rulesetHubCategory;
+      const keywordMatched = !keyword || `${item.name} ${item.source} ${item.description} ${item.category}`.toLowerCase().includes(keyword);
+      return categoryMatched && keywordMatched;
+    });
+  }
+
+  function rulesetHubUrl(item, format) {
+    const repository = item.category === "geoip" ? "sing-geoip" : "sing-geosite";
+    const suffix = format === "source" ? "json" : "srs";
+    return `https://raw.githubusercontent.com/SagerNet/${repository}/rule-set/${item.name}.${suffix}`;
+  }
+
+  function isRulesetHubItemAdded(itemId, format) {
+    return state.rulesets.some((item) => item.hubId === itemId && item.format === format);
+  }
+
+  function rulesetHubPreviewContent(item) {
+    const rules = item.category === "geoip"
+      ? [{ ip_cidr: ["203.0.113.0/24", "2001:db8::/32"] }]
+      : [{ domain_suffix: [`${item.id.replace(/^geosite-/, "")}.example`, "example.net"] }];
+    return JSON.stringify({ version: 3, rules }, null, 2);
+  }
+
+  function rulesetHubCard(item) {
+    const sourceAdded = isRulesetHubItemAdded(item.id, "source");
+    const binaryAdded = isRulesetHubItemAdded(item.id, "binary");
+    return `<article class="ruleset-hub-card">
+      <div class="ruleset-hub-card-head"><span class="ruleset-hub-card-icon ${item.category}">${icon(item.category === "geoip" ? "globe" : "rules")}</span><div><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.source)}</span></div><span class="type-badge">${escapeHtml(item.category)}</span></div>
+      <p>${escapeHtml(item.description)}</p>
+      <div class="ruleset-hub-card-meta"><span>${icon("database")} ${formatRulesetCount(item.count)} 条</span><button data-modal="ruleset-hub-preview" data-id="${escapeHtml(item.id)}">预览</button></div>
+      <div class="ruleset-hub-card-actions"><button class="btn btn-sm btn-quiet" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="source" ${sourceAdded ? "disabled" : ""}>${icon(sourceAdded ? "check" : "plus")}${sourceAdded ? "source 已添加" : "添加 source"}</button><button class="btn btn-sm ${binaryAdded ? "btn-quiet" : "btn-primary"}" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="binary" ${binaryAdded ? "disabled" : ""}>${icon(binaryAdded ? "check" : "download")}${binaryAdded ? "binary 已添加" : "添加 binary"}</button></div>
+    </article>`;
+  }
+
+  function rulesetHubResultsMarkup() {
+    const items = filteredRulesetHubItems();
+    return `<div class="ruleset-hub-results-head"><span>显示 ${items.length} / ${rulesetHubItems.length} 个模板</span><small>中心更新于 ${escapeHtml(state.rulesetHubUpdated)}</small></div>${items.length ? `<div class="ruleset-hub-grid">${items.map(rulesetHubCard).join("")}</div>` : `<div class="ruleset-hub-empty">${icon("search")}<strong>没有匹配的规则模板</strong><span>尝试更换关键词或分类。</span></div>`}`;
+  }
+
+  function updateRulesetHubResults() {
+    const container = document.querySelector("[data-ruleset-hub-results]");
+    if (container) container.innerHTML = rulesetHubResultsMarkup();
+  }
+
+  function rulesetHubModal() {
+    const body = `<div class="modal-body ruleset-hub-body">
+      <div class="ruleset-hub-toolbar"><label class="search-wrap">${icon("search")}<input class="search-input" data-ruleset-hub-search value="${escapeHtml(state.rulesetHubSearch)}" placeholder="搜索名称、分类或说明..." /></label><select class="field-select" data-ruleset-hub-category><option value="all" ${state.rulesetHubCategory === "all" ? "selected" : ""}>全部分类</option><option value="geosite" ${state.rulesetHubCategory === "geosite" ? "selected" : ""}>GeoSite</option><option value="geoip" ${state.rulesetHubCategory === "geoip" ? "selected" : ""}>GeoIP</option></select><button class="btn btn-sm" data-action="refresh-ruleset-hub">${icon("rotate")}刷新中心</button></div>
+      <div class="ruleset-hub-callout">${icon("database")}<div><strong>规则集中心</strong><span>从公共模板快速创建网络规则集；导入后可单独设置定时更新周期。</span></div></div>
+      <div data-ruleset-hub-results>${rulesetHubResultsMarkup()}</div>
+    </div>`;
+    const footer = `<div class="modal-footer"><span class="modal-footer-note">source 可查看源码，binary 体积更小</span><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
+    return modalFrame("规则集中心", "参照 GUI.for.SingBox 的 Ruleset Hub 组织模板并快速导入", body, footer, "modal-ruleset-hub");
+  }
+
+  function rulesetHubPreviewModal(itemId) {
+    const item = rulesetHubItems.find((candidate) => candidate.id === itemId);
+    if (!item) return modalFrame("模板不存在", "规则集中心中未找到该项目", `<div class="modal-body"></div>`);
+    const sourceAdded = isRulesetHubItemAdded(item.id, "source");
+    const binaryAdded = isRulesetHubItemAdded(item.id, "binary");
+    const body = `<div class="modal-body ruleset-hub-preview-body"><div class="ruleset-preview-summary"><span class="ruleset-hub-card-icon ${item.category}">${icon(item.category === "geoip" ? "globe" : "rules")}</span><div><strong>${escapeHtml(item.name)}</strong><span>${escapeHtml(item.description)} · ${formatRulesetCount(item.count)} 条规则</span></div><span class="type-badge">${escapeHtml(item.category)}</span></div><div class="custom-json-editor"><div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>source 格式结构预览</span></div></div><pre class="ruleset-preview-code">${escapeHtml(rulesetHubPreviewContent(item))}</pre></div><div class="info-callout custom-json-help">${icon("info")}<span>这是结构预览；实际导入由网络 URL 获取完整的 ${formatRulesetCount(item.count)} 条规则。</span></div></div>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-modal="ruleset-hub">${icon("arrowDown")}返回中心</button><button class="btn btn-quiet" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="source" ${sourceAdded ? "disabled" : ""}>${sourceAdded ? "source 已添加" : "添加 source"}</button><button class="btn btn-primary" data-action="import-hub-ruleset" data-id="${escapeHtml(item.id)}" data-format="binary" ${binaryAdded ? "disabled" : ""}>${binaryAdded ? "binary 已添加" : "添加 binary"}</button></div>`;
+    return modalFrame("规则模板预览", escapeHtml(item.source), body, footer, "modal-wide modal-ruleset-preview");
+  }
+
+  function countManualRules(config) {
+    return config.rules.reduce((total, rule) => total + Object.values(rule).reduce((count, value) => {
+      if (Array.isArray(value)) return count + value.length;
+      return value === null || value === undefined || value === "" ? count : count + 1;
+    }, 0), 0);
+  }
+
+  function validateManualRulesetJson(json) {
+    try {
+      const config = JSON.parse(json);
+      if (!config || typeof config !== "object" || Array.isArray(config)) {
+        return { valid: false, message: "手工规则必须是一个 JSON 对象。" };
+      }
+      if (!Number.isInteger(config.version) || config.version < 1) {
+        return { valid: false, message: "手工规则必须包含有效的数字 version。" };
+      }
+      if (!Array.isArray(config.rules) || !config.rules.length) {
+        return { valid: false, message: "rules 必须是非空数组，请至少输入一条规则。" };
+      }
+      const invalidIndex = config.rules.findIndex((rule) => !rule || typeof rule !== "object" || Array.isArray(rule) || !Object.keys(rule).length);
+      if (invalidIndex >= 0) {
+        return { valid: false, message: `第 ${invalidIndex + 1} 条规则必须是非空对象。` };
+      }
+      const count = countManualRules(config);
+      if (!count) return { valid: false, message: "规则对象中没有可用的匹配内容。" };
+      return { valid: true, config, count, message: `JSON 有效 · ${config.rules.length} 个规则块 · ${count} 条规则信息` };
+    } catch (error) {
+      return { valid: false, message: `JSON 语法错误：${error.message}` };
+    }
+  }
+
+  function manualRulesetValidationMarkup(result) {
+    return `<div class="custom-json-validation ${result.valid ? "valid" : "invalid"}" id="manual-ruleset-validation">${icon(result.valid ? "check" : "info")}<span>${escapeHtml(result.message)}</span></div>`;
+  }
+
+  function renderManualRulesetEditor(content = manualRulesetExample) {
+    const validation = validateManualRulesetJson(content);
+    return `<div class="ruleset-manual-editor"><div class="custom-json-editor"><div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>sing-box source 规则</span></div><div class="inline-actions"><button class="editor-action" type="button" data-action="reset-manual-ruleset">示例</button><button class="editor-action" type="button" data-action="format-manual-ruleset">${icon("sparkles")}格式化</button></div></div><textarea class="custom-json-textarea manual-ruleset-textarea ${validation.valid ? "" : "invalid"}" name="manual-ruleset-json" data-manual-ruleset-json aria-describedby="manual-ruleset-validation" aria-invalid="${!validation.valid}" spellcheck="false">${escapeHtml(content)}</textarea></div>${manualRulesetValidationMarkup(validation)}<div class="info-callout custom-json-help">${icon("info")}<span>直接填写完整 source 规则对象；保存后整个 JSON 会作为一个纯手工规则集维护，不会访问文件系统或网络。</span></div></div>`;
+  }
+
+  function updateManualRulesetValidation(textarea) {
+    const result = validateManualRulesetJson(textarea.value);
+    textarea.classList.toggle("invalid", !result.valid);
+    textarea.setAttribute("aria-invalid", String(!result.valid));
+    const feedback = document.querySelector("#manual-ruleset-validation");
+    if (feedback) feedback.outerHTML = manualRulesetValidationMarkup(result);
+    const submit = document.querySelector("#resource-ruleset-submit");
+    if (submit) submit.disabled = !result.valid;
+    return result;
+  }
+
+  function resourceRulesetTypeFields(type, item = {}) {
+    if (type === "manual") return renderManualRulesetEditor(item.content || manualRulesetExample);
+    return `<div class="resource-ruleset-remote-fields">
+      ${routeEditorRow("保存格式", "format", routeSegmentedControl("resource-ruleset-format", item.format || "binary", [["source", "源文件", "code"], ["binary", "二进制", "database"]], "two"))}
+      ${routeEditorRow("网络地址", "url", `<input class="field-input" name="resource-ruleset-url" type="url" value="${escapeHtml(item.url || "")}" placeholder="https://example.com/rules.srs" required />`)}
+      ${routeEditorRow("定时更新", "update interval", `<select class="field-select" name="resource-ruleset-interval">${selectOptionsMarkup(rulesetUpdateIntervals, item.updateInterval || "1d")}</select>`)}
+      <div class="ruleset-automation-callout">${icon("clock")}<div><strong>自动更新计划</strong><span>浏览器原型会保存所选周期并显示下一次计划；接入后端后由调度任务按此周期下载和校验规则。</span></div></div>
+    </div>`;
+  }
+
+  function resourceRulesetModal(itemId) {
+    const item = state.rulesets.find((ruleset) => String(ruleset.id) === String(itemId));
+    const ruleset = item || { name: "", type: "remote", format: "binary", url: "", updateInterval: "1d", content: manualRulesetExample };
+    const validation = ruleset.type === "manual" ? validateManualRulesetJson(ruleset.content || manualRulesetExample) : { valid: true };
+    const body = `<form class="modal-body resource-ruleset-body" id="resource-ruleset-form" data-form="resource-ruleset"><div class="ruleset-kind-section"><span class="field-label">规则集来源</span>${routeSegmentedControl("resource-ruleset-type", ruleset.type, [["remote", "网络规则集", "globe"], ["manual", "纯手工规则", "code"]], "two")}</div><div class="route-editor-grid resource-ruleset-grid">${routeEditorRow("规则集名称", "name", `<input class="field-input" name="resource-ruleset-name" value="${escapeHtml(ruleset.name)}" placeholder="例如 geosite-cn" required />`)}<div data-resource-ruleset-type-fields data-manual-content="${escapeHtml(ruleset.content || manualRulesetExample)}">${resourceRulesetTypeFields(ruleset.type, ruleset)}</div></div></form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="resource-ruleset-submit" type="submit" form="resource-ruleset-form" ${validation.valid ? "" : "disabled"}>${icon(item ? "save" : "plus")}${item ? "保存规则集" : "添加规则集"}</button></div>`;
+    return modalFrame(item ? "编辑规则集" : "添加规则集", ruleset.type === "manual" ? "直接维护完整的手工规则 JSON" : "配置网络地址与定时更新周期", body, footer, "modal-wide modal-resource-ruleset");
+  }
+
+  function formatRulesetTextSize(text) {
+    const bytes = new TextEncoder().encode(text).length;
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
+  function estimateRulesetSize(count, format) {
+    const bytes = count * (format === "binary" ? 28 : 52);
+    if (bytes < 1024 * 1024) return `${Math.max(1, Math.round(bytes / 1024))} KB`;
+    return `${(bytes / 1024 / 1024).toFixed(1)} MB`;
+  }
+
   function genericModal(title, description, formType, fields) {
     const body = `<form class="modal-body" id="generic-form" data-form="${formType}"><div class="form-grid">${fields.map(([label, nameValue, type = "text", items = []], index) => modalField(label, `field-${index}`, nameValue, type, index === 2, items)).join("")}</div></form>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="generic-form">${icon("check")}确认添加</button></div>`;
@@ -1869,6 +2110,7 @@
     state.editingRouteRuleId = null;
     state.editingRouteRulesetId = null;
     state.editingSubscriptionId = null;
+    state.editingResourceRulesetId = null;
     document.body.style.overflow = "";
   }
 
@@ -2125,6 +2367,23 @@
       textarea.value = subscriptionJsonExample;
       updateSubscriptionValidation(textarea);
       textarea.focus();
+    } else if (action === "format-manual-ruleset") {
+      const textarea = document.querySelector("[data-manual-ruleset-json]");
+      if (!textarea) return;
+      const result = updateManualRulesetValidation(textarea);
+      if (!result.valid) {
+        showToast("暂时无法格式化", "请先修正手工规则 JSON。", "info");
+        return;
+      }
+      textarea.value = JSON.stringify(result.config, null, 2);
+      updateManualRulesetValidation(textarea);
+      textarea.focus();
+    } else if (action === "reset-manual-ruleset") {
+      const textarea = document.querySelector("[data-manual-ruleset-json]");
+      if (!textarea) return;
+      textarea.value = manualRulesetExample;
+      updateManualRulesetValidation(textarea);
+      textarea.focus();
     } else if (action === "copy-subscription-json") {
       const item = state.subscriptions.find((subscription) => subscription.id === actionTarget.dataset.id);
       if (!item) return;
@@ -2151,13 +2410,48 @@
       openModal("subscription-nodes", actionTarget.dataset.id);
     } else if (action === "edit-subscription") {
       openModal("subscription", actionTarget.dataset.id);
-    } else if (action === "update-rulesets") {
-      state.rulesets.forEach((item) => (item.updated = "刚刚"));
+    } else if (action === "refresh-ruleset-hub") {
+      state.rulesetHubUpdated = "刚刚";
+      updateRulesetHubResults();
+      showToast("规则集中心已刷新", `已加载 ${rulesetHubItems.length} 个可用模板。`, "success");
+    } else if (action === "import-hub-ruleset") {
+      const hubItem = rulesetHubItems.find((item) => item.id === actionTarget.dataset.id);
+      const format = actionTarget.dataset.format === "source" ? "source" : "binary";
+      if (!hubItem || isRulesetHubItemAdded(hubItem.id, format)) return;
+      state.rulesets.unshift({
+        id: `hub-ruleset-${hubItem.id}-${format}-${Date.now()}`,
+        hubId: hubItem.id,
+        name: `${hubItem.name}-${format}`,
+        source: hubItem.source,
+        type: "remote",
+        format,
+        count: hubItem.count,
+        size: estimateRulesetSize(hubItem.count, format),
+        updated: "刚刚",
+        url: rulesetHubUrl(hubItem, format),
+        updateInterval: "1d",
+        nextUpdate: rulesetNextUpdateLabel("1d"),
+        disabled: false,
+        previewContent: format === "source" ? rulesetHubPreviewContent(hubItem) : "",
+      });
       render();
-      showToast("规则集更新完成", "5 个规则集均已更新并重新加载。", "success");
+      if (document.querySelector(".ruleset-hub-preview-body")) openModal("ruleset-hub-preview", hubItem.id);
+      else updateRulesetHubResults();
+      showToast("规则集已导入", `${hubItem.name}（${format}）已添加，并启用每天自动更新。`, "success");
+    } else if (action === "update-rulesets") {
+      const remoteRulesets = state.rulesets.filter((item) => item.type === "remote");
+      remoteRulesets.forEach((item) => {
+        item.updated = "刚刚";
+        item.nextUpdate = rulesetNextUpdateLabel(item.updateInterval);
+      });
+      render();
+      showToast("网络规则更新完成", `${remoteRulesets.length} 个网络规则集已更新并重新加载。`, "success");
     } else if (action === "refresh-ruleset") {
-      const item = state.rulesets.find((ruleset) => ruleset.id === Number(actionTarget.dataset.id));
-      if (item) item.updated = "刚刚";
+      const item = state.rulesets.find((ruleset) => String(ruleset.id) === String(actionTarget.dataset.id));
+      if (item?.type === "remote") {
+        item.updated = "刚刚";
+        item.nextUpdate = rulesetNextUpdateLabel(item.updateInterval);
+      }
       render();
       showToast("规则集已更新", `${item?.name || "规则集"} 已加载最新版本。`);
     } else if (action === "clear-ruleset-filter") {
@@ -2170,13 +2464,12 @@
       showToast("原型操作", "正式接入后此处将打开密码修改流程。", "info");
     } else if (action === "project-info") {
       showToast("SingBox Control", "当前为交互原型，后续可对接 sing-box 与 Clash API。", "info");
-    } else if (["edit-entry", "duplicate-entry", "remove-entry", "view-connections", "ruleset-filter"].includes(action)) {
+    } else if (["edit-entry", "duplicate-entry", "remove-entry", "view-connections"].includes(action)) {
       const messages = {
         "edit-entry": "编辑面板将在正式版本中读取完整配置字段。",
         "duplicate-entry": "已复制一个配置项草稿。",
         "remove-entry": "原型不会删除现有配置项。",
         "view-connections": "连接详情页已预留，可接入 Clash API。",
-        "ruleset-filter": "筛选条件已应用。",
       };
       showToast("原型交互", messages[action], "info");
     }
@@ -2188,6 +2481,15 @@
     }
     if (event.target.matches("[data-subscription-json]")) {
       updateSubscriptionValidation(event.target);
+    }
+    if (event.target.matches("[data-manual-ruleset-json]")) {
+      const fields = event.target.closest("[data-resource-ruleset-type-fields]");
+      if (fields) fields.dataset.manualContent = event.target.value;
+      updateManualRulesetValidation(event.target);
+    }
+    if (event.target.matches("[data-ruleset-hub-search]")) {
+      state.rulesetHubSearch = event.target.value;
+      updateRulesetHubResults();
     }
     if (event.target.matches("[data-config-field], [data-settings-input]")) {
       state.dirty = true;
@@ -2209,6 +2511,25 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-ruleset-hub-category]")) {
+      state.rulesetHubCategory = event.target.value;
+      updateRulesetHubResults();
+      return;
+    }
+    if (event.target.matches('[name="resource-ruleset-type"]')) {
+      const form = event.target.closest("#resource-ruleset-form");
+      const fields = form?.querySelector("[data-resource-ruleset-type-fields]");
+      const editor = fields?.querySelector("[data-manual-ruleset-json]");
+      if (editor && fields) fields.dataset.manualContent = editor.value;
+      if (fields) fields.innerHTML = resourceRulesetTypeFields(event.target.value, { content: fields.dataset.manualContent || manualRulesetExample });
+      const manualEditor = fields?.querySelector("[data-manual-ruleset-json]");
+      if (manualEditor) updateManualRulesetValidation(manualEditor);
+      else {
+        const submit = document.querySelector("#resource-ruleset-submit");
+        if (submit) submit.disabled = false;
+      }
+      return;
+    }
     if (event.target.matches("[data-route-common]")) {
       state[event.target.name] = event.target.value;
       state.dirty = true;
@@ -2406,6 +2727,71 @@
       closeModal();
       render();
       showToast(existingIndex >= 0 ? "规则集已更新" : "规则集已添加", `${ruleset.tag}（${ruleset.type}）已加入当前配置草稿。`, "success");
+    } else if (type === "resource-ruleset") {
+      const data = new FormData(form);
+      const rulesetType = String(data.get("resource-ruleset-type") || "remote");
+      const name = String(data.get("resource-ruleset-name") || "").trim();
+      if (!name) {
+        showToast("缺少规则集名称", "请为规则集填写一个便于识别的名称。", "info");
+        form.querySelector('[name="resource-ruleset-name"]')?.focus();
+        return;
+      }
+      const existingIndex = state.rulesets.findIndex((item) => String(item.id) === String(state.editingResourceRulesetId));
+      const existing = existingIndex >= 0 ? state.rulesets[existingIndex] : null;
+      let resource;
+      if (rulesetType === "manual") {
+        const textarea = form.querySelector("[data-manual-ruleset-json]");
+        const result = updateManualRulesetValidation(textarea);
+        if (!result.valid) return;
+        const content = JSON.stringify(result.config, null, 2);
+        resource = {
+          id: existing?.id || `manual-ruleset-${Date.now()}`,
+          name,
+          source: "手工规则 · JSON",
+          type: "manual",
+          format: "source",
+          count: result.count,
+          size: formatRulesetTextSize(content),
+          updated: "刚刚",
+          url: "",
+          updateInterval: "manual",
+          nextUpdate: "手工维护",
+          disabled: existing?.disabled || false,
+          content,
+        };
+      } else {
+        const url = String(data.get("resource-ruleset-url") || "").trim();
+        if (!/^https?:\/\//i.test(url)) {
+          showToast("网络地址无效", "网络规则集必须填写以 http:// 或 https:// 开头的地址。", "info");
+          form.querySelector('[name="resource-ruleset-url"]')?.focus();
+          return;
+        }
+        const format = String(data.get("resource-ruleset-format") || "binary");
+        const updateInterval = String(data.get("resource-ruleset-interval") || "manual");
+        let source = url;
+        try { source = new URL(url).hostname; } catch { /* 保留用户输入的地址作为来源。 */ }
+        resource = {
+          id: existing?.id || `remote-ruleset-${Date.now()}`,
+          hubId: existing?.hubId,
+          name,
+          source,
+          type: "remote",
+          format,
+          count: existing ? rulesetCountValue(existing) : 0,
+          size: existing?.size || "尚未下载",
+          updated: existing?.updated || "尚未更新",
+          url,
+          updateInterval,
+          nextUpdate: rulesetNextUpdateLabel(updateInterval),
+          disabled: existing?.disabled || false,
+          previewContent: existing?.previewContent || "",
+        };
+      }
+      if (existingIndex >= 0) state.rulesets.splice(existingIndex, 1, resource);
+      else state.rulesets.unshift(resource);
+      closeModal();
+      render();
+      showToast(existing ? "规则集已保存" : "规则集已添加", resource.type === "remote" ? `${name} 将按“${rulesetIntervalLabel(resource.updateInterval)}”更新。` : `${name} 已保存 ${formatRulesetCount(resource.count)} 条手工规则信息。`, "success");
     } else if (type === "subscription") {
       const textarea = form.querySelector("[data-subscription-json]");
       const result = updateSubscriptionValidation(textarea);
@@ -2464,6 +2850,19 @@
       event.preventDefault();
       const submit = document.querySelector("#subscription-submit");
       if (!submit?.disabled) document.querySelector("#subscription-form")?.requestSubmit();
+      return;
+    }
+    if (event.target.matches("[data-manual-ruleset-json]") && event.key === "Tab") {
+      event.preventDefault();
+      const textarea = event.target;
+      textarea.setRangeText("  ", textarea.selectionStart, textarea.selectionEnd, "end");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if (event.target.matches("[data-manual-ruleset-json]") && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      const submit = document.querySelector("#resource-ruleset-submit");
+      if (!submit?.disabled) document.querySelector("#resource-ruleset-form")?.requestSubmit();
       return;
     }
     if (event.target.matches("[data-custom-inbound-json]") && event.key === "Tab") {
