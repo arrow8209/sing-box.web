@@ -895,6 +895,25 @@
     </div>`;
   }
 
+  function dnsRouteRule(order, title, type, value, target, tone) {
+    return `<div class="entry-card">
+      <span class="entry-drag">${icon("grip")}</span>
+      <span class="rule-order">${order}</span>
+      <div class="entry-copy">
+        <div class="entry-title-row">
+          <span class="entry-title">${title}</span>
+          <span class="type-badge">${type}</span>
+        </div>
+        <div class="entry-meta"><span>${value}</span></div>
+      </div>
+      <span class="route-target ${tone ? `badge-${tone}` : ""}">${icon("route")}${target}</span>
+      <div class="entry-actions">
+        <button class="entry-action" data-action="edit-entry">${icon("edit")}</button>
+        <button class="entry-action danger" data-action="remove-entry">${icon("trash")}</button>
+      </div>
+    </div>`;
+  }
+
   function statRow(name, value, tone) {
     return `<div class="setting-row"><span class="legend-dot ${tone === "green" ? "" : tone === "red" ? "" : "cyan"}" style="${tone === "green" ? "background:var(--green)" : tone === "red" ? "background:var(--red)" : tone === "orange" ? "background:var(--orange)" : ""}"></span><div class="setting-copy"><div class="setting-name">${name}</div></div><strong style="font-size:11px">${value}</strong></div>`;
   }
@@ -914,9 +933,9 @@
         <article class="card">
           <div class="card-head"><div><h3 class="card-title">DNS 规则</h3><p class="card-subtitle">为不同域名选择解析器</p></div><button class="btn btn-sm" data-modal="dns-rule">${icon("plus")}新增规则</button></div>
           <div class="entry-list">
-            ${routeRule(1, "中国大陆域名", "rule_set", "geosite-cn", "AliDNS DoH", "green")}
-            ${routeRule(2, "国外域名", "rule_set", "geosite-geolocation-!cn", "Cloudflare DoH", "")}
-            ${routeRule(3, "默认解析", "final", "未命中规则", "Cloudflare DoH", "orange")}
+            ${dnsRouteRule(1, "中国大陆域名", "rule_set", "geosite-cn", "AliDNS DoH", "green")}
+            ${dnsRouteRule(2, "国外域名", "rule_set", "geosite-geolocation-!cn", "Cloudflare DoH", "")}
+            ${dnsRouteRule(3, "默认解析", "final", "未命中规则", "Cloudflare DoH", "orange")}
           </div>
         </article>
       </div>
