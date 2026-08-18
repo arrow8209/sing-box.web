@@ -96,6 +96,15 @@
     }
   }
 
+  function readJsonStorage(key, fallback = null) {
+    try {
+      const value = window.localStorage.getItem(key);
+      return value ? JSON.parse(value) : fallback;
+    } catch {
+      return fallback;
+    }
+  }
+
   const configTabs = [
     { id: "general", label: "通用配置", icon: "general" },
     { id: "inbounds", label: "入站配置", icon: "inbound" },
@@ -111,6 +120,27 @@
   "listen_port": 7891,
   "sniff": true,
   "sniff_override_destination": false
+}`;
+
+  const profileJsonExample = `{
+  "log": {
+    "level": "info"
+  },
+  "inbounds": [],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "final": "direct",
+    "rules": []
+  },
+  "dns": {
+    "servers": [],
+    "rules": []
+  }
 }`;
 
   const subscriptionJsonExample = `{
@@ -239,10 +269,26 @@
   const initialPage = ["dashboard", "config", "subscriptions", "rulesets", "settings"].includes(initialRoute[0])
     ? initialRoute[0]
     : "dashboard";
+  const initialConfigTab = configTabs.some((tab) => tab.id === initialRoute[2])
+    ? initialRoute[2]
+    : configTabs.some((tab) => tab.id === initialRoute[1])
+      ? initialRoute[1]
+      : "general";
 
   const state = {
     page: initialPage,
-    activeConfig: configTabs.some((tab) => tab.id === initialRoute[1]) ? initialRoute[1] : "general",
+    activeConfig: initialConfigTab,
+    activeProfileId: "config-a",
+    profiles: [
+      {
+        id: "config-a",
+        name: "自定义配置 A",
+        source: "Web 手工配置",
+        lastSaved: "10:24",
+        version: 12,
+        draft: null,
+      },
+    ],
     configExpanded: true,
     sidebarOpen: false,
     coreRunning: true,
@@ -258,8 +304,21 @@
     accent: readStorage("singbox-accent", "blue"),
     dirty: false,
     lastSaved: "10:24",
+    configFields: {
+      profileName: "自定义配置 A",
+      logLevel: "info",
+      mixedPort: "7890",
+      apiPort: "9090",
+      cacheFile: "cache.db",
+      interface: "自动选择",
+      testUrl: "https://www.gstatic.com/generate_204",
+      testInterval: "5",
+      tolerance: "50",
+    },
+    builtInInbounds: true,
     customInbounds: [],
     formInbounds: [],
+    editingProfileId: null,
     editingCustomInboundId: null,
     editingOutboundId: null,
     editingSubscriptionId: null,
@@ -384,16 +443,292 @@
     ],
   };
 
+  const profileDraftKeys = [
+    "ipv6",
+    "fakeIp",
+    "clashApi",
+    "allowLan",
+    "dirty",
+    "lastSaved",
+    "configFields",
+    "builtInInbounds",
+    "customInbounds",
+    "formInbounds",
+    "outbounds",
+    "routeFindProcess",
+    "routeAutoDetectInterface",
+    "routeDefaultInterface",
+    "routeDefaultDns",
+    "routeFinal",
+    "routeRuleSets",
+    "routeRules",
+  ];
+
+  function cloneData(value) {
+    return JSON.parse(JSON.stringify(value));
+  }
+
+  function activeProfile() {
+    return state.profiles.find((profile) => profile.id === state.activeProfileId) || state.profiles[0];
+  }
+
+  function captureProfileDraft() {
+    return Object.fromEntries(profileDraftKeys.map((key) => [key, cloneData(state[key])]));
+  }
+
+  function saveActiveProfileDraft() {
+    const profile = activeProfile();
+    if (profile) profile.draft = captureProfileDraft();
+  }
+
+  function createBlankProfileDraft(name) {
+    return {
+      ipv6: true,
+      fakeIp: false,
+      clashApi: false,
+      allowLan: false,
+      dirty: true,
+      lastSaved: "尚未保存",
+      configFields: {
+        profileName: name,
+        logLevel: "info",
+        mixedPort: "7890",
+        apiPort: "9090",
+        cacheFile: "cache.db",
+        interface: "自动选择",
+        testUrl: "https://www.gstatic.com/generate_204",
+        testInterval: "5",
+        tolerance: "50",
+      },
+      builtInInbounds: false,
+      customInbounds: [],
+      formInbounds: [],
+      outbounds: [],
+      routeFindProcess: false,
+      routeAutoDetectInterface: true,
+      routeDefaultInterface: "",
+      routeDefaultDns: "",
+      routeFinal: "direct",
+      routeRuleSets: [],
+      routeRules: [
+        { id: `route-insertion-${Date.now()}`, type: "insertion", enable: true, payload: "", invert: false, action: "route", outbound: "", sniffer: [], strategy: "", server: "" },
+      ],
+    };
+  }
+
+  function importedRouteRule(rule, index) {
+    const ignoredKeys = new Set(["action", "outbound", "invert", "sniffer", "strategy", "server"]);
+    const type = Object.keys(rule).find((key) => !ignoredKeys.has(key));
+    const rawPayload = type ? rule[type] : rule;
+    const payload = Array.isArray(rawPayload)
+      ? rawPayload.join(",")
+      : typeof rawPayload === "object" && rawPayload !== null
+        ? JSON.stringify(rawPayload)
+        : String(rawPayload ?? "");
+    const actionValue = typeof rule.action === "string" ? rule.action : rule.action?.type;
+    const action = routeRuleActionOptions.some(([value]) => value === actionValue) ? actionValue : "route";
+    return {
+      id: `imported-route-${Date.now()}-${index}`,
+      type: type || "inline",
+      enable: true,
+      payload: type ? payload : JSON.stringify(rule),
+      invert: Boolean(rule.invert),
+      action,
+      outbound: String(rule.outbound || rule.action?.outbound || ""),
+      sniffer: Array.isArray(rule.sniffer) ? rule.sniffer : [],
+      strategy: String(rule.strategy || ""),
+      server: String(rule.server || ""),
+    };
+  }
+
+  function profileDraftFromJson(config, name) {
+    const inbounds = Array.isArray(config.inbounds) ? config.inbounds : [];
+    const outbounds = Array.isArray(config.outbounds) ? config.outbounds : [];
+    const route = config.route && typeof config.route === "object" ? config.route : {};
+    const routeRules = Array.isArray(route.rules) ? route.rules.map(importedRouteRule) : [];
+    routeRules.push({ id: `route-insertion-${Date.now()}`, type: "insertion", enable: true, payload: "", invert: false, action: "route", outbound: "", sniffer: [], strategy: "", server: "" });
+    const mixedInbound = inbounds.find((inbound) => inbound?.type === "mixed");
+    const externalController = String(config.experimental?.clash_api?.external_controller || "");
+    return {
+      ...createBlankProfileDraft(name),
+      ipv6: config.dns?.strategy !== "ipv4_only",
+      fakeIp: Boolean(config.dns?.fakeip),
+      clashApi: Boolean(config.experimental?.clash_api),
+      dirty: true,
+      configFields: {
+        ...createBlankProfileDraft(name).configFields,
+        profileName: name,
+        logLevel: String(config.log?.level || "info"),
+        mixedPort: String(mixedInbound?.listen_port || "7890"),
+        apiPort: externalController.split(":").pop() || "9090",
+        cacheFile: String(config.experimental?.cache_file?.path || "cache.db"),
+        interface: String(route.default_interface || "自动选择"),
+      },
+      builtInInbounds: false,
+      customInbounds: inbounds.map((inbound, index) => ({
+        id: `imported-in-${Date.now()}-${index}`,
+        json: JSON.stringify(inbound, null, 2),
+        config: cloneData(inbound),
+      })),
+      outbounds: outbounds.map((outbound, index) => ({
+        ...cloneData(outbound),
+        id: `imported-out-${Date.now()}-${index}`,
+        tag: String(outbound.tag || `${outbound.type || "custom"}-${index + 1}`),
+        type: String(outbound.type || "custom"),
+        refs: Array.isArray(outbound.outbounds)
+          ? outbound.outbounds.map((tag) => ({ groupId: "imported", id: String(tag), tag: String(tag), type: "Imported" }))
+          : [],
+      })),
+      routeFindProcess: Boolean(route.find_process),
+      routeAutoDetectInterface: route.auto_detect_interface !== false,
+      routeDefaultInterface: String(route.default_interface || ""),
+      routeDefaultDns: String(route.default_domain_resolver || ""),
+      routeFinal: String(route.final || "direct"),
+      routeRuleSets: (Array.isArray(route.rule_set) ? route.rule_set : []).map((ruleset, index) => ({
+        id: String(ruleset.tag || `imported-ruleset-${index + 1}`),
+        tag: String(ruleset.tag || `规则集 ${index + 1}`),
+        type: String(ruleset.type || "inline"),
+        format: String(ruleset.format || "source"),
+        url: String(ruleset.url || ""),
+        download_detour: String(ruleset.download_detour || ""),
+        update_interval: String(ruleset.update_interval || ""),
+        path: String(ruleset.path || ""),
+        rules: JSON.stringify(ruleset.rules || [], null, 2),
+      })),
+      routeRules,
+    };
+  }
+
+  function outboundConfigForExport(outbound) {
+    const { id, refs = [], ...config } = cloneData(outbound);
+    if (["selector", "urltest"].includes(config.type)) {
+      config.outbounds = refs.map((reference) => reference.tag).filter(Boolean);
+    }
+    return config;
+  }
+
+  function routeRuleForExport(rule) {
+    if (rule.type === "inline") {
+      try {
+        return JSON.parse(rule.payload);
+      } catch {
+        return { action: rule.action || "route", outbound: rule.outbound || undefined };
+      }
+    }
+    const listTypes = new Set(["inbound", "network", "protocol", "domain", "domain_suffix", "domain_keyword", "domain_regex", "source_ip_cidr", "ip_cidr", "source_port", "source_port_range", "port", "port_range", "process_name", "process_path", "process_path_regex", "clash_mode", "rule_set"]);
+    const values = String(rule.payload || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const config = {
+      [rule.type]: listTypes.has(rule.type) ? values : rule.payload,
+    };
+    if (rule.invert) config.invert = true;
+    if (rule.action && rule.action !== "route") config.action = rule.action;
+    if (rule.outbound) config.outbound = rule.outbound;
+    if (rule.sniffer?.length) config.sniffer = rule.sniffer;
+    if (rule.strategy) config.strategy = rule.strategy;
+    if (rule.server) config.server = rule.server;
+    return config;
+  }
+
+  function routeRulesetForExport(ruleset) {
+    const config = { tag: ruleset.tag, type: ruleset.type };
+    if (ruleset.type === "remote") {
+      config.format = ruleset.format;
+      config.url = ruleset.url;
+      if (ruleset.download_detour) config.download_detour = ruleset.download_detour;
+      if (ruleset.update_interval) config.update_interval = ruleset.update_interval;
+    } else if (ruleset.type === "local") {
+      config.format = ruleset.format;
+      config.path = ruleset.path;
+    } else {
+      try { config.rules = JSON.parse(ruleset.rules); } catch { config.rules = []; }
+    }
+    return config;
+  }
+
+  function currentProfileConfigObject() {
+    const profile = activeProfile();
+    const config = profile.rawConfig ? cloneData(profile.rawConfig) : {};
+    config.log = { ...(config.log || {}), level: state.configFields.logLevel };
+    const builtIn = state.builtInInbounds
+      ? [
+          { type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: Number(state.configFields.mixedPort) || 7890 },
+          { type: "tun", tag: "tun-in", interface_name: "singtun0", address: ["172.19.0.1/30"], auto_route: true, strict_route: true },
+          { type: "direct", tag: "dns-in", listen: "127.0.0.1", listen_port: 5353 },
+        ]
+      : [];
+    config.inbounds = [
+      ...builtIn,
+      ...state.formInbounds.map((item) => cloneData(item.config)),
+      ...state.customInbounds.map((item) => cloneData(item.config)),
+    ];
+    config.outbounds = state.outbounds.map(outboundConfigForExport);
+    config.route = {
+      ...(config.route || {}),
+      auto_detect_interface: state.routeAutoDetectInterface,
+      final: state.routeFinal,
+      rules: state.routeRules.filter((rule) => rule.type !== "insertion").map(routeRuleForExport),
+      rule_set: state.routeRuleSets.map(routeRulesetForExport),
+    };
+    if (state.routeFindProcess) config.route.find_process = true;
+    else delete config.route.find_process;
+    if (state.routeDefaultInterface) config.route.default_interface = state.routeDefaultInterface;
+    else delete config.route.default_interface;
+    if (state.routeDefaultDns) config.route.default_domain_resolver = state.routeDefaultDns;
+    else delete config.route.default_domain_resolver;
+    if (!config.dns) config.dns = { servers: [], rules: [] };
+    return config;
+  }
+
+  function loadProfileDraft(profile) {
+    const defaults = createBlankProfileDraft(profile.name);
+    const saved = profile.draft || defaults;
+    const draft = {
+      ...defaults,
+      ...cloneData(saved),
+      configFields: { ...defaults.configFields, ...(saved.configFields || {}), profileName: saved.configFields?.profileName || profile.name },
+    };
+    profile.draft = cloneData(draft);
+    profileDraftKeys.forEach((key) => {
+      state[key] = cloneData(draft[key]);
+    });
+  }
+
+  function persistProfiles() {
+    writeStorage("singbox-config-profiles", JSON.stringify({
+      activeProfileId: state.activeProfileId,
+      profiles: state.profiles,
+    }));
+  }
+
+  function initializeProfiles() {
+    const stored = readJsonStorage("singbox-config-profiles");
+    const storedProfiles = Array.isArray(stored?.profiles)
+      ? stored.profiles.filter((profile) => profile?.id && profile?.name && profile?.draft)
+      : [];
+    if (storedProfiles.length) {
+      state.profiles = storedProfiles;
+      const routeProfileId = initialRoute[0] === "config" && initialRoute[2] ? initialRoute[1] : null;
+      state.activeProfileId = storedProfiles.some((profile) => profile.id === routeProfileId)
+        ? routeProfileId
+        : storedProfiles.some((profile) => profile.id === stored.activeProfileId)
+          ? stored.activeProfileId
+          : storedProfiles[0].id;
+      loadProfileDraft(activeProfile());
+      return;
+    }
+    state.profiles[0].draft = captureProfileDraft();
+  }
+
   const pageMeta = {
     dashboard: { title: "仪表盘", parent: "控制台" },
-    config: { title: "自定义配置 A", parent: "配置" },
+    config: { title: "配置工作台", parent: "配置" },
     subscriptions: { title: "订阅配置", parent: "资源管理" },
     rulesets: { title: "规则集中心", parent: "资源管理" },
     settings: { title: "设置", parent: "系统" },
   };
 
   function inboundCount() {
-    return 3 + state.customInbounds.length + state.formInbounds.length;
+    return (state.builtInInbounds ? 3 : 0) + state.customInbounds.length + state.formInbounds.length;
   }
 
   function routeRuleCount() {
@@ -428,15 +763,21 @@
       <div class="sidebar-scroll">
         <div class="nav-label">概览</div>
         ${navItem("dashboard", "仪表盘", "dashboard")}
-        <button class="nav-parent ${configActive ? "active" : ""} ${state.configExpanded ? "expanded" : ""}" data-action="config-parent">
-          ${icon("config")}<span>配置</span>${icon("chevron", "nav-chevron")}
-        </button>
+        <div class="nav-parent-row">
+          <button class="nav-parent ${configActive ? "active" : ""} ${state.configExpanded ? "expanded" : ""}" data-action="config-parent">
+            ${icon("config")}<span>配置</span><span class="nav-count">${state.profiles.length}</span>${icon("chevron", "nav-chevron")}
+          </button>
+          <button class="nav-parent-add" data-modal="profile-new" aria-label="新增配置" title="新增配置">${icon("plus")}</button>
+        </div>
         ${
           state.configExpanded
             ? `<div class="nav-config-tree">
-                <button class="config-name" data-config="general">
-                  <span class="config-status-dot"></span><span>自定义配置 A</span>
-                </button>
+                ${state.profiles.map((profile) => `<div class="config-tree-item ${profile.id === state.activeProfileId ? "active" : ""}">
+                  <button class="config-name" data-profile="${escapeHtml(profile.id)}" title="切换到 ${escapeHtml(profile.name)}">
+                    <span class="config-status-dot"></span><span>${escapeHtml(profile.name)}</span>${(profile.id === state.activeProfileId ? state.dirty : profile.draft?.dirty) ? '<i class="config-dirty-dot" title="有未保存更改"></i>' : ""}
+                  </button>
+                  <button class="config-item-action" data-modal="profile-manage" data-id="${escapeHtml(profile.id)}" aria-label="管理 ${escapeHtml(profile.name)}" title="管理配置">${icon("more")}</button>
+                </div>`).join("")}
               </div>`
             : ""
         }
@@ -465,7 +806,7 @@
     return `<header class="topbar">
       <button class="mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${icon("menu")}</button>
       <div class="page-heading">
-        <h1>${meta.title}</h1>
+        <h1>${state.page === "config" ? escapeHtml(activeProfile().name) : meta.title}</h1>
         <div class="breadcrumbs"><span>${meta.parent}</span><span>/</span><span class="current">${current}</span></div>
       </div>
       <div class="topbar-actions">
@@ -540,7 +881,7 @@
               <div class="hero-meta">
                 <div class="hero-meta-item"><span>运行时间</span><strong>${state.coreRunning ? "12 天 08:42:16" : "--"}</strong></div>
                 <div class="hero-meta-item"><span>核心版本</span><strong>1.11.11</strong></div>
-                <div class="hero-meta-item"><span>活动配置</span><strong>自定义配置 A</strong></div>
+                <div class="hero-meta-item"><span>活动配置</span><strong>${escapeHtml(activeProfile().name)}</strong></div>
               </div>
               <div class="hero-actions">
                 <button class="hero-btn" data-action="restart-core">${icon("rotate")}重启</button>
@@ -599,11 +940,11 @@
           <div class="overview-stack">
             <article class="card active-profile">
               <div class="profile-top"><div class="profile-icon">${icon("config")}</div><span class="badge badge-success">使用中</span></div>
-              <div class="profile-name">自定义配置 A</div>
+              <div class="profile-name">${escapeHtml(activeProfile().name)}</div>
               <div class="profile-description">规则模式 · 最后应用于今天 10:24</div>
               <div class="profile-stats">
                 <div class="profile-stat"><strong>${inboundCount()}</strong><span>入站</span></div>
-                <div class="profile-stat"><strong>12</strong><span>出站</span></div>
+                <div class="profile-stat"><strong>${state.outbounds.length}</strong><span>出站</span></div>
                 <div class="profile-stat"><strong>${routeRuleCount()}</strong><span>路由规则</span></div>
               </div>
             </article>
@@ -654,6 +995,7 @@
   }
 
   function configIntro() {
+    const profile = activeProfile();
     return `<div class="page-intro">
       <div class="page-intro-copy"><h2>配置工作台</h2><p>通过表单管理 sing-box 配置，保存后可直接应用到运行中的核心。</p></div>
       <div class="page-actions">
@@ -663,8 +1005,8 @@
     </div>
     <article class="card profile-banner">
       <div class="profile-banner-icon">${icon("config")}</div>
-      <div class="profile-banner-copy"><div class="profile-banner-title">自定义配置 A <span class="badge badge-success">当前配置</span></div><div class="profile-banner-desc">本地手动维护 · config/custom-a.json</div></div>
-      <div class="profile-banner-meta"><div><span class="faint">最后保存</span><strong>${state.lastSaved}</strong></div><div><span class="faint">配置版本</span><strong>v12</strong></div></div>
+      <div class="profile-banner-copy"><div class="profile-banner-title">${escapeHtml(profile.name)} <span class="badge badge-success">当前配置</span></div><div class="profile-banner-desc">${escapeHtml(profile.source)} · ${escapeHtml(profile.id)}</div></div>
+      <div class="profile-banner-meta"><div><span class="faint">最后保存</span><strong>${escapeHtml(state.lastSaved)}</strong></div><div><span class="faint">配置版本</span><strong>v${profile.version}</strong></div><button class="btn btn-sm" data-modal="profile-manage" data-id="${escapeHtml(profile.id)}">${icon("edit")}管理</button></div>
     </article>
     <nav class="config-tabs" aria-label="配置分类">
       ${configTabs.map((tab) => `<button class="config-tab ${state.activeConfig === tab.id ? "active" : ""}" data-config="${tab.id}">${icon(tab.icon)}${tab.label}</button>`).join("")}
@@ -683,9 +1025,9 @@
   function formField(label, name, value, options = {}) {
     const { type = "text", hint = "", suffix = "", full = false } = options;
     if (type === "select") {
-      return `<label class="form-field ${full ? "full" : ""}"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><select class="field-select" data-config-field="${name}">${options.items.map((item) => `<option ${item === value ? "selected" : ""}>${item}</option>`).join("")}</select></label>`;
+      return `<label class="form-field ${full ? "full" : ""}"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><select class="field-select" data-config-field="${name}">${options.items.map((item) => `<option ${item === value ? "selected" : ""}>${escapeHtml(item)}</option>`).join("")}</select></label>`;
     }
-    return `<label class="form-field ${full ? "full" : ""}"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><span class="${suffix ? "input-suffix-wrap" : ""}"><input class="field-input" type="${type}" value="${value}" data-config-field="${name}" />${suffix ? `<span class="input-suffix">${suffix}</span>` : ""}</span></label>`;
+    return `<label class="form-field ${full ? "full" : ""}"><span class="field-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><span class="${suffix ? "input-suffix-wrap" : ""}"><input class="field-input" type="${type}" value="${escapeHtml(value)}" data-config-field="${name}" />${suffix ? `<span class="input-suffix">${suffix}</span>` : ""}</span></label>`;
   }
 
   function settingToggle(name, description, key) {
@@ -698,12 +1040,12 @@
         <article class="card">
           <div class="card-head"><div><h3 class="card-title">基础参数</h3><p class="card-subtitle">配置名称、日志与服务端口</p></div><span class="type-badge">general</span></div>
           <div class="card-body"><div class="form-grid">
-            ${formField("配置名称", "profileName", "自定义配置 A", { hint: "仅用于控制台展示" })}
-            ${formField("日志等级", "logLevel", "info", { type: "select", items: ["debug", "info", "warn", "error", "panic"] })}
-            ${formField("Mixed 入站端口", "mixedPort", "7890", { type: "number", suffix: "端口" })}
-            ${formField("Clash API 端口", "apiPort", "9090", { type: "number", suffix: "端口" })}
-            ${formField("缓存文件", "cacheFile", "cache.db", { hint: "工作目录下" })}
-            ${formField("网络接口", "interface", "自动选择", { type: "select", items: ["自动选择", "eth0", "wlan0", "en0"] })}
+            ${formField("配置名称", "profileName", state.configFields.profileName, { hint: "保存后同步更新配置列表" })}
+            ${formField("日志等级", "logLevel", state.configFields.logLevel, { type: "select", items: ["debug", "info", "warn", "error", "panic"] })}
+            ${formField("Mixed 入站端口", "mixedPort", state.configFields.mixedPort, { type: "number", suffix: "端口" })}
+            ${formField("Clash API 端口", "apiPort", state.configFields.apiPort, { type: "number", suffix: "端口" })}
+            ${formField("缓存文件", "cacheFile", state.configFields.cacheFile, { hint: "核心工作目录下" })}
+            ${formField("网络接口", "interface", state.configFields.interface, { type: "select", items: ["自动选择", "eth0", "wlan0", "en0"] })}
           </div></div>
         </article>
         <article class="card">
@@ -720,8 +1062,8 @@
           <div class="card-head"><div><h3 class="card-title">配置摘要</h3><p class="card-subtitle">当前配置结构</p></div></div>
           <div class="card-body setting-list">
             ${summarySetting("入站", `${inboundCount()} 个监听器`, "inbound")}
-            ${summarySetting("出站", "12 个节点 / 4 个组", "outbound")}
-            ${summarySetting("路由", "16 条规则", "route")}
+            ${summarySetting("出站", `${state.outbounds.length} 个项目`, "outbound")}
+            ${summarySetting("路由", `${routeRuleCount()} 条规则`, "route")}
             ${summarySetting("DNS", "4 个服务器", "dns")}
           </div>
         </article>
@@ -736,16 +1078,10 @@
   }
 
   function renderCodePreview(full = false) {
+    const json = JSON.stringify(currentProfileConfigObject(), null, 2);
     return `<div class="code-preview ${full ? "code-preview-full" : ""}">
       <div class="code-preview-head"><span class="window-dots"><i></i><i></i><i></i></span><span>config.json</span><button class="entry-action" data-action="copy-json" title="复制 JSON">${icon("copy")}</button></div>
-      <pre>{
-  <span class="code-key">"log"</span>: { <span class="code-key">"level"</span>: <span class="code-string">"info"</span> },
-  <span class="code-key">"inbounds"</span>: [
-    { <span class="code-key">"type"</span>: <span class="code-string">"mixed"</span>, <span class="code-key">"listen_port"</span>: <span class="code-number">7890</span> },
-    { <span class="code-key">"type"</span>: <span class="code-string">"tun"</span>, <span class="code-key">"auto_route"</span>: <span class="code-number">true</span> }
-  ],
-  <span class="code-key">"route"</span>: { <span class="code-key">"final"</span>: <span class="code-string">"节点选择"</span> }
-}</pre>
+      <pre>${escapeHtml(json)}</pre>
     </div>`;
   }
 
@@ -755,11 +1091,12 @@
         <article class="card">
           <div class="card-head"><div><h3 class="card-title">入站监听器</h3><p class="card-subtitle">流量进入 sing-box 的入口</p></div><button class="btn btn-sm btn-primary" data-modal="inbound">${icon("plus")}新增入站</button></div>
           <div class="entry-list">
-            ${entryCard("mixed-in", "Mixed Proxy", "mixed", "127.0.0.1:7890", "HTTP 与 SOCKS 复合代理", "inbound", "")}
+            ${state.builtInInbounds ? `${entryCard("mixed-in", "Mixed Proxy", "mixed", "127.0.0.1:7890", "HTTP 与 SOCKS 复合代理", "inbound", "")}
             ${entryCard("tun-in", "TUN Interface", "tun", "singtun0 · 172.19.0.1/30", "自动路由 · 严格路由", "shield", "cyan")}
-            ${entryCard("dns-in", "DNS Listener", "direct", "127.0.0.1:5353", "DNS 劫持入口", "dns", "green")}
+            ${entryCard("dns-in", "DNS Listener", "direct", "127.0.0.1:5353", "DNS 劫持入口", "dns", "green")}` : ""}
             ${state.formInbounds.map(formInboundCard).join("")}
             ${state.customInbounds.map(customInboundCard).join("")}
+            ${inboundCount() ? "" : `<button class="config-empty-state" data-modal="inbound">${icon("inbound")}<strong>尚未添加入站</strong><span>点击创建第一个监听入口</span></button>`}
           </div>
         </article>
       </div>
@@ -824,6 +1161,7 @@
           <div class="card-head"><div><h3 class="card-title">出站与策略组</h3><p class="card-subtitle">决定流量最终使用的出口</p></div><button class="btn btn-sm btn-primary" data-modal="outbound">${icon("plus")}新增出站</button></div>
           <div class="outbound-grid">
             ${state.outbounds.map((outbound) => outboundCard(outbound)).join("")}
+            ${state.outbounds.length ? "" : `<button class="config-empty-state" data-modal="outbound">${icon("outbound")}<strong>尚未添加出站</strong><span>点击创建第一个出站或策略组</span></button>`}
           </div>
         </article>
       </div>
@@ -840,9 +1178,9 @@
         <article class="card">
           <div class="card-head"><div><h3 class="card-title">健康检查</h3><p class="card-subtitle">策略组自动测速参数</p></div></div>
           <div class="card-body"><div class="form-grid" style="grid-template-columns:1fr">
-            ${formField("测试地址", "testUrl", "https://www.gstatic.com/generate_204")}
-            ${formField("测试间隔", "testInterval", "5", { suffix: "分钟" })}
-            ${formField("容差", "tolerance", "50", { suffix: "ms" })}
+            ${formField("测试地址", "testUrl", state.configFields.testUrl)}
+            ${formField("测试间隔", "testInterval", state.configFields.testInterval, { suffix: "分钟" })}
+            ${formField("容差", "tolerance", state.configFields.tolerance, { suffix: "ms" })}
           </div></div>
         </article>
       </aside>
@@ -914,7 +1252,7 @@
   }
 
   function routeInboundOptions() {
-    const options = [["mixed-in", "mixed-in"], ["tun-in", "tun-in"], ["dns-in", "dns-in"]];
+    const options = state.builtInInbounds ? [["mixed-in", "mixed-in"], ["tun-in", "tun-in"], ["dns-in", "dns-in"]] : [];
     state.formInbounds.forEach((item) => options.push([item.id, item.config.tag || item.config.type]));
     state.customInbounds.forEach((item) => options.push([item.id, item.config.tag || item.config.type]));
     return options;
@@ -1240,13 +1578,17 @@
 
   function openModal(type, itemId = null) {
     let content = "";
+    state.editingProfileId = ["profile-manage", "profile-delete"].includes(type) ? itemId : null;
     state.editingCustomInboundId = type === "inbound" ? itemId : null;
     state.editingOutboundId = type === "outbound" ? itemId : null;
     state.editingRouteRuleId = type === "route" ? itemId : null;
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
     state.editingSubscriptionId = type === "subscription" ? itemId : null;
     state.editingResourceRulesetId = type === "resource-ruleset" ? itemId : null;
-    if (type === "subscription") content = subscriptionModal(itemId);
+    if (type === "profile-new") content = profileCreateModal();
+    else if (type === "profile-manage") content = profileManageModal(itemId);
+    else if (type === "profile-delete") content = profileDeleteModal(itemId);
+    else if (type === "subscription") content = subscriptionModal(itemId);
     else if (type === "subscription-nodes") content = subscriptionNodesModal(itemId);
     else if (type === "ruleset-hub") content = rulesetHubModal();
     else if (type === "ruleset-hub-preview") content = rulesetHubPreviewModal(itemId);
@@ -2085,6 +2427,108 @@
     return `<label class="form-field ${full ? "full" : ""}"><span class="field-label">${label}</span><input class="field-input" name="${name}" type="${type}" value="${value}" ${name === "name" ? "required" : ""} /></label>`;
   }
 
+  function nextProfileName() {
+    const index = state.profiles.length;
+    return index < 26 ? `自定义配置 ${String.fromCharCode(65 + index)}` : `自定义配置 ${index + 1}`;
+  }
+
+  function validateProfileJson(json) {
+    try {
+      const config = JSON.parse(json);
+      if (!config || typeof config !== "object" || Array.isArray(config)) {
+        return { valid: false, message: "完整配置必须是一个 JSON 对象。" };
+      }
+      const knownKeys = ["log", "dns", "inbounds", "outbounds", "route", "experimental"];
+      if (!knownKeys.some((key) => Object.hasOwn(config, key))) {
+        return { valid: false, message: "没有找到 sing-box 配置字段，请检查输入内容。" };
+      }
+      if (config.inbounds !== undefined && !Array.isArray(config.inbounds)) {
+        return { valid: false, message: "inbounds 必须是数组。" };
+      }
+      if (config.outbounds !== undefined && !Array.isArray(config.outbounds)) {
+        return { valid: false, message: "outbounds 必须是数组。" };
+      }
+      if (config.route !== undefined && (!config.route || typeof config.route !== "object" || Array.isArray(config.route))) {
+        return { valid: false, message: "route 必须是对象。" };
+      }
+      if (config.dns !== undefined && (!config.dns || typeof config.dns !== "object" || Array.isArray(config.dns))) {
+        return { valid: false, message: "dns 必须是对象。" };
+      }
+      const inboundTotal = config.inbounds?.length || 0;
+      const outboundTotal = config.outbounds?.length || 0;
+      const ruleTotal = Array.isArray(config.route?.rules) ? config.route.rules.length : 0;
+      return { valid: true, config, message: `JSON 有效 · ${inboundTotal} 个入站 · ${outboundTotal} 个出站 · ${ruleTotal} 条路由规则` };
+    } catch (error) {
+      return { valid: false, message: `JSON 语法错误：${error.message}` };
+    }
+  }
+
+  function profileJsonValidationMarkup(result) {
+    return `<div class="custom-json-validation ${result.valid ? "valid" : "invalid"}" id="profile-json-validation">${icon(result.valid ? "check" : "info")}<span>${escapeHtml(result.message)}</span></div>`;
+  }
+
+  function updateProfileJsonValidation(textarea) {
+    const result = validateProfileJson(textarea.value);
+    textarea.classList.toggle("invalid", !result.valid);
+    textarea.setAttribute("aria-invalid", String(!result.valid));
+    const feedback = document.querySelector("#profile-json-validation");
+    if (feedback) feedback.outerHTML = profileJsonValidationMarkup(result);
+    const mode = document.querySelector('input[name="profile-create-mode"]:checked')?.value;
+    const submit = document.querySelector("#profile-create-submit");
+    if (submit && mode === "json") submit.disabled = !result.valid;
+    return result;
+  }
+
+  function profileModeNote(mode) {
+    const notes = {
+      blank: ["从空白开始", "创建不含入站、出站和路由规则的新配置。"],
+      copy: ["复制当前配置", `完整复制“${activeProfile().name}”的当前草稿，之后可独立编辑。`],
+      json: ["导入完整 JSON", "粘贴一个完整 sing-box 配置对象，并将可识别内容载入各配置页。"],
+    };
+    const [title, description] = notes[mode] || notes.blank;
+    return `${icon(mode === "json" ? "code" : mode === "copy" ? "copy" : "sparkles")}<div><strong>${escapeHtml(title)}</strong><span>${escapeHtml(description)}</span></div>`;
+  }
+
+  function profileCreateModal() {
+    const name = nextProfileName();
+    const validation = validateProfileJson(profileJsonExample);
+    const body = `<form class="modal-body profile-create-body" id="profile-create-form" data-form="profile-create">
+      <label class="form-field full"><span class="field-label">配置名称<small>用于列表与页面标题</small></span><input class="field-input" name="profile-name" value="${escapeHtml(name)}" maxlength="48" required /></label>
+      <div class="profile-create-mode"><span class="field-label">创建方式</span>${routeSegmentedControl("profile-create-mode", "blank", [["blank", "空白配置", "sparkles"], ["copy", "复制当前", "copy"], ["json", "粘贴 JSON", "code"]])}</div>
+      <div class="profile-mode-note" data-profile-mode-note>${profileModeNote("blank")}</div>
+      <div class="profile-json-section" data-profile-json-section hidden>
+        <div class="custom-json-editor"><div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>完整 sing-box 配置</span></div><button class="editor-action" type="button" data-action="format-profile-json">${icon("sparkles")}格式化</button></div><textarea class="custom-json-textarea profile-json-textarea" name="profile-json" data-profile-json aria-describedby="profile-json-validation" spellcheck="false">${escapeHtml(profileJsonExample)}</textarea></div>
+        ${profileJsonValidationMarkup(validation)}
+      </div>
+    </form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="profile-create-submit" type="submit" form="profile-create-form">${icon("plus")}创建并打开</button></div>`;
+    return modalFrame("新增配置", "创建独立的 sing-box 配置草稿", body, footer, "modal-wide modal-profile");
+  }
+
+  function profileManageModal(itemId) {
+    const profile = state.profiles.find((item) => item.id === itemId);
+    if (!profile) return modalFrame("配置不存在", "无法找到要管理的配置", `<div class="modal-body"></div>`);
+    const draft = profile.id === state.activeProfileId ? captureProfileDraft() : profile.draft;
+    const inboundTotal = (draft.builtInInbounds ? 3 : 0) + draft.customInbounds.length + draft.formInbounds.length;
+    const ruleTotal = draft.routeRules.filter((rule) => rule.type !== "insertion").length;
+    const body = `<form class="modal-body profile-manage-body" id="profile-manage-form" data-form="profile-manage" data-id="${escapeHtml(profile.id)}">
+      <label class="form-field full"><span class="field-label">配置名称<small>保存后立即更新侧栏和标题</small></span><input class="field-input" name="profile-name" value="${escapeHtml(profile.name)}" maxlength="48" required /></label>
+      <div class="profile-manage-summary"><div><strong>${inboundTotal}</strong><span>入站</span></div><div><strong>${draft.outbounds.length}</strong><span>出站</span></div><div><strong>${ruleTotal}</strong><span>路由规则</span></div><div><strong>v${profile.version}</strong><span>配置版本</span></div></div>
+      <div class="info-callout">${icon("info")}<span>${escapeHtml(profile.source)} · 最后保存 ${escapeHtml(profile.lastSaved || draft.lastSaved)}</span></div>
+    </form>`;
+    const deleteDisabled = state.profiles.length === 1;
+    const footer = `<div class="modal-footer profile-manage-footer"><button class="btn btn-danger" type="button" data-modal="profile-delete" data-id="${escapeHtml(profile.id)}" ${deleteDisabled ? "disabled title=\"至少保留一个配置\"" : ""}>${icon("trash")}删除配置</button><span class="modal-footer-spacer"></span><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="profile-manage-form">${icon("save")}保存名称</button></div>`;
+    return modalFrame("管理配置", profile.id === state.activeProfileId ? "当前正在编辑此配置" : "重命名或删除配置", body, footer, "modal-profile-manage");
+  }
+
+  function profileDeleteModal(itemId) {
+    const profile = state.profiles.find((item) => item.id === itemId);
+    if (!profile) return modalFrame("配置不存在", "无法找到要删除的配置", `<div class="modal-body"></div>`);
+    const body = `<div class="modal-body profile-delete-body"><div class="profile-delete-icon">${icon("trash")}</div><div><strong>确定删除“${escapeHtml(profile.name)}”吗？</strong><p>该配置的全部草稿内容会从浏览器中移除，此操作无法撤销。</p></div></div>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-modal="profile-manage" data-id="${escapeHtml(profile.id)}">返回</button><button class="btn btn-danger" data-action="confirm-delete-profile" data-id="${escapeHtml(profile.id)}">${icon("trash")}确认删除</button></div>`;
+    return modalFrame("删除配置", "请确认本次操作", body, footer, "modal-profile-delete");
+  }
+
   function jsonModal() {
     const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>配置结构检查通过，共包含 ${inboundCount()} 个入站、${state.outbounds.length} 个出站与 ${routeRuleCount()} 条路由规则。</span></div></div>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="copy-json">${icon("copy")}复制 JSON</button><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
@@ -2100,6 +2544,7 @@
 
   function closeModal() {
     modalRoot.innerHTML = "";
+    state.editingProfileId = null;
     state.editingCustomInboundId = null;
     state.editingOutboundId = null;
     state.editingRouteRuleId = null;
@@ -2128,10 +2573,22 @@
     }
     state.sidebarOpen = false;
     closeModal();
-    const route = page === "config" ? `#/${page}/${state.activeConfig}` : `#/${page}`;
-    window.history.pushState({ page, configId: state.activeConfig }, "", route);
+    const route = page === "config" ? `#/${page}/${state.activeProfileId}/${state.activeConfig}` : `#/${page}`;
+    window.history.pushState({ page, profileId: state.activeProfileId, configId: state.activeConfig }, "", route);
     render();
     window.scrollTo({ top: 0, behavior: "smooth" });
+  }
+
+  function switchProfile(profileId) {
+    const profile = state.profiles.find((item) => item.id === profileId);
+    if (!profile) return;
+    if (profile.id !== state.activeProfileId) {
+      saveActiveProfileDraft();
+      state.activeProfileId = profile.id;
+      loadProfileDraft(profile);
+      persistProfiles();
+    }
+    navigate("config", state.activeConfig);
   }
 
   function setAccent(accent) {
@@ -2222,6 +2679,12 @@
       return;
     }
 
+    const profileTarget = event.target.closest("[data-profile]");
+    if (profileTarget) {
+      switchProfile(profileTarget.dataset.profile);
+      return;
+    }
+
     const configTarget = event.target.closest("[data-config]");
     if (configTarget) {
       navigate("config", configTarget.dataset.config);
@@ -2307,13 +2770,32 @@
       window.setTimeout(() => {
         state.coreRunning = true;
         render();
-        showToast("核心重启完成", "sing-box 已使用自定义配置 A 恢复运行。");
+        showToast("核心重启完成", `sing-box 已使用“${activeProfile().name}”恢复运行。`);
       }, 900);
     } else if (action === "refresh-dashboard") {
       showToast("状态已刷新", "流量、连接与核心状态均已更新。", "info");
     } else if (action === "save-config") {
+      const name = String(state.configFields.profileName || "").trim();
+      if (!name) {
+        showToast("配置名称不能为空", "请在通用配置中填写配置名称。", "info");
+        document.querySelector('[data-config-field="profileName"]')?.focus();
+        return;
+      }
+      const duplicate = state.profiles.find((profile) => profile.id !== state.activeProfileId && profile.name.toLowerCase() === name.toLowerCase());
+      if (duplicate) {
+        showToast("配置名称已存在", `“${duplicate.name}”已在配置列表中，请换一个名称。`, "info");
+        document.querySelector('[data-config-field="profileName"]')?.focus();
+        return;
+      }
       state.dirty = false;
       state.lastSaved = new Date().toLocaleTimeString("zh-CN", { hour: "2-digit", minute: "2-digit", hour12: false });
+      const profile = activeProfile();
+      profile.name = name;
+      profile.lastSaved = state.lastSaved;
+      profile.version = Number(profile.version || 0) + 1;
+      profile.rawConfig = currentProfileConfigObject();
+      saveActiveProfileDraft();
+      persistProfiles();
       render();
       showToast("配置已保存并应用", "语法检查通过，核心已无感重载。", "success");
     } else if (action === "save-settings") {
@@ -2325,7 +2807,7 @@
     } else if (action === "modal-backdrop" && event.target === actionTarget) {
       closeModal();
     } else if (action === "copy-json") {
-      const text = '{"log":{"level":"info"},"route":{"final":"节点选择"}}';
+      const text = JSON.stringify(currentProfileConfigObject(), null, 2);
       copyText(text);
       showToast("已复制", "配置 JSON 已复制到剪贴板。", "success");
     } else if (action === "format-custom-json") {
@@ -2344,6 +2826,17 @@
       if (!textarea) return;
       textarea.value = customInboundExample;
       updateCustomInboundValidation(textarea);
+      textarea.focus();
+    } else if (action === "format-profile-json") {
+      const textarea = document.querySelector("[data-profile-json]");
+      if (!textarea) return;
+      const result = updateProfileJsonValidation(textarea);
+      if (!result.valid) {
+        showToast("暂时无法格式化", "请先修正完整配置 JSON。", "info");
+        return;
+      }
+      textarea.value = JSON.stringify(result.config, null, 2);
+      updateProfileJsonValidation(textarea);
       textarea.focus();
     } else if (action === "format-subscription-json") {
       const textarea = document.querySelector("[data-subscription-json]");
@@ -2453,6 +2946,24 @@
       state.rulesetSearch = "";
       state.rulesetType = "all";
       render();
+    } else if (action === "confirm-delete-profile") {
+      const profileId = actionTarget.dataset.id;
+      const profile = state.profiles.find((item) => item.id === profileId);
+      if (!profile || state.profiles.length === 1) {
+        showToast("无法删除配置", "至少需要保留一个配置。", "info");
+        return;
+      }
+      saveActiveProfileDraft();
+      const deletingActive = profile.id === state.activeProfileId;
+      state.profiles = state.profiles.filter((item) => item.id !== profile.id);
+      if (deletingActive) {
+        state.activeProfileId = state.profiles[0].id;
+        loadProfileDraft(state.profiles[0]);
+      }
+      persistProfiles();
+      closeModal();
+      navigate("config", state.activeConfig);
+      showToast("配置已删除", `“${profile.name}”及其草稿已移除。`, "success");
     } else if (action === "check-update") {
       showToast("已是最新版本", "当前 sing-box Stable 1.11.11 无需更新。", "info");
     } else if (action === "change-password") {
@@ -2471,6 +2982,9 @@
   });
 
   document.addEventListener("input", (event) => {
+    if (event.target.matches("[data-profile-json]")) {
+      updateProfileJsonValidation(event.target);
+    }
     if (event.target.matches("[data-custom-inbound-json]")) {
       updateCustomInboundValidation(event.target);
     }
@@ -2487,6 +3001,9 @@
       updateRulesetHubResults();
     }
     if (event.target.matches("[data-config-field], [data-settings-input]")) {
+      if (event.target.matches("[data-config-field]")) {
+        state.configFields[event.target.dataset.configField] = event.target.value;
+      }
       state.dirty = true;
       const button = document.querySelector("#save-config-button");
       if (button) button.innerHTML = `${icon("save")}保存更改`;
@@ -2506,6 +3023,24 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches('input[name="profile-create-mode"]')) {
+      const mode = event.target.value;
+      const section = document.querySelector("[data-profile-json-section]");
+      const note = document.querySelector("[data-profile-mode-note]");
+      if (section) section.hidden = mode !== "json";
+      if (note) note.innerHTML = profileModeNote(mode);
+      const submit = document.querySelector("#profile-create-submit");
+      if (submit) {
+        const textarea = document.querySelector("[data-profile-json]");
+        submit.disabled = mode === "json" && textarea ? !updateProfileJsonValidation(textarea).valid : false;
+      }
+      return;
+    }
+    if (event.target.matches("[data-config-field]")) {
+      state.configFields[event.target.dataset.configField] = event.target.value;
+      state.dirty = true;
+      return;
+    }
     if (event.target.matches("[data-ruleset-hub-category]")) {
       state.rulesetHubCategory = event.target.value;
       updateRulesetHubResults();
@@ -2624,7 +3159,89 @@
     if (!form) return;
     event.preventDefault();
     const type = form.dataset.form;
-    if (type === "inbound") {
+    if (type === "profile-create") {
+      const data = new FormData(form);
+      const name = String(data.get("profile-name") || "").trim();
+      const mode = String(data.get("profile-create-mode") || "blank");
+      if (!name) {
+        showToast("配置名称不能为空", "请填写一个便于识别的配置名称。", "info");
+        form.querySelector('[name="profile-name"]')?.focus();
+        return;
+      }
+      const duplicate = state.profiles.find((profile) => profile.name.toLowerCase() === name.toLowerCase());
+      if (duplicate) {
+        showToast("配置名称已存在", `“${duplicate.name}”已在配置列表中。`, "info");
+        form.querySelector('[name="profile-name"]')?.focus();
+        return;
+      }
+      saveActiveProfileDraft();
+      const sourceProfile = activeProfile();
+      let draft;
+      let source;
+      let rawConfig = null;
+      if (mode === "copy") {
+        draft = cloneData(sourceProfile.draft);
+        draft.configFields.profileName = name;
+        draft.dirty = true;
+        draft.lastSaved = "尚未保存";
+        source = `复制自 ${sourceProfile.name}`;
+        rawConfig = sourceProfile.rawConfig ? cloneData(sourceProfile.rawConfig) : null;
+      } else if (mode === "json") {
+        const textarea = form.querySelector("[data-profile-json]");
+        const result = updateProfileJsonValidation(textarea);
+        if (!result.valid) return;
+        rawConfig = cloneData(result.config);
+        draft = profileDraftFromJson(result.config, name);
+        source = "完整 JSON 导入";
+      } else {
+        draft = createBlankProfileDraft(name);
+        source = "Web 空白配置";
+      }
+      const profile = {
+        id: `config-${Date.now()}`,
+        name,
+        source,
+        lastSaved: "尚未保存",
+        version: 1,
+        rawConfig,
+        draft,
+      };
+      state.profiles.push(profile);
+      state.activeProfileId = profile.id;
+      loadProfileDraft(profile);
+      persistProfiles();
+      closeModal();
+      navigate("config", "general");
+      showToast("配置已创建", `“${name}”已加入配置列表并设为当前配置。`, "success");
+    } else if (type === "profile-manage") {
+      const profile = state.profiles.find((item) => item.id === form.dataset.id);
+      const name = String(new FormData(form).get("profile-name") || "").trim();
+      if (!profile || !name) {
+        showToast("配置名称不能为空", "请填写一个便于识别的配置名称。", "info");
+        form.querySelector('[name="profile-name"]')?.focus();
+        return;
+      }
+      const duplicate = state.profiles.find((item) => item.id !== profile.id && item.name.toLowerCase() === name.toLowerCase());
+      if (duplicate) {
+        showToast("配置名称已存在", `“${duplicate.name}”已在配置列表中。`, "info");
+        form.querySelector('[name="profile-name"]')?.focus();
+        return;
+      }
+      const oldName = profile.name;
+      profile.name = name;
+      if (profile.id === state.activeProfileId) {
+        state.configFields.profileName = name;
+        state.dirty = true;
+        saveActiveProfileDraft();
+      } else {
+        profile.draft.configFields.profileName = name;
+        profile.draft.dirty = true;
+      }
+      persistProfiles();
+      closeModal();
+      render();
+      showToast("配置已重命名", `“${oldName}”已更名为“${name}”。`, "success");
+    } else if (type === "inbound") {
       const inboundType = form.querySelector("[data-inbound-type]").value;
       if (inboundType === "custom") {
         const textarea = form.querySelector("[data-custom-inbound-json]");
@@ -2824,6 +3441,19 @@
   });
 
   document.addEventListener("keydown", (event) => {
+    if (event.target.matches("[data-profile-json]") && event.key === "Tab") {
+      event.preventDefault();
+      const textarea = event.target;
+      textarea.setRangeText("  ", textarea.selectionStart, textarea.selectionEnd, "end");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if (event.target.matches("[data-profile-json]") && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      const submit = document.querySelector("#profile-create-submit");
+      if (!submit?.disabled) document.querySelector("#profile-create-form")?.requestSubmit();
+      return;
+    }
     if (event.target.matches("[data-subscription-card]") && ["Enter", " "].includes(event.key)) {
       event.preventDefault();
       openModal("subscription-nodes", event.target.dataset.id);
@@ -2883,11 +3513,22 @@
   window.addEventListener("popstate", () => {
     const route = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
     state.page = ["dashboard", "config", "subscriptions", "rulesets", "settings"].includes(route[0]) ? route[0] : "dashboard";
-    if (state.page === "config" && configTabs.some((tab) => tab.id === route[1])) state.activeConfig = route[1];
+    if (state.page === "config") {
+      const routeProfileId = route[2] ? route[1] : null;
+      const routeTab = route[2] || route[1];
+      const profile = state.profiles.find((item) => item.id === routeProfileId);
+      if (profile && profile.id !== state.activeProfileId) {
+        saveActiveProfileDraft();
+        state.activeProfileId = profile.id;
+        loadProfileDraft(profile);
+      }
+      if (configTabs.some((tab) => tab.id === routeTab)) state.activeConfig = routeTab;
+    }
     closeModal();
     render();
   });
 
+  initializeProfiles();
   applyTheme();
   setAccent(state.accent);
   render();

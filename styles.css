@@ -259,6 +259,69 @@ svg {
   font-weight: 590;
 }
 
+.nav-parent-row {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.nav-parent-row .nav-parent {
+  width: auto;
+  min-width: 0;
+  flex: 1;
+}
+
+.nav-count {
+  display: inline-grid;
+  min-width: 18px;
+  height: 18px;
+  place-items: center;
+  margin-left: auto;
+  padding: 0 5px;
+  border-radius: 9px;
+  color: var(--text-faint);
+  background: color-mix(in srgb, var(--line) 65%, transparent);
+  font-size: 9px;
+  font-weight: 720;
+}
+
+.nav-parent.active .nav-count {
+  color: var(--primary);
+  background: color-mix(in srgb, var(--primary) 12%, transparent);
+}
+
+.nav-parent-row .nav-chevron {
+  margin-left: 0;
+}
+
+.nav-parent-add,
+.config-item-action {
+  display: grid;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--text-faint);
+  background: transparent;
+  transition: color 150ms ease, background 150ms ease, opacity 150ms ease;
+}
+
+.nav-parent-add {
+  width: 32px;
+  height: 32px;
+}
+
+.nav-parent-add:hover,
+.config-item-action:hover {
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.nav-parent-add .icon,
+.config-item-action .icon {
+  width: 14px;
+  height: 14px;
+}
+
 .nav-item:hover,
 .nav-parent:hover,
 .config-name:hover {
@@ -316,6 +379,8 @@ svg {
 }
 
 .config-name {
+  min-width: 0;
+  flex: 1;
   gap: 8px;
   padding: 7px 9px;
   color: var(--text);
@@ -323,14 +388,63 @@ svg {
   font-weight: 680;
 }
 
+.config-name > span:nth-child(2) {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.config-tree-item {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 2px;
+  border-radius: 9px;
+}
+
+.config-tree-item.active {
+  background: var(--primary-soft);
+}
+
+.config-tree-item.active .config-name {
+  color: var(--primary);
+}
+
+.config-item-action {
+  width: 28px;
+  height: 28px;
+  margin-right: 3px;
+  opacity: 0;
+}
+
+.config-tree-item:hover .config-item-action,
+.config-tree-item.active .config-item-action,
+.config-item-action:focus-visible {
+  opacity: 1;
+}
+
 .config-status-dot {
   width: 7px;
   height: 7px;
   flex: 0 0 auto;
-  border: 2px solid color-mix(in srgb, var(--green) 30%, transparent);
+  border: 2px solid color-mix(in srgb, var(--text-faint) 18%, transparent);
   border-radius: 50%;
+  background: var(--text-faint);
+}
+
+.config-tree-item.active .config-status-dot {
+  border-color: color-mix(in srgb, var(--green) 30%, transparent);
   background: var(--green);
   box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 12%, transparent);
+}
+
+.config-dirty-dot {
+  width: 5px;
+  height: 5px;
+  flex: 0 0 auto;
+  margin-left: auto;
+  border-radius: 50%;
+  background: var(--orange);
 }
 
 .sidebar-footer {
@@ -1469,6 +1583,12 @@ svg {
   font-size: 11px;
 }
 
+.profile-banner-meta .btn {
+  position: relative;
+  z-index: 2;
+  margin-left: 2px;
+}
+
 .config-tabs {
   display: flex;
   gap: 5px;
@@ -1524,6 +1644,47 @@ svg {
   grid-template-columns: minmax(0, 1.55fr) minmax(280px, 0.75fr);
   gap: 16px;
   align-items: start;
+}
+
+.config-empty-state {
+  display: grid;
+  min-height: 150px;
+  grid-column: 1 / -1;
+  place-items: center;
+  align-content: center;
+  gap: 7px;
+  padding: 22px;
+  border: 1px dashed var(--line-strong);
+  border-radius: 12px;
+  color: var(--text-faint);
+  background: var(--surface-soft);
+  text-align: center;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease;
+}
+
+.config-empty-state:hover {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 42%, var(--line));
+  background: var(--primary-soft);
+}
+
+.config-empty-state .icon {
+  width: 25px;
+  height: 25px;
+}
+
+.config-empty-state strong,
+.config-empty-state span {
+  display: block;
+}
+
+.config-empty-state strong {
+  color: var(--text);
+  font-size: 11px;
+}
+
+.config-empty-state span {
+  font-size: 9px;
 }
 
 .config-main,
@@ -4785,6 +4946,137 @@ svg {
   min-height: 340px;
 }
 
+.profile-create-body,
+.profile-manage-body {
+  display: grid;
+  gap: 17px;
+}
+
+.profile-create-mode {
+  display: grid;
+  gap: 7px;
+}
+
+.profile-create-mode .route-segmented span {
+  min-height: 42px;
+  font-size: 9px;
+}
+
+.profile-mode-note {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 15%, var(--line));
+  border-radius: 10px;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.profile-mode-note > .icon {
+  width: 17px;
+  height: 17px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+}
+
+.profile-mode-note strong,
+.profile-mode-note span {
+  display: block;
+}
+
+.profile-mode-note strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.profile-mode-note span {
+  margin-top: 2px;
+  color: var(--text-soft);
+  font-size: 9px;
+  line-height: 1.55;
+}
+
+.profile-json-section[hidden] {
+  display: none;
+}
+
+.profile-json-textarea {
+  min-height: 300px;
+}
+
+.profile-manage-summary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.profile-manage-summary > div {
+  padding: 12px 8px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  text-align: center;
+}
+
+.profile-manage-summary strong,
+.profile-manage-summary span {
+  display: block;
+}
+
+.profile-manage-summary strong {
+  color: var(--text);
+  font-size: 15px;
+}
+
+.profile-manage-summary span {
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.profile-manage-footer {
+  justify-content: flex-start;
+}
+
+.modal-footer-spacer {
+  flex: 1;
+}
+
+.profile-delete-body {
+  display: flex;
+  align-items: flex-start;
+  gap: 14px;
+}
+
+.profile-delete-icon {
+  display: grid;
+  width: 42px;
+  height: 42px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 12px;
+  color: var(--red);
+  background: var(--red-soft);
+}
+
+.profile-delete-icon .icon {
+  width: 19px;
+  height: 19px;
+}
+
+.profile-delete-body strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.profile-delete-body p {
+  margin: 5px 0 0;
+  color: var(--text-soft);
+  font-size: 10px;
+  line-height: 1.65;
+}
+
 .modal-footer {
   position: sticky;
   z-index: 3;
@@ -5310,6 +5602,18 @@ svg {
 
   .route-sniffer-grid {
     grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .profile-manage-summary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .profile-manage-footer {
+    flex-wrap: wrap;
+  }
+
+  .profile-manage-footer .btn-danger {
+    width: 100%;
   }
 }
 
