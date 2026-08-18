@@ -437,11 +437,6 @@
                 <button class="config-name" data-config="general">
                   <span class="config-status-dot"></span><span>自定义配置 A</span>
                 </button>
-                ${configTabs
-                  .map(
-                    (tab) => `<button class="nav-subitem ${configActive && state.activeConfig === tab.id ? "active" : ""}" data-config="${tab.id}">${tab.label}</button>`,
-                  )
-                  .join("")}
               </div>`
             : ""
         }
