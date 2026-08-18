@@ -1297,7 +1297,6 @@
           </div>
         </article>
         <div class="info-callout">${icon("shield")}<span>低频模块使用完整 JSON 片段编辑，未建模字段会原样保留。应用前仍应使用目标版本的 <code>sing-box check</code> 校验。</span></div>
-        ${renderCodePreview(false)}
       </aside>
     </div>`;
   }
@@ -1471,7 +1470,6 @@
           <div class="card-body"><div class="type-chip-list">${supportedTypes.map((type) => `<code>${type}</code>`).join("")}</div></div>
         </article>
         <div class="info-callout">${icon("info")}<span>${key === "endpoints" ? "端点用于 WireGuard、Tailscale、OpenVPN 与 OpenConnect 等组网连接，并可被路由规则引用。" : "服务独立于代理入站运行，包括 API、DERP、Resolved、OOM Killer 与 USB/IP 等能力。"}</span></div>
-        ${renderCodePreview(false)}
       </aside>
     </div>`;
   }
@@ -1516,7 +1514,6 @@
           </div>
         </article>
         <div class="info-callout">${icon("info")}<span>不同核心版本、平台与编译标签支持的字段可能不同；部署前请以实际核心的 Schema 和检查结果为准。</span></div>
-        ${renderCodePreview(false)}
       </aside>
     </div>`;
   }
