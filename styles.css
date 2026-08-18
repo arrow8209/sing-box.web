@@ -6980,6 +6980,604 @@ svg {
   }
 }
 
+/* Compact desktop density */
+@media (min-width: 1081px) {
+  :root {
+    --sidebar-width: 204px;
+    --radius: 9px;
+  }
+
+  .brand {
+    min-height: 54px;
+    gap: 9px;
+    padding: 8px 13px;
+  }
+
+  .brand-mark {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .brand-mark span {
+    font-size: 15px;
+  }
+
+  .brand-title {
+    font-size: 14px;
+  }
+
+  .brand-subtitle {
+    font-size: 8px;
+  }
+
+  .sidebar-scroll {
+    padding: 2px 8px 10px;
+  }
+
+  .nav-label {
+    padding: 6px 9px 3px;
+  }
+
+  .nav-item,
+  .nav-parent {
+    min-height: 32px;
+    gap: 8px;
+    margin: 0;
+    padding: 5px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+  }
+
+  .nav-item .icon,
+  .nav-parent .icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  .nav-config-tree {
+    margin: 2px 0 5px 18px;
+    padding-left: 11px;
+  }
+
+  .config-name {
+    gap: 6px;
+    padding: 5px 7px;
+    font-size: 11px;
+  }
+
+  .config-item-action {
+    width: 25px;
+    height: 25px;
+  }
+
+  .sidebar-footer {
+    padding: 8px 10px 10px;
+  }
+
+  .core-mini {
+    gap: 8px;
+    margin-top: 4px;
+    padding: 7px 8px;
+    border-radius: 9px;
+  }
+
+  .core-mini-icon {
+    width: 27px;
+    height: 27px;
+  }
+
+  .topbar {
+    height: 52px;
+    gap: 10px;
+    padding: 0 14px;
+  }
+
+  .page-heading h1 {
+    font-size: 15px;
+  }
+
+  .topbar-actions {
+    gap: 6px;
+  }
+
+  .top-search {
+    width: 174px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .icon-button,
+  .avatar {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .page-content {
+    padding: 12px 14px 24px;
+  }
+
+  .page-intro {
+    gap: 14px;
+    margin-bottom: 10px;
+  }
+
+  .page-intro-copy h2 {
+    font-size: 18px;
+  }
+
+  .page-actions,
+  .card-actions,
+  .inline-actions {
+    gap: 6px;
+  }
+
+  .btn {
+    min-height: 31px;
+    gap: 5px;
+    padding: 5px 9px;
+    border-radius: 8px;
+  }
+
+  .btn-sm {
+    min-height: 28px;
+    padding: 4px 8px;
+    border-radius: 7px;
+  }
+
+  .card-head {
+    min-height: 44px;
+    gap: 11px;
+    padding: 9px 11px;
+  }
+
+  .card-body {
+    padding: 11px;
+  }
+
+  .dashboard-grid,
+  .dashboard-lower {
+    gap: 9px;
+  }
+
+  .hero-status,
+  .hero-content,
+  .control-card {
+    min-height: 172px;
+  }
+
+  .hero-content {
+    padding: 15px 17px 14px;
+  }
+
+  .hero-main {
+    padding: 11px 0 6px;
+  }
+
+  .hero-main h2 {
+    font-size: 20px;
+  }
+
+  .control-card .card-head {
+    padding: 12px 13px 8px;
+  }
+
+  .control-list {
+    padding: 0 7px 7px;
+  }
+
+  .control-row {
+    min-height: 35px;
+    gap: 8px;
+    padding: 5px 7px;
+  }
+
+  .control-icon {
+    width: 27px;
+    height: 27px;
+  }
+
+  .metric-grid {
+    gap: 7px;
+  }
+
+  .metric-card {
+    min-height: 72px;
+    gap: 10px;
+    padding: 9px 10px;
+  }
+
+  .metric-icon {
+    width: 35px;
+    height: 35px;
+    border-radius: 9px;
+  }
+
+  .metric-icon .icon {
+    width: 17px;
+    height: 17px;
+  }
+
+  .metric-value {
+    font-size: 18px;
+  }
+
+  .traffic-chart {
+    height: 178px;
+  }
+
+  .overview-stack {
+    gap: 9px;
+  }
+
+  .active-profile,
+  .route-mode-card {
+    padding: 12px;
+  }
+
+  .profile-stats {
+    margin-top: 10px;
+  }
+
+  .proxy-selector-head {
+    min-height: 48px;
+  }
+
+  .proxy-group-head {
+    min-height: 50px;
+  }
+
+  .proxy-group-main {
+    gap: 8px;
+    padding: 8px 7px 8px 13px;
+  }
+
+  .proxy-group-avatar {
+    width: 30px;
+    height: 30px;
+  }
+
+  .proxy-node-grid {
+    gap: 7px;
+    padding: 0 13px 11px 51px;
+  }
+
+  .proxy-node-card {
+    min-height: 70px;
+    padding: 9px 32px 9px 9px;
+  }
+
+  .data-table th {
+    padding: 7px 11px;
+  }
+
+  .data-table td {
+    padding: 8px 11px;
+  }
+
+  .config-context-bar {
+    min-height: 50px;
+    gap: 9px;
+    margin-bottom: 7px;
+    padding: 7px 9px;
+  }
+
+  .config-context-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .config-tabs {
+    gap: 2px;
+    margin-bottom: 7px;
+    padding: 3px;
+    border-radius: 9px;
+  }
+
+  .config-tab {
+    gap: 5px;
+    padding: 5px 7px;
+    border-radius: 6px;
+  }
+
+  .config-health-strip {
+    gap: 6px;
+    margin-bottom: 7px;
+  }
+
+  .config-health-strip > div {
+    min-height: 45px;
+    gap: 6px;
+    padding: 6px 8px;
+    border-radius: 8px;
+  }
+
+  .config-health-strip > div > span {
+    width: 24px;
+    height: 24px;
+    border-radius: 6px;
+  }
+
+  .config-health-strip strong {
+    font-size: 15px;
+  }
+
+  .config-layout {
+    gap: 9px;
+  }
+
+  .config-main,
+  .config-aside {
+    gap: 9px;
+  }
+
+  .config-map {
+    padding: 5px;
+  }
+
+  .config-map-item {
+    min-height: 44px;
+    gap: 6px;
+    padding: 6px 7px;
+  }
+
+  .config-map-icon,
+  .collection-config-icon,
+  .advanced-section-icon {
+    width: 26px;
+    height: 26px;
+    border-radius: 7px;
+  }
+
+  .form-grid {
+    gap: 9px;
+  }
+
+  .form-field {
+    gap: 4px;
+  }
+
+  .field-input,
+  .field-select {
+    height: 32px;
+    border-radius: 7px;
+  }
+
+  .setting-row {
+    min-height: 45px;
+    padding: 8px 0;
+  }
+
+  .info-callout {
+    gap: 7px;
+    padding: 8px 9px;
+    border-radius: 8px;
+  }
+
+  .entry-list,
+  .outbound-grid,
+  .dns-server-grid {
+    gap: 5px;
+    padding: 7px;
+  }
+
+  .entry-card {
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+
+  .entry-icon {
+    width: 30px;
+    height: 30px;
+    border-radius: 8px;
+  }
+
+  .entry-meta {
+    margin-top: 2px;
+  }
+
+  .outbound-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .outbound-card {
+    padding: 8px;
+    border-radius: 9px;
+  }
+
+  .outbound-head {
+    gap: 8px;
+  }
+
+  .outbound-members {
+    margin-top: 8px;
+  }
+
+  .collection-config-list {
+    padding: 5px;
+  }
+
+  .collection-config-row {
+    min-height: 44px;
+    gap: 7px;
+    padding: 6px 7px;
+  }
+
+  .advanced-section-list {
+    padding: 3px 10px 6px;
+  }
+
+  .advanced-section-row {
+    min-height: 48px;
+    gap: 7px;
+    padding: 6px 2px;
+  }
+
+  .compact-guide-list {
+    gap: 7px;
+  }
+
+  .compact-kv-list > div {
+    min-height: 30px;
+  }
+
+  .route-workspace {
+    gap: 7px;
+  }
+
+  .route-common-body {
+    gap: 8px;
+    padding: 7px;
+  }
+
+  .route-common-toggles,
+  .route-common-fields {
+    gap: 7px;
+  }
+
+  .route-common-toggle {
+    min-height: 55px;
+    gap: 8px;
+    padding: 8px 9px;
+    border-radius: 8px;
+  }
+
+  .route-common-icon {
+    width: 30px;
+    height: 30px;
+  }
+
+  .route-common-field {
+    gap: 9px;
+    padding: 7px 9px;
+    border-radius: 8px;
+  }
+
+  .route-ruleset-grid {
+    gap: 6px;
+    padding: 9px;
+  }
+
+  .route-ruleset-card {
+    min-height: 56px;
+    gap: 8px;
+    padding: 7px 8px;
+    border-radius: 8px;
+  }
+
+  .route-ruleset-icon {
+    width: 32px;
+    height: 32px;
+  }
+
+  .route-rule-list {
+    padding: 5px 10px 9px;
+  }
+
+  .route-rule-row {
+    min-height: 47px;
+    gap: 7px;
+    padding: 6px 4px;
+  }
+
+  .route-insertion-point {
+    min-height: 38px;
+  }
+
+  .summary-grid {
+    gap: 9px;
+    margin-bottom: 10px;
+  }
+
+  .summary-card {
+    min-height: 70px;
+    gap: 10px;
+    padding: 10px 11px;
+  }
+
+  .subscription-grid {
+    gap: 10px;
+  }
+
+  .subscription-main {
+    padding: 12px;
+  }
+
+  .subscription-json-source,
+  .usage-row {
+    margin-top: 11px;
+  }
+
+  .subscription-meta {
+    margin-top: 10px;
+  }
+
+  .subscription-footer {
+    padding: 8px 11px;
+  }
+
+  .toolbar {
+    margin-bottom: 9px;
+    padding: 7px;
+  }
+
+  .search-input,
+  .filter-select {
+    height: 32px;
+  }
+
+  .ruleset-schedule-banner {
+    min-height: 58px;
+    margin-bottom: 9px;
+    padding: 9px 11px;
+  }
+
+  .settings-layout {
+    grid-template-columns: 190px minmax(0, 1fr);
+    gap: 10px;
+  }
+
+  .settings-nav {
+    top: 68px;
+    padding: 6px;
+  }
+
+  .settings-nav-item {
+    padding: 7px 8px;
+  }
+
+  .settings-content {
+    gap: 10px;
+  }
+
+  .settings-section .setting-row {
+    min-height: 52px;
+    padding: 8px 0;
+  }
+
+  .about-card {
+    gap: 10px;
+    padding: 12px;
+  }
+}
+
+@media (min-width: 1280px) {
+  .config-map {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
+  .config-map-item:last-child {
+    grid-column: span 2;
+  }
+
+  .config-main .form-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+}
+
 @media (pointer: coarse) {
   button,
   select,
