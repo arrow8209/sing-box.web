@@ -2,6 +2,7 @@ package auth
 
 import (
 	"bytes"
+	"encoding/base64"
 	"errors"
 	"path/filepath"
 	"testing"
@@ -116,12 +117,130 @@ func TestSessionBoundaryAndInvalidErrors(t *testing.T) {
 	}
 }
 
+func TestSessionSubsecondRefreshDoesNotRenewEarly(t *testing.T) {
+	start := time.Date(2026, 8, 18, 12, 0, 0, int(900*time.Millisecond), time.UTC)
+	current := start
+	random := bytes.NewReader(bytes.Repeat([]byte{17}, 4096))
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), func() time.Time { return current }, random)
+	if err := store.SetPassword([]byte("a-strong-password")); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewSessionManager(store, func() time.Time { return current }, random)
+	session, err := manager.Login(Username, []byte("a-strong-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Validate(session.Token); err != nil {
+		t.Fatalf("fresh subsecond session rejected: %v", err)
+	}
+	current = start.Add(14*time.Minute + 59*time.Second + 100*time.Millisecond)
+	if _, renewed, err := manager.Refresh(session.Token); err != nil || renewed {
+		t.Fatalf("14m59.1s refresh: renewed=%v err=%v", renewed, err)
+	}
+	current = start.Add(15*time.Minute + 100*time.Millisecond)
+	if _, renewed, err := manager.Refresh(session.Token); err != nil || !renewed {
+		t.Fatalf("15m0.1s refresh: renewed=%v err=%v", renewed, err)
+	}
+}
+
+func TestValidateRejectsInvalidSignedClaimTimes(t *testing.T) {
+	current := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	random := bytes.NewReader(bytes.Repeat([]byte{19}, 4096))
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), func() time.Time { return current }, random)
+	if err := store.SetPassword([]byte("a-strong-password")); err != nil {
+		t.Fatal(err)
+	}
+	record, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	manager := NewSessionManager(store, func() time.Time { return current }, random)
+	now := current.Unix()
+	tests := []struct {
+		name      string
+		issuedAt  int64
+		expiresAt int64
+	}{
+		{name: "future", issuedAt: now + 2, expiresAt: now + 2 + int64(24*time.Hour/time.Second)},
+		{name: "negative", issuedAt: -1, expiresAt: -1 + int64(24*time.Hour/time.Second)},
+		{name: "not after issue", issuedAt: now, expiresAt: now},
+		{name: "not 24 hours", issuedAt: now, expiresAt: now + int64(24*time.Hour/time.Second) + 1},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			claims := Claims{
+				Username:  Username,
+				Epoch:     record.SessionEpoch,
+				IssuedAt:  test.issuedAt,
+				ExpiresAt: test.expiresAt,
+				CSRFToken: "test-csrf-token",
+			}
+			session, err := sessionFromClaims(claims, record.SessionKey)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := manager.Validate(session.Token); !errors.Is(err, ErrInvalidSession) {
+				t.Fatalf("Validate() error = %v, want ErrInvalidSession", err)
+			}
+		})
+	}
+}
+
+func TestValidateRejectsSessionAfterClockRollback(t *testing.T) {
+	current := time.Date(2026, 8, 20, 12, 0, 0, 0, time.UTC)
+	random := bytes.NewReader(bytes.Repeat([]byte{23}, 4096))
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), func() time.Time { return current }, random)
+	if err := store.SetPassword([]byte("a-strong-password")); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewSessionManager(store, func() time.Time { return current }, random)
+	session, err := manager.Login(Username, []byte("a-strong-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	current = current.Add(-48 * time.Hour)
+	if _, err := manager.Validate(session.Token); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("Validate() after rollback error = %v, want ErrInvalidSession", err)
+	}
+}
+
 func FuzzValidateSession(f *testing.F) {
-	f.Add("")
-	f.Add("payload.signature")
-	f.Fuzz(func(t *testing.T, token string) {
-		store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), time.Now, bytes.NewReader(nil))
-		manager := NewSessionManager(store, time.Now, bytes.NewReader(nil))
+	current := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	random := bytes.NewReader(bytes.Repeat([]byte{29}, 4096))
+	store := NewFileStore(filepath.Join(f.TempDir(), "auth.json"), func() time.Time { return current }, random)
+	if err := store.SetPassword([]byte("a-strong-password")); err != nil {
+		f.Fatal(err)
+	}
+	record, err := store.Load()
+	if err != nil {
+		f.Fatal(err)
+	}
+	manager := NewSessionManager(store, func() time.Time { return current }, random)
+	f.Add("", int64(0), int64(0))
+	f.Add("payload.signature", current.Unix(), current.Add(24*time.Hour).Unix())
+	f.Fuzz(func(t *testing.T, token string, issuedAt int64, expiresAt int64) {
 		_, _ = manager.Validate(token)
+
+		payloadText := base64.RawURLEncoding.EncodeToString([]byte(token))
+		key, err := decodeSessionKey(record.SessionKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		signedRaw := payloadText + "." + base64.RawURLEncoding.EncodeToString(signPayload(payloadText, key))
+		clear(key)
+		_, _ = manager.Validate(signedRaw)
+
+		claims := Claims{
+			Username:  Username,
+			Epoch:     record.SessionEpoch,
+			IssuedAt:  issuedAt,
+			ExpiresAt: expiresAt,
+			CSRFToken: "fuzz-csrf-token",
+		}
+		structured, err := sessionFromClaims(claims, record.SessionKey)
+		if err != nil {
+			t.Fatal(err)
+		}
+		_, _ = manager.Validate(structured.Token)
 	})
 }
