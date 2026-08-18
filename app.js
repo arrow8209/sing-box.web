@@ -139,6 +139,61 @@
     customInbounds: [],
     formInbounds: [],
     editingCustomInboundId: null,
+    editingOutboundId: null,
+    outbounds: [
+      {
+        id: "outbound-select",
+        tag: "节点选择",
+        type: "selector",
+        hidden: false,
+        include: "",
+        exclude: "",
+        icon: "",
+        interrupt_exist_connections: true,
+        refs: [
+          { groupId: "built-in", id: "outbound-urltest", tag: "自动选择", type: "Built-In" },
+          { groupId: "subscriptions", id: "sub-1", tag: "Cloud Route Premium", type: "Subscription" },
+          { groupId: "subscriptions", id: "sub-2", tag: "Edge Network", type: "Subscription" },
+        ],
+      },
+      {
+        id: "outbound-urltest",
+        tag: "自动选择",
+        type: "urltest",
+        hidden: false,
+        include: "",
+        exclude: "",
+        icon: "",
+        interrupt_exist_connections: true,
+        url: "https://www.gstatic.com/generate_204",
+        interval: "5m",
+        tolerance: 50,
+        refs: [
+          { groupId: "subscriptions", id: "sub-1", tag: "Cloud Route Premium", type: "Subscription" },
+          { groupId: "subscriptions", id: "sub-2", tag: "Edge Network", type: "Subscription" },
+        ],
+      },
+      {
+        id: "outbound-failover",
+        tag: "故障转移",
+        type: "selector",
+        hidden: false,
+        include: "",
+        exclude: "",
+        icon: "",
+        interrupt_exist_connections: true,
+        refs: [
+          { groupId: "built-in", id: "outbound-urltest", tag: "自动选择", type: "Built-In" },
+          { groupId: "built-in", id: "direct", tag: "direct", type: "Built-In" },
+        ],
+      },
+      {
+        id: "outbound-direct",
+        tag: "直连",
+        type: "direct",
+        refs: [],
+      },
+    ],
     rulesetSearch: "",
     rulesetType: "all",
     settingsSection: "core-settings",
@@ -617,10 +672,7 @@
         <article class="card">
           <div class="card-head"><div><h3 class="card-title">出站与策略组</h3><p class="card-subtitle">决定流量最终使用的出口</p></div><button class="btn btn-sm btn-primary" data-modal="outbound">${icon("plus")}新增出站</button></div>
           <div class="outbound-grid">
-            ${outboundCard("节点选择", "selector", "手动选择最佳节点", "globe", "", ["HK", "JP", "US", "+9"])}
-            ${outboundCard("自动选择", "urltest", "每 5 分钟自动测速", "gauge", "cyan", ["JP", "HK", "SG", "+6"])}
-            ${outboundCard("故障转移", "selector", "服务不可用时自动切换", "shield", "orange", ["US", "DE", "NL", "+3"])}
-            ${outboundCard("直连", "direct", "不经过代理服务器", "lightning", "green", ["本地"])}
+            ${state.outbounds.map((outbound) => outboundCard(outbound)).join("")}
           </div>
         </article>
       </div>
@@ -646,12 +698,29 @@
     </div>`;
   }
 
-  function outboundCard(name, type, description, iconName, tone, members) {
-    return `<div class="outbound-card">
-      <div class="outbound-head"><div class="entry-icon ${tone}">${icon(iconName)}</div><div class="outbound-name"><strong>${name}</strong><span>${description}</span></div><button class="entry-action" data-action="edit-entry">${icon("more")}</button></div>
-      <div class="entry-meta" style="margin-top:11px"><span class="type-badge">${type}</span><span>${members.length > 1 ? `${members.length + 8} 个成员` : "内置出站"}</span></div>
-      <div class="outbound-members">${members.map((member, index) => `<span class="member-avatar ${member.startsWith("+") ? "more" : ""}" style="z-index:${members.length - index}">${member}</span>`).join("")}</div>
+  function outboundCard(outbound) {
+    const meta = {
+      selector: { description: "手动选择引用的出站或订阅节点", iconName: "globe", tone: "" },
+      urltest: { description: `每 ${outbound.interval || "5m"} 自动测速`, iconName: "gauge", tone: "cyan" },
+      direct: { description: "不经过代理服务器", iconName: "lightning", tone: "green" },
+      block: { description: "直接阻断匹配流量", iconName: "shield", tone: "orange" },
+    }[outbound.type] || { description: "自定义出站", iconName: "outbound", tone: "violet" };
+    const refs = outbound.refs || [];
+    const fallbackMembers = outbound.type === "direct" ? ["本地"] : outbound.type === "block" ? ["阻断"] : [];
+    const members = refs.length ? refs.slice(0, 3).map((reference) => reference.tag) : fallbackMembers;
+    const extraCount = Math.max(0, refs.length - members.length);
+    const countLabel = ["selector", "urltest"].includes(outbound.type) ? `${refs.length} 个引用` : "内置出站";
+    return `<div class="outbound-card" data-outbound-id="${escapeHtml(outbound.id)}">
+      <div class="outbound-head"><div class="entry-icon ${meta.tone}">${icon(meta.iconName)}</div><div class="outbound-name"><strong>${escapeHtml(outbound.tag)}</strong><span>${escapeHtml(meta.description)}</span></div><button class="entry-action" data-modal="outbound" data-id="${escapeHtml(outbound.id)}" title="编辑出站">${icon("edit")}</button></div>
+      <div class="entry-meta" style="margin-top:11px"><span class="type-badge">${escapeHtml(outbound.type)}</span><span>${countLabel}</span>${outbound.hidden ? '<span class="status-badge badge-orange">隐藏</span>' : ""}</div>
+      <div class="outbound-members">${members.map((member, index) => `<span class="member-avatar" style="z-index:${members.length - index}" title="${escapeHtml(member)}">${escapeHtml(outboundMemberInitial(member))}</span>`).join("")}${extraCount ? `<span class="member-avatar more">+${extraCount}</span>` : ""}</div>
     </div>`;
+  }
+
+  function outboundMemberInitial(name) {
+    const cleanName = String(name).replace(/^\p{Extended_Pictographic}+\s*/u, "").trim();
+    if (/^[a-z]/i.test(cleanName)) return cleanName.slice(0, 2).toUpperCase();
+    return cleanName.slice(0, 2) || "--";
   }
 
   function renderRoutingConfig() {
@@ -871,11 +940,10 @@
   function openModal(type, itemId = null) {
     let content = "";
     state.editingCustomInboundId = type === "inbound" ? itemId : null;
+    state.editingOutboundId = type === "outbound" ? itemId : null;
     if (type === "subscription") content = subscriptionModal();
     else if (type === "inbound") content = inboundModal(itemId);
-    else if (type === "outbound") content = genericModal("新增出站", "添加代理节点或策略组", "outbound", [
-      ["出站标签", "新出站"], ["出站类型", "selector", "select", ["selector", "urltest", "direct", "block", "socks", "hysteria2"]], ["服务器地址", ""], ["服务器端口", "443", "number"]
-    ]);
+    else if (type === "outbound") content = outboundModal(itemId);
     else if (["route", "dns-rule"].includes(type)) content = genericModal(type === "route" ? "新增路由规则" : "新增 DNS 规则", "规则将添加到当前列表末尾", "rule", [
       ["规则名称", "新规则"], ["匹配类型", "domain_suffix", "select", ["domain", "domain_suffix", "ip_cidr", "rule_set", "process_name"]], ["匹配内容", ""], ["目标出站", "节点选择", "select", ["节点选择", "自动选择", "direct", "block"]]
     ]);
@@ -1093,6 +1161,179 @@
     return config;
   }
 
+  function outboundTypeControl(value) {
+    const options = [
+      ["direct", "直连", "lightning"],
+      ["block", "阻断", "shield"],
+      ["selector", "手动选择", "globe"],
+      ["urltest", "自动选择", "gauge"],
+    ];
+    return `<div class="outbound-type-control">${options.map(([type, label, iconName]) => `<label><input type="radio" name="outbound-type" value="${type}" data-outbound-type ${type === value ? "checked" : ""} /><span>${icon(iconName)}${label}</span></label>`).join("")}</div>`;
+  }
+
+  function subscriptionNodeMembers(subscription) {
+    const regions = ["香港 01", "香港 02", "日本 01", "新加坡 01", "美国 01", "德国 01", "台湾 01", "韩国 01"];
+    return regions.slice(0, Math.min(regions.length, subscription.nodes)).map((region, index) => ({
+      id: `${subscription.id}-node-${index + 1}`,
+      tag: `${subscription.name} · ${region}`,
+      type: subscription.id,
+      badge: region.slice(0, 2),
+    }));
+  }
+
+  function outboundReferenceGroups(outbound) {
+    const builtIn = [
+      { id: "direct", tag: "direct", type: "Built-In", badge: "🎯" },
+      { id: "block", tag: "block", type: "Built-In", badge: "🛑" },
+      ...state.outbounds
+        .filter((item) => item.id !== outbound.id)
+        .map((item) => ({ id: item.id, tag: item.tag, type: item.type, badge: outboundMemberInitial(item.tag) })),
+    ];
+    const subscriptionRefs = state.subscriptions.map((subscription) => ({
+      id: subscription.id,
+      tag: subscription.name,
+      type: "Subscription",
+      badge: subscription.logo,
+    }));
+    return [
+      { id: "built-in", name: "内置", total: builtIn.length, members: builtIn, expanded: true },
+      { id: "subscriptions", name: "订阅", total: subscriptionRefs.length, members: subscriptionRefs, expanded: true },
+      ...state.subscriptions.map((subscription) => ({
+        id: subscription.id,
+        name: subscription.name,
+        total: subscription.nodes,
+        members: subscriptionNodeMembers(subscription),
+        expanded: false,
+      })),
+    ];
+  }
+
+  function outboundReferenceTile(groupId, member, selectedKeys) {
+    const key = `${groupId}:${member.id}`;
+    const reference = JSON.stringify({ groupId, id: member.id, tag: member.tag, type: member.type });
+    return `<label class="outbound-reference-tile">
+      <input type="checkbox" name="outbound-ref" value="${escapeHtml(reference)}" ${selectedKeys.has(key) ? "checked" : ""} />
+      <span class="outbound-reference-content"><span class="outbound-reference-badge">${escapeHtml(member.badge || outboundMemberInitial(member.tag))}</span><span><strong>${escapeHtml(member.tag)}</strong><small>${escapeHtml(member.type)}</small></span>${icon("check", "outbound-reference-check")}</span>
+    </label>`;
+  }
+
+  function outboundReferenceGroup(group, selectedKeys) {
+    const selectedCount = group.members.filter((member) => selectedKeys.has(`${group.id}:${member.id}`)).length;
+    return `<section class="outbound-reference-group ${group.expanded ? "expanded" : ""}" data-outbound-reference-group>
+      <button class="outbound-reference-head" type="button" data-action="toggle-outbound-group" aria-expanded="${group.expanded}">
+        <span>${escapeHtml(group.name)}</span>${selectedCount ? `<span class="outbound-selected-count">已选 ${selectedCount}</span>` : ""}<strong>${group.total}</strong>${icon("chevron")}
+      </button>
+      <div class="outbound-reference-body" ${group.expanded ? "" : "hidden"}>
+        ${group.members.length ? `<div class="outbound-reference-grid">${group.members.map((member) => outboundReferenceTile(group.id, member, selectedKeys)).join("")}</div>` : `<div class="outbound-reference-empty">该分组暂无可引用项目</div>`}
+        ${group.total > group.members.length ? `<p class="outbound-reference-note">已展示 ${group.members.length} 个示例节点；引用整个订阅可自动包含全部 ${group.total} 个节点。</p>` : ""}
+      </div>
+    </section>`;
+  }
+
+  function outboundModal(itemId) {
+    const existing = state.outbounds.find((outbound) => outbound.id === itemId);
+    const outbound = existing || {
+      id: "",
+      tag: "🚀 节点选择",
+      type: "selector",
+      hidden: false,
+      include: "",
+      exclude: "",
+      icon: "",
+      interrupt_exist_connections: true,
+      url: "https://www.gstatic.com/generate_204",
+      interval: "3m",
+      tolerance: 150,
+      refs: [],
+    };
+    const isPolicy = ["selector", "urltest"].includes(outbound.type);
+    const selectedKeys = new Set((outbound.refs || []).map((reference) => `${reference.groupId}:${reference.id}`));
+    const referenceGroups = outboundReferenceGroups(outbound);
+    const body = `<form class="modal-body outbound-editor-body" id="outbound-form" data-form="outbound">
+      <div class="outbound-editor-fields">
+        <label class="outbound-editor-row"><span class="outbound-editor-label">名称<small>tag</small></span><input class="field-input" name="tag" value="${escapeHtml(outbound.tag)}" placeholder="例如 🚀 节点选择" required /></label>
+        <div class="outbound-editor-row"><span class="outbound-editor-label">类型<small>type</small></span>${outboundTypeControl(outbound.type)}</div>
+        <div data-outbound-policy-fields ${isPolicy ? "" : "hidden"}>
+          <div class="outbound-editor-row"><span class="outbound-editor-label">隐藏<small>仅控制面板</small></span><div class="outbound-toggle-control"><span>不在代理组快捷选择中显示</span><label class="form-switch"><input type="checkbox" name="hidden" value="true" ${outbound.hidden ? "checked" : ""} /><span class="switch"></span></label></div></div>
+          <label class="outbound-editor-row"><span class="outbound-editor-label">包含<small>include</small></span><input class="field-input" name="include" value="${escapeHtml(outbound.include || "")}" placeholder="keywords1|keywords2" /></label>
+          <label class="outbound-editor-row"><span class="outbound-editor-label">排除<small>exclude</small></span><input class="field-input" name="exclude" value="${escapeHtml(outbound.exclude || "")}" placeholder="keywords1|keywords2" /></label>
+          <label class="outbound-editor-row"><span class="outbound-editor-label">图标<small>icon</small></span><span class="outbound-icon-control"><span class="outbound-icon-preview ${outbound.icon ? "" : "is-empty"}" data-outbound-icon-preview>${outbound.icon ? `<img src="${escapeHtml(outbound.icon)}" alt="" />` : icon("globe")}</span><input class="field-input" name="icon" value="${escapeHtml(outbound.icon || "")}" placeholder="https://" data-outbound-icon-input /></span></label>
+          <div class="outbound-urltest-fields" data-outbound-urltest-fields ${outbound.type === "urltest" ? "" : "hidden"}>
+            <label class="outbound-editor-row"><span class="outbound-editor-label">测延迟链接<small>url</small></span><input class="field-input" name="url" value="${escapeHtml(outbound.url || "")}" placeholder="https://www.gstatic.com/generate_204" /></label>
+            <label class="outbound-editor-row"><span class="outbound-editor-label">测试间隔<small>interval</small></span><input class="field-input" name="interval" value="${escapeHtml(outbound.interval || "3m")}" placeholder="3m" /></label>
+            <label class="outbound-editor-row"><span class="outbound-editor-label">测试容差<small>tolerance</small></span><span class="input-suffix-wrap"><input class="field-input" name="tolerance" type="number" min="0" value="${escapeHtml(outbound.tolerance ?? 150)}" /><span class="input-suffix">ms</span></span></label>
+          </div>
+          <div class="outbound-reference-divider"><span>引用出站 &amp; 引用订阅</span><strong data-outbound-reference-total>已选 ${selectedKeys.size}</strong></div>
+          <div class="outbound-reference-list">${referenceGroups.map((group) => outboundReferenceGroup(group, selectedKeys)).join("")}</div>
+        </div>
+        <div class="outbound-no-options" data-outbound-no-options ${isPolicy ? "hidden" : ""}>${icon(outbound.type === "block" ? "shield" : "lightning")}<strong data-outbound-empty-title>${outbound.type === "block" ? "阻断出站无需额外参数" : "直连出站无需额外参数"}</strong><span>保存后会生成只包含 <code>type</code> 与 <code>tag</code> 的 sing-box 出站对象。</span></div>
+      </div>
+    </form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="outbound-submit" type="submit" form="outbound-form">${icon(existing ? "save" : "check")}${existing ? "保存" : "确认添加"}</button></div>`;
+    return modalFrame("出站", existing ? "编辑出站类型、筛选条件及引用关系" : "创建内置出站或节点选择策略组", body, footer, "modal-outbound");
+  }
+
+  function updateOutboundTypeFields(form, type) {
+    const isPolicy = ["selector", "urltest"].includes(type);
+    const policyFields = form.querySelector("[data-outbound-policy-fields]");
+    const urltestFields = form.querySelector("[data-outbound-urltest-fields]");
+    const emptyState = form.querySelector("[data-outbound-no-options]");
+    if (policyFields) policyFields.hidden = !isPolicy;
+    if (urltestFields) urltestFields.hidden = type !== "urltest";
+    if (emptyState) emptyState.hidden = isPolicy;
+    const emptyTitle = form.querySelector("[data-outbound-empty-title]");
+    if (emptyTitle) emptyTitle.textContent = type === "block" ? "阻断出站无需额外参数" : "直连出站无需额外参数";
+  }
+
+  function updateOutboundReferenceCount(form) {
+    const selected = form.querySelectorAll('input[name="outbound-ref"]:checked').length;
+    const total = form.querySelector("[data-outbound-reference-total]");
+    if (total) total.textContent = `已选 ${selected}`;
+    form.querySelectorAll("[data-outbound-reference-group]").forEach((group) => {
+      const count = group.querySelectorAll('input[name="outbound-ref"]:checked').length;
+      let badge = group.querySelector(".outbound-selected-count");
+      if (count && !badge) {
+        badge = document.createElement("span");
+        badge.className = "outbound-selected-count";
+        group.querySelector(".outbound-reference-head span")?.after(badge);
+      }
+      if (badge) {
+        badge.textContent = count ? `已选 ${count}` : "";
+        badge.hidden = !count;
+      }
+    });
+  }
+
+  function buildOutboundConfig(form, itemId = null) {
+    const data = new FormData(form);
+    const type = String(data.get("outbound-type") || "selector");
+    const config = {
+      id: itemId || `outbound-${Date.now()}`,
+      tag: String(data.get("tag") || "新出站").trim(),
+      type,
+      refs: [],
+    };
+    if (!["selector", "urltest"].includes(type)) return config;
+    config.hidden = data.get("hidden") === "true";
+    config.include = String(data.get("include") || "").trim();
+    config.exclude = String(data.get("exclude") || "").trim();
+    config.icon = String(data.get("icon") || "").trim();
+    config.interrupt_exist_connections = true;
+    config.refs = data.getAll("outbound-ref").flatMap((value) => {
+      try {
+        return [JSON.parse(String(value))];
+      } catch {
+        return [];
+      }
+    });
+    if (type === "urltest") {
+      config.url = String(data.get("url") || "").trim();
+      config.interval = String(data.get("interval") || "3m").trim();
+      config.tolerance = Number(data.get("tolerance") || 0);
+    }
+    return config;
+  }
+
   function copyText(text) {
     if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).catch(() => copyTextFallback(text));
     copyTextFallback(text);
@@ -1145,6 +1386,7 @@
   function closeModal() {
     modalRoot.innerHTML = "";
     state.editingCustomInboundId = null;
+    state.editingOutboundId = null;
     document.body.style.overflow = "";
   }
 
@@ -1189,6 +1431,18 @@
   }
 
   modalRoot.addEventListener("click", (event) => {
+    const outboundGroupButton = event.target.closest('[data-action="toggle-outbound-group"]');
+    if (outboundGroupButton) {
+      event.stopPropagation();
+      const group = outboundGroupButton.closest("[data-outbound-reference-group]");
+      const body = group?.querySelector(".outbound-reference-body");
+      const expanded = outboundGroupButton.getAttribute("aria-expanded") === "true";
+      outboundGroupButton.setAttribute("aria-expanded", String(!expanded));
+      group?.classList.toggle("expanded", !expanded);
+      if (body) body.hidden = expanded;
+      return;
+    }
+
     const addButton = event.target.closest('[data-action="add-tun-list-item"]');
     if (addButton) {
       event.stopPropagation();
@@ -1415,9 +1669,26 @@
       window.clearTimeout(window.__singboxSearchTimer);
       window.__singboxSearchTimer = window.setTimeout(render, 120);
     }
+    if (event.target.matches("[data-outbound-icon-input]")) {
+      const preview = document.querySelector("[data-outbound-icon-preview]");
+      if (!preview) return;
+      const value = event.target.value.trim();
+      preview.classList.toggle("is-empty", !value);
+      preview.innerHTML = value ? `<img src="${escapeHtml(value)}" alt="" />` : icon("globe");
+    }
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-outbound-type]")) {
+      const form = event.target.closest("#outbound-form");
+      if (form) updateOutboundTypeFields(form, event.target.value);
+      return;
+    }
+    if (event.target.matches('input[name="outbound-ref"]')) {
+      const form = event.target.closest("#outbound-form");
+      if (form) updateOutboundReferenceCount(form);
+      return;
+    }
     if (event.target.matches("[data-inbound-type]")) {
       const selectedType = event.target.value;
       const fields = document.querySelector("[data-inbound-type-fields]");
@@ -1494,6 +1765,20 @@
         render();
         showToast("入站已添加", `${config.tag}（${config.type}）已加入当前配置草稿，请保存后应用。`, "success");
       }
+    } else if (type === "outbound") {
+      const config = buildOutboundConfig(form, state.editingOutboundId);
+      if (["selector", "urltest"].includes(config.type) && !config.refs.length) {
+        showToast("缺少引用项目", "手动选择和自动选择至少需要引用一个出站、订阅或订阅节点。", "info");
+        form.querySelector('[name="outbound-ref"]')?.focus();
+        return;
+      }
+      const existingIndex = state.outbounds.findIndex((outbound) => outbound.id === state.editingOutboundId);
+      if (existingIndex >= 0) state.outbounds.splice(existingIndex, 1, config);
+      else state.outbounds.unshift(config);
+      state.dirty = true;
+      closeModal();
+      render();
+      showToast(existingIndex >= 0 ? "出站已更新" : "出站已添加", `${config.tag}（${config.type}）已加入当前配置草稿，请保存后应用。`, "success");
     } else if (type === "subscription") {
       const data = new FormData(form);
       state.subscriptions.push({
