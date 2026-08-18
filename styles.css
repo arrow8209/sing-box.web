@@ -623,6 +623,10 @@ svg {
   display: none;
 }
 
+.desktop-sidebar-toggle {
+  display: none;
+}
+
 .icon-button .icon,
 .mobile-menu .icon {
   width: 17px;
@@ -6987,6 +6991,20 @@ svg {
     --radius: 9px;
   }
 
+  body.sidebar-collapsed {
+    --sidebar-width: 58px;
+  }
+
+  .desktop-sidebar-toggle {
+    display: inline-grid;
+  }
+
+  body.sidebar-collapsed .desktop-sidebar-toggle {
+    color: var(--primary);
+    border-color: color-mix(in srgb, var(--primary) 24%, var(--line));
+    background: var(--primary-soft);
+  }
+
   .brand {
     min-height: 54px;
     gap: 9px;
@@ -7065,6 +7083,58 @@ svg {
   .core-mini-icon {
     width: 27px;
     height: 27px;
+  }
+
+  body.sidebar-collapsed .brand {
+    justify-content: center;
+    padding-inline: 7px;
+  }
+
+  body.sidebar-collapsed .brand-copy,
+  body.sidebar-collapsed .nav-label,
+  body.sidebar-collapsed .nav-item > span:not(.icon),
+  body.sidebar-collapsed .nav-parent > span:not(.icon),
+  body.sidebar-collapsed .nav-chevron,
+  body.sidebar-collapsed .nav-parent-add,
+  body.sidebar-collapsed .nav-config-tree,
+  body.sidebar-collapsed .core-mini-copy,
+  body.sidebar-collapsed .core-mini .entry-action {
+    display: none;
+  }
+
+  body.sidebar-collapsed .sidebar-scroll {
+    padding: 4px 7px 10px;
+  }
+
+  body.sidebar-collapsed .nav-parent-row {
+    display: block;
+  }
+
+  body.sidebar-collapsed .nav-item,
+  body.sidebar-collapsed .nav-parent-row .nav-parent {
+    width: 42px;
+    min-height: 38px;
+    justify-content: center;
+    gap: 0;
+    margin: 2px auto;
+    padding: 0;
+  }
+
+  body.sidebar-collapsed .nav-item.active::before,
+  body.sidebar-collapsed .nav-parent.active::before {
+    left: -8px;
+  }
+
+  body.sidebar-collapsed .sidebar-footer {
+    padding: 8px 7px 10px;
+  }
+
+  body.sidebar-collapsed .core-mini {
+    justify-content: center;
+    margin: 0;
+    padding: 6px;
+    border-color: transparent;
+    background: transparent;
   }
 
   .topbar {

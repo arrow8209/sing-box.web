@@ -329,6 +329,7 @@
     ],
     configExpanded: true,
     sidebarOpen: false,
+    sidebarCollapsed: readStorage("singbox-sidebar-collapsed", "false") === "true",
     coreRunning: true,
     systemProxy: true,
     tunMode: true,
@@ -910,7 +911,7 @@
   }
 
   function navItem(page, label, iconName) {
-    return `<button class="nav-item ${state.page === page ? "active" : ""}" data-page="${page}">
+    return `<button class="nav-item ${state.page === page ? "active" : ""}" data-page="${page}" aria-label="${label}" title="${label}">
       ${icon(iconName)}<span>${label}</span>
     </button>`;
   }
@@ -929,7 +930,7 @@
         <div class="nav-label">概览</div>
         ${navItem("dashboard", "仪表盘", "dashboard")}
         <div class="nav-parent-row">
-          <button class="nav-parent ${configActive ? "active" : ""} ${state.configExpanded ? "expanded" : ""}" data-action="config-parent">
+          <button class="nav-parent ${configActive ? "active" : ""} ${state.configExpanded ? "expanded" : ""}" data-action="config-parent" aria-label="配置" title="配置">
             ${icon("config")}<span>配置</span><span class="nav-count">${state.profiles.length}</span>${icon("chevron", "nav-chevron")}
           </button>
           <button class="nav-parent-add" data-modal="profile-new" aria-label="新增配置" title="新增配置">${icon("plus")}</button>
@@ -953,7 +954,7 @@
         ${navItem("settings", "设置", "settings")}
       </div>
       <div class="sidebar-footer">
-        <div class="core-mini">
+        <div class="core-mini" title="sing-box ${state.coreRunning ? "核心运行中" : "核心已停止"}">
           <div class="core-mini-icon">${icon("cpu")}</div>
           <div class="core-mini-copy">
             <div class="core-mini-title">sing-box 1.11.11</div>
@@ -970,6 +971,7 @@
     const current = state.page === "config" ? configTabs.find((tab) => tab.id === state.activeConfig)?.label : meta.title;
     return `<header class="topbar">
       <button class="mobile-menu" data-action="toggle-sidebar" aria-label="打开菜单">${icon("menu")}</button>
+      <button class="icon-button desktop-sidebar-toggle" data-action="toggle-sidebar-collapse" aria-label="${state.sidebarCollapsed ? "展开" : "收起"}侧边栏" title="${state.sidebarCollapsed ? "展开" : "收起"}侧边栏" aria-pressed="${state.sidebarCollapsed}">${icon("menu")}</button>
       <div class="page-heading">
         <h1>${state.page === "config" ? escapeHtml(activeProfile().name) : meta.title}</h1>
         <div class="breadcrumbs"><span>${meta.parent}</span><span>/</span><span class="current">${current}</span></div>
@@ -992,6 +994,7 @@
   function render() {
     applyTheme();
     document.body.classList.toggle("sidebar-open", state.sidebarOpen);
+    document.body.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
     app.innerHTML = `<div class="app-shell">
       ${renderSidebar()}
       <button class="sidebar-overlay" data-action="close-sidebar" aria-label="关闭菜单"></button>
@@ -3240,6 +3243,13 @@
     if (action === "toggle-sidebar") {
       state.sidebarOpen = !state.sidebarOpen;
       document.body.classList.toggle("sidebar-open", state.sidebarOpen);
+    } else if (action === "toggle-sidebar-collapse") {
+      state.sidebarCollapsed = !state.sidebarCollapsed;
+      writeStorage("singbox-sidebar-collapsed", String(state.sidebarCollapsed));
+      document.body.classList.toggle("sidebar-collapsed", state.sidebarCollapsed);
+      actionTarget.setAttribute("aria-pressed", String(state.sidebarCollapsed));
+      actionTarget.setAttribute("aria-label", `${state.sidebarCollapsed ? "展开" : "收起"}侧边栏`);
+      actionTarget.title = `${state.sidebarCollapsed ? "展开" : "收起"}侧边栏`;
     } else if (action === "close-sidebar") {
       state.sidebarOpen = false;
       document.body.classList.remove("sidebar-open");
