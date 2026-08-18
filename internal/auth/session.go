@@ -60,12 +60,11 @@ func (manager *SessionManager) Login(username string, password []byte) (Session,
 		return Session{}, err
 	}
 	now := manager.now()
-	issuedAt := quantizedIssuedAt(now)
 	claims := Claims{
 		Username:  Username,
 		Epoch:     record.SessionEpoch,
-		IssuedAt:  issuedAt,
-		ExpiresAt: issuedAt + int64(sessionIdleDuration/time.Second),
+		IssuedAt:  timeToClaimValue(now),
+		ExpiresAt: timeToClaimValue(now.Add(sessionIdleDuration)),
 		CSRFToken: base64.RawURLEncoding.EncodeToString(csrfBytes),
 	}
 	return sessionFromClaims(claims, record.SessionKey)
@@ -85,15 +84,15 @@ func (manager *SessionManager) Refresh(token string) (Session, bool, error) {
 		return Session{}, false, ErrInvalidSession
 	}
 	now := manager.now()
-	if now.Before(time.Unix(claims.IssuedAt, 0).Add(sessionRefreshInterval)) {
+	if now.Before(claimValueToTime(claims.IssuedAt).Add(sessionRefreshInterval)) {
 		return Session{}, false, nil
 	}
 	record, err := manager.store.Load()
 	if err != nil || record.SessionEpoch != claims.Epoch {
 		return Session{}, false, ErrInvalidSession
 	}
-	claims.IssuedAt = quantizedIssuedAt(now)
-	claims.ExpiresAt = claims.IssuedAt + int64(sessionIdleDuration/time.Second)
+	claims.IssuedAt = timeToClaimValue(now)
+	claims.ExpiresAt = timeToClaimValue(now.Add(sessionIdleDuration))
 	session, err := sessionFromClaims(claims, record.SessionKey)
 	if err != nil {
 		return Session{}, false, ErrInvalidSession
@@ -131,25 +130,27 @@ func (manager *SessionManager) validate(token string) (Claims, error) {
 	if err := json.Unmarshal(payload, &claims); err != nil {
 		return Claims{}, ErrInvalidSession
 	}
-	now := manager.now().Unix()
+	now := manager.now()
+	issuedAt := claimValueToTime(claims.IssuedAt)
+	expiresAt := claimValueToTime(claims.ExpiresAt)
 	if claims.Username != Username ||
 		claims.Epoch != record.SessionEpoch ||
 		claims.IssuedAt < 0 ||
-		claims.IssuedAt > now+1 ||
+		issuedAt.After(now) ||
 		claims.ExpiresAt <= claims.IssuedAt ||
-		claims.ExpiresAt-claims.IssuedAt != int64(sessionIdleDuration/time.Second) ||
-		now >= claims.ExpiresAt {
+		claims.ExpiresAt-claims.IssuedAt != int64(sessionIdleDuration) ||
+		!now.Before(expiresAt) {
 		return Claims{}, ErrInvalidSession
 	}
 	return claims, nil
 }
 
-func quantizedIssuedAt(value time.Time) int64 {
-	issuedAt := value.Unix()
-	if value.Nanosecond() != 0 {
-		issuedAt++
-	}
-	return issuedAt
+func timeToClaimValue(value time.Time) int64 {
+	return value.UnixNano()
+}
+
+func claimValueToTime(value int64) time.Time {
+	return time.Unix(0, value).UTC()
 }
 
 func sessionFromClaims(claims Claims, encodedKey string) (Session, error) {
@@ -168,7 +169,7 @@ func sessionFromClaims(claims Claims, encodedKey string) (Session, error) {
 	return Session{
 		Token:     token,
 		CSRFToken: claims.CSRFToken,
-		ExpiresAt: time.Unix(claims.ExpiresAt, 0).UTC(),
+		ExpiresAt: claimValueToTime(claims.ExpiresAt),
 	}, nil
 }
 

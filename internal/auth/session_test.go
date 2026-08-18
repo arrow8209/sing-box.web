@@ -130,6 +130,9 @@ func TestSessionSubsecondRefreshDoesNotRenewEarly(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	if !session.ExpiresAt.Equal(start.Add(24 * time.Hour)) {
+		t.Fatalf("ExpiresAt = %v, want %v", session.ExpiresAt, start.Add(24*time.Hour))
+	}
 	if _, err := manager.Validate(session.Token); err != nil {
 		t.Fatalf("fresh subsecond session rejected: %v", err)
 	}
@@ -137,9 +140,9 @@ func TestSessionSubsecondRefreshDoesNotRenewEarly(t *testing.T) {
 	if _, renewed, err := manager.Refresh(session.Token); err != nil || renewed {
 		t.Fatalf("14m59.1s refresh: renewed=%v err=%v", renewed, err)
 	}
-	current = start.Add(15*time.Minute + 100*time.Millisecond)
+	current = start.Add(15 * time.Minute)
 	if _, renewed, err := manager.Refresh(session.Token); err != nil || !renewed {
-		t.Fatalf("15m0.1s refresh: renewed=%v err=%v", renewed, err)
+		t.Fatalf("15m refresh: renewed=%v err=%v", renewed, err)
 	}
 }
 
@@ -155,16 +158,16 @@ func TestValidateRejectsInvalidSignedClaimTimes(t *testing.T) {
 		t.Fatal(err)
 	}
 	manager := NewSessionManager(store, func() time.Time { return current }, random)
-	now := current.Unix()
+	now := current.UnixNano()
 	tests := []struct {
 		name      string
 		issuedAt  int64
 		expiresAt int64
 	}{
-		{name: "future", issuedAt: now + 2, expiresAt: now + 2 + int64(24*time.Hour/time.Second)},
-		{name: "negative", issuedAt: -1, expiresAt: -1 + int64(24*time.Hour/time.Second)},
+		{name: "future 1ns", issuedAt: now + 1, expiresAt: now + 1 + int64(24*time.Hour)},
+		{name: "negative", issuedAt: -1, expiresAt: -1 + int64(24*time.Hour)},
 		{name: "not after issue", issuedAt: now, expiresAt: now},
-		{name: "not 24 hours", issuedAt: now, expiresAt: now + int64(24*time.Hour/time.Second) + 1},
+		{name: "not 24 hours", issuedAt: now, expiresAt: now + int64(24*time.Hour) + 1},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
@@ -198,7 +201,7 @@ func TestValidateRejectsSessionAfterClockRollback(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	current = current.Add(-48 * time.Hour)
+	current = current.Add(-time.Nanosecond)
 	if _, err := manager.Validate(session.Token); !errors.Is(err, ErrInvalidSession) {
 		t.Fatalf("Validate() after rollback error = %v, want ErrInvalidSession", err)
 	}
@@ -217,7 +220,7 @@ func FuzzValidateSession(f *testing.F) {
 	}
 	manager := NewSessionManager(store, func() time.Time { return current }, random)
 	f.Add("", int64(0), int64(0))
-	f.Add("payload.signature", current.Unix(), current.Add(24*time.Hour).Unix())
+	f.Add("payload.signature", current.UnixNano(), current.Add(24*time.Hour).UnixNano())
 	f.Fuzz(func(t *testing.T, token string, issuedAt int64, expiresAt int64) {
 		_, _ = manager.Validate(token)
 
