@@ -10,6 +10,5 @@ import (
 var version = "dev"
 
 func main() {
-	deps := cli.Dependencies{Version: version}
-	os.Exit(cli.Run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr, deps))
+	os.Exit(cli.Run(context.Background(), os.Args[1:], os.Stdin, os.Stdout, os.Stderr, dependencies()))
 }
