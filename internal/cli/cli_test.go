@@ -3,6 +3,7 @@ package cli
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -62,6 +63,56 @@ func TestRunAdminSetPasswordZerosPasswords(t *testing.T) {
 	for _, value := range append(password, confirmation...) {
 		if value != 0 {
 			t.Fatalf("password byte = %d, want 0", value)
+		}
+	}
+}
+
+func TestRunAdminSetPasswordZerosPasswordWhenFirstReadFails(t *testing.T) {
+	password := []byte("partially-read-password")
+	deps := Dependencies{
+		ReadPassword: func() ([]byte, error) {
+			return password, errors.New("read failed")
+		},
+		SetPassword: func(context.Context, string, []byte) error {
+			t.Fatal("SetPassword() must not be called")
+			return nil
+		},
+	}
+	if code := Run(context.Background(), []string{"admin", "set-password", "--data-dir", "/data"}, strings.NewReader(""), io.Discard, io.Discard, deps); code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	for _, value := range password {
+		if value != 0 {
+			t.Fatalf("password byte = %d, want 0", value)
+		}
+	}
+}
+
+func TestRunAdminSetPasswordZerosPasswordsWhenSecondReadFails(t *testing.T) {
+	password := []byte("a-strong-password")
+	confirmation := []byte("partially-read-confirmation")
+	readCount := 0
+	deps := Dependencies{
+		ReadPassword: func() ([]byte, error) {
+			readCount++
+			if readCount == 1 {
+				return password, nil
+			}
+			return confirmation, errors.New("read failed")
+		},
+		SetPassword: func(context.Context, string, []byte) error {
+			t.Fatal("SetPassword() must not be called")
+			return nil
+		},
+	}
+	if code := Run(context.Background(), []string{"admin", "set-password", "--data-dir", "/data"}, strings.NewReader(""), io.Discard, io.Discard, deps); code != 1 {
+		t.Fatalf("Run() code = %d, want 1", code)
+	}
+	for _, password := range [][]byte{password, confirmation} {
+		for _, value := range password {
+			if value != 0 {
+				t.Fatalf("password byte = %d, want 0", value)
+			}
 		}
 	}
 }

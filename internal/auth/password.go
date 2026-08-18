@@ -71,7 +71,16 @@ func parsePHC(encoded string) (phcHash, error) {
 		if !ok || key == "" || value == "" {
 			return phcHash{}, errors.New("invalid Argon2id parameters")
 		}
+		if key != "m" && key != "t" && key != "p" {
+			return phcHash{}, errors.New("invalid Argon2id parameters")
+		}
+		if _, exists := params[key]; exists {
+			return phcHash{}, errors.New("invalid Argon2id parameters")
+		}
 		params[key] = value
+	}
+	if len(params) != 3 {
+		return phcHash{}, errors.New("invalid Argon2id parameters")
 	}
 	memory, err := parseUint32(params["m"])
 	if err != nil {

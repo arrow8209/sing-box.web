@@ -53,26 +53,23 @@ func runAdminSetPassword(ctx context.Context, args []string, stderr io.Writer, d
 
 	fmt.Fprint(stderr, "请输入管理员密码: ")
 	password, err := deps.ReadPassword()
+	defer clear(password)
 	if err != nil {
 		fmt.Fprintln(stderr, "读取管理员密码失败")
 		return 1
 	}
 	fmt.Fprint(stderr, "请再次输入管理员密码: ")
 	confirmation, err := deps.ReadPassword()
+	defer clear(confirmation)
 	if err != nil {
-		clear(password)
 		fmt.Fprintln(stderr, "读取管理员密码失败")
 		return 1
 	}
 	if !bytes.Equal(password, confirmation) {
-		clear(password)
-		clear(confirmation)
 		fmt.Fprintln(stderr, "两次输入的管理员密码不一致")
 		return 1
 	}
 	err = deps.SetPassword(ctx, *dataDir, password)
-	clear(password)
-	clear(confirmation)
 	if err != nil {
 		fmt.Fprintln(stderr, "设置管理员密码失败")
 		return 1

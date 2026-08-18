@@ -53,6 +53,14 @@ func TestSetPasswordRejectsShortUnicodePassword(t *testing.T) {
 	}
 }
 
+func TestSetPasswordRejectsInvalidUTF8Password(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), time.Now, bytes.NewReader(bytes.Repeat([]byte{1}, 48)))
+	password := bytes.Repeat([]byte{0xff}, 12)
+	if err := store.SetPassword(password); !errors.Is(err, ErrWeakPassword) {
+		t.Fatalf("SetPassword() error = %v, want ErrWeakPassword", err)
+	}
+}
+
 func TestSetPasswordReturnsPersistenceError(t *testing.T) {
 	parent := filepath.Join(t.TempDir(), "not-a-directory")
 	if err := os.WriteFile(parent, []byte("file"), 0o600); err != nil {
