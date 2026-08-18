@@ -2,3 +2,8 @@ temp/
 node_modules/
 *.log
 .DS_Store
+web/node_modules/
+web/dist/
+dist/
+internal/webui/dist/*
+!internal/webui/dist/placeholder.txt
