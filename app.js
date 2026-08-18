@@ -906,7 +906,7 @@
     document.documentElement.dataset.accent = state.accent;
     document.querySelector('meta[name="theme-color"]')?.setAttribute(
       "content",
-      state.theme === "dark" ? "#0e1320" : "#f4f7fb",
+      state.theme === "dark" ? "#0b111d" : "#f2f5fa",
     );
   }
 
@@ -3070,7 +3070,7 @@
   function setAccent(accent) {
     state.accent = accent;
     const palettes = {
-      blue: ["#4f6ff8", "#3758e7", "#edf1ff"],
+      blue: ["#4c6fff", "#3858e8", "#edf1ff"],
       cyan: ["#13aebf", "#0b8f9e", "#e7f9fb"],
       violet: ["#8067e8", "#684bd8", "#f0edff"],
     };
