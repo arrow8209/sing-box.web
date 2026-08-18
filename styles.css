@@ -1580,6 +1580,45 @@ svg {
   grid-column: 1 / -1;
 }
 
+.form-field.is-hidden {
+  display: none;
+}
+
+.inbound-base-fields {
+  align-items: end;
+}
+
+.inbound-type-divider {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 18px 0 15px;
+  color: var(--text-faint);
+  font-size: 9px;
+  font-weight: 690;
+  letter-spacing: 0.45px;
+}
+
+.inbound-type-divider::before,
+.inbound-type-divider::after {
+  height: 1px;
+  flex: 1;
+  content: "";
+  background: var(--line);
+}
+
+.inbound-type-divider::before {
+  max-width: 18px;
+}
+
+.inbound-type-fields {
+  min-height: 196px;
+}
+
+.inbound-type-note {
+  margin-top: 13px;
+}
+
 .field-label {
   display: flex;
   align-items: center;
@@ -2521,11 +2560,15 @@ svg {
 }
 
 .modal-head {
+  position: sticky;
+  z-index: 3;
+  top: 0;
   display: flex;
   align-items: flex-start;
   gap: 12px;
   padding: 19px 20px 15px;
   border-bottom: 1px solid var(--line);
+  background: var(--surface);
 }
 
 .modal-title-wrap {
@@ -2698,11 +2741,16 @@ svg {
 }
 
 .modal-footer {
+  position: sticky;
+  z-index: 3;
+  bottom: 0;
   display: flex;
   justify-content: flex-end;
   gap: 9px;
   padding: 14px 20px 18px;
   border-top: 1px solid var(--line);
+  background: var(--surface);
+  box-shadow: 0 -8px 20px color-mix(in srgb, var(--surface) 88%, transparent);
 }
 
 .toast-stack {
