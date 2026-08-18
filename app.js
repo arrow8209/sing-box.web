@@ -113,6 +113,56 @@
   "sniff_override_destination": false
 }`;
 
+  const subscriptionJsonExample = `{
+  "name": "我的 JSON 订阅",
+  "outbounds": [
+    {
+      "type": "shadowsocks",
+      "tag": "香港 01",
+      "server": "hk01.example.com",
+      "server_port": 8388,
+      "method": "2022-blake3-aes-128-gcm",
+      "password": "change-me"
+    },
+    {
+      "type": "trojan",
+      "tag": "新加坡 01",
+      "server": "sg01.example.com",
+      "server_port": 443,
+      "password": "change-me",
+      "tls": {
+        "enabled": true,
+        "server_name": "sg01.example.com"
+      }
+    }
+  ]
+}`;
+
+  function createDemoSubscriptionNodes(prefix, count, offset = 0) {
+    const regions = [
+      ["香港", "hk"], ["日本", "jp"], ["新加坡", "sg"], ["美国", "us"],
+      ["德国", "de"], ["台湾", "tw"], ["韩国", "kr"], ["英国", "uk"],
+    ];
+    const protocols = [
+      ["shadowsocks", 8388], ["trojan", 443], ["vmess", 443], ["vless", 443], ["hysteria2", 8443],
+    ];
+    return Array.from({ length: count }, (_, index) => {
+      const position = index + offset;
+      const [region, regionCode] = regions[position % regions.length];
+      const [type, serverPort] = protocols[position % protocols.length];
+      const sequence = String(Math.floor(position / regions.length) + 1).padStart(2, "0");
+      return {
+        type,
+        tag: `${prefix} · ${region} ${sequence}`,
+        server: `${regionCode}${sequence}.example.net`,
+        server_port: serverPort,
+      };
+    });
+  }
+
+  const cloudRouteNodes = createDemoSubscriptionNodes("Cloud Route", 42);
+  const edgeNetworkNodes = createDemoSubscriptionNodes("Edge Network", 18, 3);
+
   const routeRuleTypeOptions = [
     ["inbound", "入站 (inbound)"],
     ["network", "网络 (network)"],
@@ -172,6 +222,7 @@
     formInbounds: [],
     editingCustomInboundId: null,
     editingOutboundId: null,
+    editingSubscriptionId: null,
     outbounds: [
       {
         id: "outbound-select",
@@ -265,10 +316,8 @@
         logo: "CR",
         tone: "blue",
         nodes: 42,
-        used: 68.4,
-        total: 200,
-        expires: "2026-09-18",
-        interval: "每 6 小时",
+        nodeList: cloudRouteNodes,
+        sourceJson: JSON.stringify({ name: "Cloud Route Premium", outbounds: cloudRouteNodes }, null, 2),
         updated: "8 分钟前",
       },
       {
@@ -277,10 +326,8 @@
         logo: "EN",
         tone: "cyan",
         nodes: 18,
-        used: 24.7,
-        total: 100,
-        expires: "2026-10-02",
-        interval: "每天",
+        nodeList: edgeNetworkNodes,
+        sourceJson: JSON.stringify({ name: "Edge Network", outbounds: edgeNetworkNodes }, null, 2),
         updated: "2 小时前",
       },
     ],
@@ -960,18 +1007,31 @@
     return `<div class="dns-server"><div class="entry-icon ${tone}">${icon(iconName)}</div><div class="dns-server-copy"><strong>${name}</strong><span>${address}</span></div><span class="type-badge">${tag}</span><button class="entry-action" data-action="edit-entry">${icon("more")}</button></div>`;
   }
 
+  function getSubscriptionNodes(subscription) {
+    return Array.isArray(subscription?.nodeList) ? subscription.nodeList : [];
+  }
+
+  function subscriptionNodeCount(subscription) {
+    return getSubscriptionNodes(subscription).length;
+  }
+
+  function subscriptionProtocols(subscription) {
+    return [...new Set(getSubscriptionNodes(subscription).map((node) => String(node.type || "unknown")))];
+  }
+
   function renderSubscriptions() {
-    const totalNodes = state.subscriptions.reduce((sum, item) => sum + item.nodes, 0);
+    const totalNodes = state.subscriptions.reduce((sum, item) => sum + subscriptionNodeCount(item), 0);
+    const protocolCount = new Set(state.subscriptions.flatMap(subscriptionProtocols)).size;
     return `<section>
-      <div class="page-intro"><div class="page-intro-copy"><h2>订阅配置</h2><p>集中管理远程节点订阅，更新后自动合并到当前配置。</p></div><div class="page-actions"><button class="btn" data-action="sync-all-subscriptions">${icon("rotate")}全部同步</button><button class="btn btn-primary" data-modal="subscription">${icon("plus")}添加订阅</button></div></div>
+      <div class="page-intro"><div class="page-intro-copy"><h2>订阅配置</h2><p>仅支持通过 JSON 编辑器批量导入 sing-box 出站节点。</p></div><div class="page-actions"><button class="btn btn-primary" data-modal="subscription">${icon("code")}导入 JSON 订阅</button></div></div>
       <div class="summary-grid">
-        ${summaryMetric("subscription", "", state.subscriptions.length, "订阅来源", "全部可用")}
-        ${summaryMetric("globe", "cyan", totalNodes, "可用节点", "3 个节点延迟较高")}
-        ${summaryMetric("download", "green", "93.1 GB", "剩余流量", "合计 300 GB")}
+        ${summaryMetric("subscription", "", state.subscriptions.length, "JSON 订阅", "本地编辑与维护")}
+        ${summaryMetric("globe", "cyan", totalNodes, "已导入节点", "完整保留 outbounds")}
+        ${summaryMetric("code", "orange", protocolCount, "协议类型", "由节点 JSON 自动识别")}
       </div>
       <div class="subscription-grid">
         ${state.subscriptions.map(renderSubscriptionCard).join("")}
-        <button class="card empty-state" data-modal="subscription"><div><div class="empty-icon">${icon("plus")}</div><h3>添加新的订阅</h3><p>支持 sing-box、Clash 与通用订阅链接</p><span class="btn btn-sm btn-primary">开始添加</span></div></button>
+        <button class="card empty-state" data-modal="subscription"><div><div class="empty-icon">${icon("code")}</div><h3>添加 JSON 订阅</h3><p>粘贴完整配置或节点数组，一次导入全部节点</p><span class="btn btn-sm btn-primary">打开 JSON 编辑器</span></div></button>
       </div>
     </section>`;
   }
@@ -981,15 +1041,16 @@
   }
 
   function renderSubscriptionCard(item) {
-    const percent = Math.round((item.used / item.total) * 100);
-    return `<article class="card subscription-card">
+    const nodes = getSubscriptionNodes(item);
+    const protocols = subscriptionProtocols(item);
+    return `<article class="card subscription-card" data-subscription-card data-id="${escapeHtml(item.id)}" tabindex="0" aria-label="${escapeHtml(`双击查看 ${item.name} 的全部 ${nodes.length} 个节点`)}">
       <div class="subscription-main">
-        <div class="subscription-top"><div class="provider-logo ${item.tone === "cyan" ? "cyan" : ""}">${item.logo}</div><div class="subscription-name"><strong>${item.name}</strong><span>远程订阅 · 自动更新</span></div><span class="badge badge-success">可用</span><button class="entry-action" data-action="subscription-more">${icon("more")}</button></div>
-        <div class="usage-row"><div class="usage-title">本期已用<strong>${item.used} GB / ${item.total} GB</strong></div><span class="usage-percent">${percent}%</span></div>
-        <div class="progress"><div class="progress-bar" style="width:${percent}%"></div></div>
-        <div class="subscription-meta"><div class="subscription-meta-item"><span>节点数量</span><strong>${item.nodes} 个</strong></div><div class="subscription-meta-item"><span>到期时间</span><strong>${item.expires}</strong></div><div class="subscription-meta-item"><span>更新频率</span><strong>${item.interval}</strong></div></div>
+        <div class="subscription-top"><div class="provider-logo ${item.tone === "cyan" ? "cyan" : ""}">${escapeHtml(item.logo)}</div><div class="subscription-name"><strong>${escapeHtml(item.name)}</strong><span>JSON 节点集合 · ${nodes.length} 个出站</span></div><span class="badge badge-success">JSON</span></div>
+        <div class="subscription-json-source"><div class="subscription-source-icon">${icon("code")}</div><div><strong>完整节点已导入</strong><span>编辑 JSON 会整体更新该订阅中的全部节点</span></div></div>
+        <div class="subscription-meta"><div class="subscription-meta-item"><span>节点数量</span><strong>${nodes.length} 个</strong></div><div class="subscription-meta-item"><span>协议类型</span><strong>${protocols.length} 种</strong></div><div class="subscription-meta-item"><span>最后编辑</span><strong>${escapeHtml(item.updated)}</strong></div></div>
+        <div class="subscription-protocols">${protocols.slice(0, 4).map((type) => `<span class="type-badge">${escapeHtml(type)}</span>`).join("")}${protocols.length > 4 ? `<span class="type-badge">+${protocols.length - 4}</span>` : ""}</div>
       </div>
-      <div class="subscription-footer"><span class="subscription-update">上次更新：${item.updated}</span><div class="inline-actions"><button class="btn btn-sm btn-quiet" data-action="edit-subscription" data-id="${item.id}">${icon("edit")}编辑</button><button class="btn btn-sm" data-action="sync-subscription" data-id="${item.id}">${icon("rotate")}立即同步</button></div></div>
+      <div class="subscription-footer"><span class="subscription-update">${icon("info")}双击卡片查看全部节点</span><div class="inline-actions"><button class="btn btn-sm btn-quiet" data-action="view-subscription-nodes" data-id="${escapeHtml(item.id)}">${icon("globe")}查看节点</button><button class="btn btn-sm" data-action="edit-subscription" data-id="${escapeHtml(item.id)}">${icon("edit")}编辑 JSON</button></div></div>
     </article>`;
   }
 
@@ -1098,7 +1159,9 @@
     state.editingOutboundId = type === "outbound" ? itemId : null;
     state.editingRouteRuleId = type === "route" ? itemId : null;
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
-    if (type === "subscription") content = subscriptionModal();
+    state.editingSubscriptionId = type === "subscription" ? itemId : null;
+    if (type === "subscription") content = subscriptionModal(itemId);
+    else if (type === "subscription-nodes") content = subscriptionNodesModal(itemId);
     else if (type === "inbound") content = inboundModal(itemId);
     else if (type === "outbound") content = outboundModal(itemId);
     else if (type === "route") content = routeRuleModal(itemId);
@@ -1331,12 +1394,11 @@
   }
 
   function subscriptionNodeMembers(subscription) {
-    const regions = ["香港 01", "香港 02", "日本 01", "新加坡 01", "美国 01", "德国 01", "台湾 01", "韩国 01"];
-    return regions.slice(0, Math.min(regions.length, subscription.nodes)).map((region, index) => ({
+    return getSubscriptionNodes(subscription).map((node, index) => ({
       id: `${subscription.id}-node-${index + 1}`,
-      tag: `${subscription.name} · ${region}`,
-      type: subscription.id,
-      badge: region.slice(0, 2),
+      tag: String(node.tag || `未命名节点 ${index + 1}`),
+      type: String(node.type || "unknown"),
+      badge: outboundMemberInitial(node.tag || node.type),
     }));
   }
 
@@ -1360,7 +1422,7 @@
       ...state.subscriptions.map((subscription) => ({
         id: subscription.id,
         name: subscription.name,
-        total: subscription.nodes,
+        total: subscriptionNodeCount(subscription),
         members: subscriptionNodeMembers(subscription),
         expanded: false,
       })),
@@ -1667,13 +1729,113 @@
     textarea.remove();
   }
 
-  function subscriptionModal() {
-    const body = `<form class="modal-body" id="subscription-form" data-form="subscription"><div class="form-grid">
-      ${modalField("订阅名称", "name", "我的节点订阅")}${modalField("订阅地址", "url", "https://example.com/subscribe", "url", true)}${modalField("更新频率", "interval", "每 6 小时", "select", false, ["每 1 小时", "每 6 小时", "每天", "手动更新"])}${modalField("用户代理", "userAgent", "sing-box")}
-      <div class="form-field full"><div class="info-callout">${icon("info")}<span>原型不会请求或保存真实订阅地址，提交后只会生成一张演示卡片。</span></div></div>
-    </div></form>`;
-    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="subscription-form">${icon("plus")}添加订阅</button></div>`;
-    return modalFrame("添加订阅", "导入远程节点与流量信息", body, footer);
+  function validateSubscriptionJson(json) {
+    try {
+      const config = JSON.parse(json);
+      const nodes = Array.isArray(config)
+        ? config
+        : config && typeof config === "object" && Array.isArray(config.outbounds)
+          ? config.outbounds
+          : config && typeof config === "object" && Array.isArray(config.nodes)
+            ? config.nodes
+            : null;
+      if (!nodes) {
+        return { valid: false, message: "JSON 必须是节点数组，或包含 outbounds 数组的完整配置对象。" };
+      }
+      if (!nodes.length) {
+        return { valid: false, message: "JSON 中没有可导入的节点，请至少添加一个出站对象。" };
+      }
+      const invalidIndex = nodes.findIndex((node) => !node || typeof node !== "object" || Array.isArray(node) || typeof node.type !== "string" || !node.type.trim() || typeof node.tag !== "string" || !node.tag.trim());
+      if (invalidIndex >= 0) {
+        return { valid: false, message: `第 ${invalidIndex + 1} 个节点必须是包含非空 type 和 tag 的对象。` };
+      }
+      const tags = nodes.map((node) => node.tag.trim());
+      const duplicateTag = tags.find((tag, index) => tags.indexOf(tag) !== index);
+      if (duplicateTag) {
+        return { valid: false, message: `节点标签不能重复：${duplicateTag}` };
+      }
+      const name = !Array.isArray(config) && typeof config.name === "string" ? config.name.trim() : "";
+      const protocols = new Set(nodes.map((node) => node.type.trim()));
+      return {
+        valid: true,
+        config,
+        nodes,
+        name,
+        message: `JSON 有效 · 将导入 ${nodes.length} 个节点 · ${protocols.size} 种协议`,
+      };
+    } catch (error) {
+      return { valid: false, message: `JSON 语法错误：${error.message}` };
+    }
+  }
+
+  function subscriptionValidationMarkup(result) {
+    return `<div class="custom-json-validation ${result.valid ? "valid" : "invalid"}" id="subscription-json-validation">${icon(result.valid ? "check" : "info")}<span>${escapeHtml(result.message)}</span></div>`;
+  }
+
+  function subscriptionJsonFor(item) {
+    if (item?.sourceJson) return item.sourceJson;
+    if (item) return JSON.stringify({ name: item.name, outbounds: getSubscriptionNodes(item) }, null, 2);
+    return subscriptionJsonExample;
+  }
+
+  function subscriptionModal(itemId) {
+    const item = state.subscriptions.find((subscription) => subscription.id === itemId);
+    const json = subscriptionJsonFor(item);
+    const validation = validateSubscriptionJson(json);
+    const body = `<form class="modal-body subscription-json-body" id="subscription-form" data-form="subscription">
+      <div class="subscription-json-intro">${icon("code")}<div><strong>粘贴完整节点 JSON</strong><span>支持完整 sing-box 配置的 <code>outbounds</code>，也支持直接粘贴节点数组。</span></div></div>
+      <div class="custom-json-editor">
+        <div class="custom-json-toolbar"><div><span class="custom-json-language">JSON</span><span>全部订阅节点</span></div><div class="inline-actions"><button class="editor-action" type="button" data-action="reset-subscription-json">示例</button><button class="editor-action" type="button" data-action="format-subscription-json">${icon("sparkles")}格式化</button></div></div>
+        <textarea class="custom-json-textarea subscription-json-textarea ${validation.valid ? "" : "invalid"}" name="subscription-json" data-subscription-json aria-describedby="subscription-json-validation" aria-invalid="${!validation.valid}" spellcheck="false">${escapeHtml(json)}</textarea>
+      </div>
+      ${subscriptionValidationMarkup(validation)}
+      <div class="info-callout custom-json-help">${icon("info")}<span>保存时会整体替换该订阅的节点集合，JSON 中除 <code>name</code> 和 <code>outbounds</code> 外的其他顶层配置不会进入订阅卡片。</span></div>
+    </form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="subscription-submit" type="submit" form="subscription-form" ${validation.valid ? "" : "disabled"}>${icon(item ? "save" : "plus")}${item ? "保存全部节点" : "导入全部节点"}</button></div>`;
+    return modalFrame(item ? "编辑 JSON 订阅" : "导入 JSON 订阅", item ? `整体编辑 ${escapeHtml(item.name)} 的全部节点` : "通过 JSON 一次添加订阅中的所有节点", body, footer, "modal-wide modal-subscription-json");
+  }
+
+  function updateSubscriptionValidation(textarea) {
+    const result = validateSubscriptionJson(textarea.value);
+    textarea.classList.toggle("invalid", !result.valid);
+    textarea.setAttribute("aria-invalid", String(!result.valid));
+    const feedback = document.querySelector("#subscription-json-validation");
+    if (feedback) feedback.outerHTML = subscriptionValidationMarkup(result);
+    const submit = document.querySelector("#subscription-submit");
+    if (submit) submit.disabled = !result.valid;
+    return result;
+  }
+
+  function subscriptionNodeEndpoint(node) {
+    const server = node.server || node.address || node.server_address || "";
+    const port = node.server_port ?? node.port ?? "";
+    if (server) return `${server}${port !== "" ? `:${port}` : ""}`;
+    if (Array.isArray(node.outbounds)) return `${node.outbounds.length} 个引用出站`;
+    return "未设置远程地址";
+  }
+
+  function subscriptionNodeRow(node, index) {
+    return `<div class="subscription-node-row">
+      <span class="subscription-node-index">${String(index + 1).padStart(2, "0")}</span>
+      <span class="subscription-node-logo">${escapeHtml(outboundMemberInitial(node.tag || node.type))}</span>
+      <div class="subscription-node-copy"><strong title="${escapeHtml(node.tag)}">${escapeHtml(node.tag)}</strong><small>订阅节点 #${index + 1}</small></div>
+      <span class="type-badge">${escapeHtml(node.type)}</span>
+      <code title="${escapeHtml(subscriptionNodeEndpoint(node))}">${escapeHtml(subscriptionNodeEndpoint(node))}</code>
+    </div>`;
+  }
+
+  function subscriptionNodesModal(itemId) {
+    const item = state.subscriptions.find((subscription) => subscription.id === itemId);
+    if (!item) return genericModal("订阅不存在", "找不到对应的订阅节点集合", "missing-subscription", []);
+    const nodes = getSubscriptionNodes(item);
+    const protocols = subscriptionProtocols(item);
+    const body = `<div class="modal-body subscription-nodes-body">
+      <div class="subscription-node-overview"><div class="provider-logo ${item.tone === "cyan" ? "cyan" : ""}">${escapeHtml(item.logo)}</div><div><strong>${escapeHtml(item.name)}</strong><span>${nodes.length} 个节点 · ${protocols.length} 种协议 · 完整来自 JSON</span></div><div class="subscription-node-protocols">${protocols.map((type) => `<span class="type-badge">${escapeHtml(type)}</span>`).join("")}</div></div>
+      <div class="subscription-node-list-head"><span>#</span><span>节点</span><span>协议</span><span>服务器</span></div>
+      <div class="subscription-node-list">${nodes.map(subscriptionNodeRow).join("")}</div>
+    </div>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="copy-subscription-json" data-id="${escapeHtml(item.id)}">${icon("copy")}复制全部 JSON</button><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
+    return modalFrame("全部订阅节点", `${escapeHtml(item.name)} 中的所有节点`, body, footer, "modal-wide modal-subscription-nodes");
   }
 
   function genericModal(title, description, formType, fields) {
@@ -1706,6 +1868,7 @@
     state.editingOutboundId = null;
     state.editingRouteRuleId = null;
     state.editingRouteRulesetId = null;
+    state.editingSubscriptionId = null;
     document.body.style.overflow = "";
   }
 
@@ -1945,6 +2108,28 @@
       textarea.value = customInboundExample;
       updateCustomInboundValidation(textarea);
       textarea.focus();
+    } else if (action === "format-subscription-json") {
+      const textarea = document.querySelector("[data-subscription-json]");
+      if (!textarea) return;
+      const result = updateSubscriptionValidation(textarea);
+      if (!result.valid) {
+        showToast("暂时无法格式化", "请先修正订阅 JSON 的语法或节点字段。", "info");
+        return;
+      }
+      textarea.value = JSON.stringify(result.config, null, 2);
+      updateSubscriptionValidation(textarea);
+      textarea.focus();
+    } else if (action === "reset-subscription-json") {
+      const textarea = document.querySelector("[data-subscription-json]");
+      if (!textarea) return;
+      textarea.value = subscriptionJsonExample;
+      updateSubscriptionValidation(textarea);
+      textarea.focus();
+    } else if (action === "copy-subscription-json") {
+      const item = state.subscriptions.find((subscription) => subscription.id === actionTarget.dataset.id);
+      if (!item) return;
+      copyText(subscriptionJsonFor(item));
+      showToast("已复制订阅 JSON", `已复制 ${subscriptionNodeCount(item)} 个节点的完整 JSON。`, "success");
     } else if (action === "copy-custom-inbound") {
       const item = state.customInbounds.find((inbound) => inbound.id === actionTarget.dataset.id);
       if (!item) return;
@@ -1962,15 +2147,10 @@
       state.dirty = true;
       render();
       showToast("已移除入站", `${item?.config.tag || "入站配置"} 已从配置草稿移除。`, "info");
-    } else if (action === "sync-subscription") {
-      const item = state.subscriptions.find((sub) => sub.id === actionTarget.dataset.id);
-      if (item) item.updated = "刚刚";
-      render();
-      showToast("订阅同步完成", `${item?.name || "订阅"} 已更新，节点列表没有冲突。`);
-    } else if (action === "sync-all-subscriptions") {
-      state.subscriptions.forEach((item) => (item.updated = "刚刚"));
-      render();
-      showToast("全部订阅已同步", `已更新 ${state.subscriptions.length} 个订阅和 ${state.subscriptions.reduce((sum, item) => sum + item.nodes, 0)} 个节点。`);
+    } else if (action === "view-subscription-nodes") {
+      openModal("subscription-nodes", actionTarget.dataset.id);
+    } else if (action === "edit-subscription") {
+      openModal("subscription", actionTarget.dataset.id);
     } else if (action === "update-rulesets") {
       state.rulesets.forEach((item) => (item.updated = "刚刚"));
       render();
@@ -1990,13 +2170,11 @@
       showToast("原型操作", "正式接入后此处将打开密码修改流程。", "info");
     } else if (action === "project-info") {
       showToast("SingBox Control", "当前为交互原型，后续可对接 sing-box 与 Clash API。", "info");
-    } else if (["edit-entry", "duplicate-entry", "remove-entry", "edit-subscription", "subscription-more", "view-connections", "ruleset-filter"].includes(action)) {
+    } else if (["edit-entry", "duplicate-entry", "remove-entry", "view-connections", "ruleset-filter"].includes(action)) {
       const messages = {
         "edit-entry": "编辑面板将在正式版本中读取完整配置字段。",
         "duplicate-entry": "已复制一个配置项草稿。",
         "remove-entry": "原型不会删除现有配置项。",
-        "edit-subscription": "订阅编辑流程已预留。",
-        "subscription-more": "更多操作包括复制、禁用与删除。",
         "view-connections": "连接详情页已预留，可接入 Clash API。",
         "ruleset-filter": "筛选条件已应用。",
       };
@@ -2007,6 +2185,9 @@
   document.addEventListener("input", (event) => {
     if (event.target.matches("[data-custom-inbound-json]")) {
       updateCustomInboundValidation(event.target);
+    }
+    if (event.target.matches("[data-subscription-json]")) {
+      updateSubscriptionValidation(event.target);
     }
     if (event.target.matches("[data-config-field], [data-settings-input]")) {
       state.dirty = true;
@@ -2226,22 +2407,27 @@
       render();
       showToast(existingIndex >= 0 ? "规则集已更新" : "规则集已添加", `${ruleset.tag}（${ruleset.type}）已加入当前配置草稿。`, "success");
     } else if (type === "subscription") {
-      const data = new FormData(form);
-      state.subscriptions.push({
-        id: `sub-${Date.now()}`,
-        name: data.get("name") || "新订阅",
-        logo: "NS",
-        tone: state.subscriptions.length % 2 ? "blue" : "cyan",
-        nodes: 24,
-        used: 0,
-        total: 100,
-        expires: "2026-12-31",
-        interval: data.get("interval") || "每 6 小时",
+      const textarea = form.querySelector("[data-subscription-json]");
+      const result = updateSubscriptionValidation(textarea);
+      if (!result.valid) return;
+      const existing = state.subscriptions.find((subscription) => subscription.id === state.editingSubscriptionId);
+      const name = result.name || existing?.name || `JSON 订阅 ${state.subscriptions.length + 1}`;
+      const nodeList = result.nodes.map((node) => ({ ...node, type: node.type.trim(), tag: node.tag.trim() }));
+      const subscription = {
+        id: existing?.id || `sub-${Date.now()}`,
+        name,
+        logo: outboundMemberInitial(name),
+        tone: existing?.tone || (state.subscriptions.length % 2 ? "blue" : "cyan"),
+        nodes: nodeList.length,
+        nodeList,
+        sourceJson: JSON.stringify(result.config, null, 2),
         updated: "刚刚",
-      });
+      };
+      if (existing) Object.assign(existing, subscription);
+      else state.subscriptions.push(subscription);
       closeModal();
       render();
-      showToast("订阅已添加", "已生成演示订阅卡片并完成首次同步。", "success");
+      showToast(existing ? "JSON 订阅已更新" : "JSON 订阅已导入", `${name} 的 ${nodeList.length} 个节点已全部保存。`, "success");
     } else {
       closeModal();
       state.dirty = true;
@@ -2250,10 +2436,34 @@
     }
   });
 
+  document.addEventListener("dblclick", (event) => {
+    const card = event.target.closest("[data-subscription-card]");
+    if (!card || event.target.closest("button, a, input, select, textarea")) return;
+    openModal("subscription-nodes", card.dataset.id);
+  });
+
   document.addEventListener("keydown", (event) => {
+    if (event.target.matches("[data-subscription-card]") && ["Enter", " "].includes(event.key)) {
+      event.preventDefault();
+      openModal("subscription-nodes", event.target.dataset.id);
+      return;
+    }
     if (event.target.matches("[data-tun-list-input]") && event.key === "Enter") {
       event.preventDefault();
       event.target.closest("[data-tun-list-field]")?.querySelector('[data-action="add-tun-list-item"]')?.click();
+      return;
+    }
+    if (event.target.matches("[data-subscription-json]") && event.key === "Tab") {
+      event.preventDefault();
+      const textarea = event.target;
+      textarea.setRangeText("  ", textarea.selectionStart, textarea.selectionEnd, "end");
+      textarea.dispatchEvent(new Event("input", { bubbles: true }));
+      return;
+    }
+    if (event.target.matches("[data-subscription-json]") && (event.metaKey || event.ctrlKey) && event.key === "Enter") {
+      event.preventDefault();
+      const submit = document.querySelector("#subscription-submit");
+      if (!submit?.disabled) document.querySelector("#subscription-form")?.requestSubmit();
       return;
     }
     if (event.target.matches("[data-custom-inbound-json]") && event.key === "Tab") {
