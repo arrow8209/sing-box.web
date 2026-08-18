@@ -113,6 +113,38 @@
   "sniff_override_destination": false
 }`;
 
+  const routeRuleTypeOptions = [
+    ["inbound", "入站 (inbound)"],
+    ["network", "网络 (network)"],
+    ["protocol", "协议 (protocol)"],
+    ["domain", "域名 (domain)"],
+    ["domain_suffix", "域名后缀 (domain_suffix)"],
+    ["domain_keyword", "域名关键词 (domain_keyword)"],
+    ["domain_regex", "域名正则 (domain_regex)"],
+    ["source_ip_cidr", "源 IP 地址段 (source_ip_cidr)"],
+    ["ip_cidr", "IP 地址段 (ip_cidr)"],
+    ["ip_is_private", "是否为私有 IP (ip_is_private)"],
+    ["source_port", "源端口 (source_port)"],
+    ["source_port_range", "源端口范围 (source_port_range)"],
+    ["port", "端口 (port)"],
+    ["port_range", "端口范围 (port_range)"],
+    ["process_name", "进程名称 (process_name)"],
+    ["process_path", "进程路径 (process_path)"],
+    ["process_path_regex", "进程路径正则 (process_path_regex)"],
+    ["clash_mode", "Clash 模式 (clash_mode)"],
+    ["rule_set", "规则集 (rule_set)"],
+    ["inline", "内联 (inline)"],
+  ];
+
+  const routeRuleActionOptions = [
+    ["route", "路由", "route"],
+    ["route-options", "路由设置选项", "config"],
+    ["reject", "拒绝连接", "shield"],
+    ["hijack-dns", "劫持 DNS 请求", "dns"],
+    ["sniff", "协议嗅探", "search"],
+    ["resolve", "解析 DNS", "globe"],
+  ];
+
   const initialRoute = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const initialPage = ["dashboard", "config", "subscriptions", "rulesets", "settings"].includes(initialRoute[0])
     ? initialRoute[0]
@@ -194,6 +226,35 @@
         refs: [],
       },
     ],
+    routeFindProcess: false,
+    routeAutoDetectInterface: true,
+    routeDefaultInterface: "",
+    routeDefaultDns: "dns-remote",
+    routeFinal: "outbound-select",
+    editingRouteRuleId: null,
+    editingRouteRulesetId: null,
+    routeRuleSets: [
+      { id: "rs-category-ads", tag: "Category-Ads", type: "remote", format: "binary", url: "https://example.com/category-ads.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-geosite-private", tag: "GeoSite-Private", type: "local", format: "source", url: "", download_detour: "", update_interval: "", path: "4", rules: "" },
+      { id: "rs-geosite-cn", tag: "GeoSite-CN", type: "remote", format: "binary", url: "https://example.com/geosite-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-geoip-private", tag: "GeoIP-Private", type: "remote", format: "binary", url: "https://example.com/geoip-private.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-geoip-cn", tag: "GeoIP-CN", type: "remote", format: "binary", url: "https://example.com/geoip-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-geolocation-not-cn", tag: "GeoLocation-!CN", type: "remote", format: "binary", url: "https://example.com/geolocation-not-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+    ],
+    routeRules: [
+      { id: "route-rule-tun-sniff", type: "inbound", enable: true, payload: "tun-in", invert: false, action: "sniff", outbound: "", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-dns-hijack", type: "protocol", enable: true, payload: "dns", invert: false, action: "hijack-dns", outbound: "", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-direct-mode", type: "clash_mode", enable: true, payload: "direct", invert: false, action: "route", outbound: "outbound-direct", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-global-mode", type: "clash_mode", enable: true, payload: "global", invert: false, action: "route", outbound: "outbound-select", sniffer: [], strategy: "", server: "" },
+      { id: "route-insertion-point", type: "insertion", enable: true, payload: "", invert: false, action: "route", outbound: "", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-lan", type: "ip_cidr", enable: true, payload: "172.16.1.0/24", invert: false, action: "route", outbound: "outbound-select", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-cloud", type: "domain_suffix", enable: true, payload: "maxvisioncloud.com", invert: false, action: "route", outbound: "outbound-direct", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-quic", type: "protocol", enable: false, payload: "quic", invert: false, action: "reject", outbound: "drop", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-ads", type: "rule_set", enable: false, payload: "rs-category-ads", invert: false, action: "route", outbound: "block", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-private", type: "rule_set", enable: false, payload: "rs-geosite-private", invert: false, action: "route", outbound: "outbound-direct", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-cn", type: "rule_set", enable: true, payload: "rs-geosite-cn,rs-geoip-cn", invert: false, action: "route", outbound: "outbound-direct", sniffer: [], strategy: "", server: "" },
+      { id: "route-rule-overseas", type: "rule_set", enable: true, payload: "rs-geolocation-not-cn", invert: false, action: "route", outbound: "outbound-select", sniffer: [], strategy: "", server: "" },
+    ],
     rulesetSearch: "",
     rulesetType: "all",
     settingsSection: "core-settings",
@@ -242,6 +303,10 @@
 
   function inboundCount() {
     return 3 + state.customInbounds.length + state.formInbounds.length;
+  }
+
+  function routeRuleCount() {
+    return state.routeRules.filter((rule) => rule.type !== "insertion").length;
   }
 
   function applyTheme() {
@@ -453,7 +518,7 @@
               <div class="profile-stats">
                 <div class="profile-stat"><strong>${inboundCount()}</strong><span>入站</span></div>
                 <div class="profile-stat"><strong>12</strong><span>出站</span></div>
-                <div class="profile-stat"><strong>16</strong><span>路由规则</span></div>
+                <div class="profile-stat"><strong>${routeRuleCount()}</strong><span>路由规则</span></div>
               </div>
             </article>
             <article class="card route-mode-card">
@@ -724,39 +789,110 @@
   }
 
   function renderRoutingConfig() {
-    return `<div class="config-layout">
-      <div class="config-main">
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">路由规则</h3><p class="card-subtitle">按顺序匹配，拖动可调整优先级</p></div><button class="btn btn-sm btn-primary" data-modal="route">${icon("plus")}新增规则</button></div>
-          <div class="entry-list">
-            ${routeRule(1, "广告拦截", "rule_set", "ads-all", "block", "red")}
-            ${routeRule(2, "私有网络直连", "ip_is_private", "true", "direct", "green")}
-            ${routeRule(3, "中国大陆网站", "rule_set", "geosite-cn, geoip-cn", "direct", "green")}
-            ${routeRule(4, "流媒体服务", "rule_set", "youtube, netflix, spotify", "节点选择", "")}
-            ${routeRule(5, "AI 服务", "domain_suffix", "openai.com, anthropic.com", "US-自动选择", "orange")}
+    const enabledRules = state.routeRules.filter((rule) => rule.type !== "insertion" && rule.enable).length;
+    return `<div class="route-workspace">
+      <article class="card route-section" id="route-common-section">
+        <div class="card-head"><div><h3 class="card-title">通用设置</h3><p class="card-subtitle">控制接口探测、域名解析与未命中规则时的默认出口</p></div><span class="route-section-badge">全局行为</span></div>
+        <div class="route-common-body">
+          <div class="route-common-toggles">
+            ${routeCommonToggle("查找进程信息", "为路由规则补充进程名称与路径", "routeFindProcess")}
+            ${routeCommonToggle("自动检测出站接口", "自动选择可用的系统网络接口", "routeAutoDetectInterface")}
           </div>
-        </article>
-      </div>
-      <aside class="config-aside">
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">默认规则</h3><p class="card-subtitle">无规则命中时使用</p></div></div>
-          <div class="card-body">
-            <label class="form-field"><span class="field-label">最终出站</span><select class="field-select" data-config-field="routeFinal"><option>节点选择</option><option>自动选择</option><option>direct</option><option>block</option></select></label>
-            <div class="info-callout" style="margin-top:12px">${icon("info")}<span>推荐将最终出站设置为策略组，避免新增节点后重复修改路由规则。</span></div>
+          <div class="route-common-fields">
+            ${state.routeAutoDetectInterface ? "" : routeCommonSelect("出站接口名称", "关闭自动检测后使用的默认接口", "routeDefaultInterface", state.routeDefaultInterface, [["", "请选择网络接口"], ["eth0", "eth0"], ["wlan0", "wlan0"], ["en0", "en0"]])}
+            ${routeCommonSelect("解析节点域名的 DNS 服务器", "解析代理节点服务器域名时使用", "routeDefaultDns", state.routeDefaultDns, routeDnsOptions())}
+            ${routeCommonSelect("默认出站标签", "所有规则均未命中时使用", "routeFinal", state.routeFinal, routeOutboundOptions())}
           </div>
-        </article>
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">匹配统计</h3><p class="card-subtitle">过去 24 小时</p></div></div>
-          <div class="card-body setting-list">
-            ${statRow("中国大陆网站", "68.2%", "green")}${statRow("节点选择", "24.6%", "")}${statRow("广告拦截", "6.8%", "red")}${statRow("其他", "0.4%", "orange")}
-          </div>
-        </article>
-      </aside>
+        </div>
+      </article>
+
+      <article class="card route-section" id="route-ruleset-section">
+        <div class="card-head"><div><h3 class="card-title">规则集</h3><p class="card-subtitle">管理路由规则可引用的本地、远程与内联规则集</p></div><div class="route-section-actions"><span class="route-section-badge">${state.routeRuleSets.length} 个</span><button class="btn btn-sm" data-modal="route-ruleset">${icon("plus")}新增规则集</button></div></div>
+        <div class="route-ruleset-grid">${state.routeRuleSets.length ? state.routeRuleSets.map((ruleset) => routeRulesetCard(ruleset)).join("") : `<button class="route-empty-section" data-modal="route-ruleset">${icon("plus")}<strong>添加第一个规则集</strong><span>支持本地、远程与内联来源</span></button>`}</div>
+      </article>
+
+      <article class="card route-section" id="route-rules-section">
+        <div class="card-head"><div><h3 class="card-title">路由规则</h3><p class="card-subtitle">按从上到下的顺序匹配；新增规则会放在插入点之后</p></div><div class="route-section-actions"><span class="route-section-badge">已启用 ${enabledRules}/${routeRuleCount()}</span><button class="btn btn-sm btn-primary" data-modal="route">${icon("plus")}新增规则</button></div></div>
+        <div class="route-rule-list">${state.routeRules.map((rule, index) => routeRuleCard(rule, index)).join("")}</div>
+      </article>
     </div>`;
   }
 
-  function routeRule(order, title, type, value, target, tone) {
-    return `<div class="entry-card"><span class="entry-drag">${icon("grip")}</span><span class="rule-order">${order}</span><div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${title}</span><span class="type-badge">${type}</span></div><div class="entry-meta"><span>${value}</span></div></div><span class="route-target ${tone ? `badge-${tone}` : ""}">${icon("route")}${target}</span><div class="entry-actions"><button class="entry-action" data-action="edit-entry">${icon("edit")}</button><button class="entry-action danger" data-action="remove-entry">${icon("trash")}</button></div></div>`;
+  function routeOutboundOptions() {
+    const options = [["direct", "direct（内置）"], ["block", "block（内置）"], ...state.outbounds.map((outbound) => [outbound.id, outbound.tag])];
+    return options.filter(([value], index) => options.findIndex(([candidate]) => candidate === value) === index);
+  }
+
+  function routeDnsOptions() {
+    return [["", "由 DNS 路由规则决定"], ["dns-remote", "Cloudflare DoH"], ["dns-domestic", "AliDNS DoH"], ["dns-local", "本地 DNS"]];
+  }
+
+  function routeInboundOptions() {
+    const options = [["mixed-in", "mixed-in"], ["tun-in", "tun-in"], ["dns-in", "dns-in"]];
+    state.formInbounds.forEach((item) => options.push([item.id, item.config.tag || item.config.type]));
+    state.customInbounds.forEach((item) => options.push([item.id, item.config.tag || item.config.type]));
+    return options;
+  }
+
+  function selectOptionsMarkup(options, selected) {
+    return options.map(([value, label]) => `<option value="${escapeHtml(value)}" ${String(value) === String(selected) ? "selected" : ""}>${escapeHtml(label)}</option>`).join("");
+  }
+
+  function routeCommonToggle(label, description, key) {
+    return `<div class="route-common-toggle"><div class="route-common-icon">${icon(key === "routeFindProcess" ? "search" : "globe")}</div><div><strong>${label}</strong><span>${description}</span></div><button class="switch ${state[key] ? "on" : ""}" data-route-toggle="${key}" aria-label="切换${label}" aria-pressed="${state[key]}"></button></div>`;
+  }
+
+  function routeCommonSelect(label, description, name, value, options) {
+    return `<label class="route-common-field"><span><strong>${label}</strong><small>${description}</small></span><select class="field-select" name="${name}" data-route-common>${selectOptionsMarkup(options, value)}</select></label>`;
+  }
+
+  function routeRulesetCard(ruleset) {
+    const source = ruleset.type === "remote" ? ruleset.url : ruleset.type === "local" ? `资源 #${ruleset.path}` : "页面内联规则";
+    const tone = ruleset.type === "remote" ? "" : ruleset.type === "local" ? "cyan" : "violet";
+    return `<div class="route-ruleset-card" data-route-ruleset-id="${escapeHtml(ruleset.id)}">
+      <div class="route-ruleset-icon ${tone}">${icon(ruleset.type === "remote" ? "download" : ruleset.type === "local" ? "folder" : "code")}</div>
+      <div class="route-ruleset-copy"><div><strong>${escapeHtml(ruleset.tag)}</strong><span class="type-badge">${escapeHtml(ruleset.type)}</span><span class="type-badge">${escapeHtml(ruleset.type === "inline" ? "source" : ruleset.format)}</span></div><small title="${escapeHtml(source)}">${escapeHtml(source)}</small></div>
+      <div class="entry-actions"><button class="entry-action" data-modal="route-ruleset" data-id="${escapeHtml(ruleset.id)}" title="编辑规则集">${icon("edit")}</button><button class="entry-action danger" data-route-remove="ruleset" data-id="${escapeHtml(ruleset.id)}" title="删除规则集">${icon("trash")}</button></div>
+    </div>`;
+  }
+
+  function routeOutboundLabel(value) {
+    return routeOutboundOptions().find(([id]) => id === value)?.[1] || value;
+  }
+
+  function routeRulePayloadLabel(rule) {
+    if (rule.type === "rule_set") {
+      return rule.payload.split(",").filter(Boolean).map((id) => state.routeRuleSets.find((ruleset) => ruleset.id === id)?.tag || id).join(", ");
+    }
+    if (rule.type === "inbound") return routeInboundOptions().find(([id]) => id === rule.payload)?.[1] || rule.payload;
+    return rule.payload;
+  }
+
+  function routeRuleActionLabel(rule) {
+    if (rule.action === "route") return routeOutboundLabel(rule.outbound);
+    if (rule.action === "route-options") return "JSON 路由选项";
+    if (rule.action === "reject") return { default: "默认拒绝", drop: "静默丢弃", reply: "返回响应" }[rule.outbound] || "拒绝连接";
+    if (rule.action === "hijack-dns") return "劫持至 DNS";
+    if (rule.action === "sniff") return rule.sniffer?.length ? rule.sniffer.join(", ") : "全部探测器";
+    if (rule.action === "resolve") return routeDnsOptions().find(([id]) => id === rule.server)?.[1] || "由 DNS 规则决定";
+    return rule.action;
+  }
+
+  function routeRuleCard(rule, index) {
+    if (rule.type === "insertion") {
+      return `<div class="route-insertion-point"><span></span><button data-modal="route">${icon("plus")}新规则将插入到这里</button><span></span></div>`;
+    }
+    const displayIndex = state.routeRules.slice(0, index + 1).filter((item) => item.type !== "insertion").length;
+    const payload = routeRulePayloadLabel(rule);
+    const actionLabel = routeRuleActionOptions.find(([value]) => value === rule.action)?.[1] || rule.action;
+    return `<div class="route-rule-row ${rule.enable ? "" : "is-disabled"}" data-route-rule-id="${escapeHtml(rule.id)}">
+      <span class="entry-drag">${icon("grip")}</span>
+      <label class="route-rule-switch" title="${rule.enable ? "停用规则" : "启用规则"}"><input type="checkbox" data-route-rule-enabled data-id="${escapeHtml(rule.id)}" ${rule.enable ? "checked" : ""} /><span></span></label>
+      <span class="route-rule-index">${String(displayIndex).padStart(2, "0")}</span>
+      <div class="route-rule-copy"><strong>${escapeHtml(rule.type)}<span>,</span>${escapeHtml(payload || "未设置载荷")}${rule.invert ? '<em>反向</em>' : ""}</strong><small>${escapeHtml(actionLabel)} · ${escapeHtml(routeRuleActionLabel(rule))}</small></div>
+      <span class="route-action-badge action-${escapeHtml(rule.action)}">${icon(rule.action === "reject" ? "shield" : rule.action.includes("dns") || rule.action === "resolve" ? "dns" : rule.action === "sniff" ? "search" : "route")}${escapeHtml(actionLabel)}</span>
+      <div class="entry-actions"><button class="entry-action" data-modal="route" data-id="${escapeHtml(rule.id)}" title="编辑规则">${icon("edit")}</button><button class="entry-action danger" data-route-remove="rule" data-id="${escapeHtml(rule.id)}" title="删除规则">${icon("trash")}</button></div>
+    </div>`;
   }
 
   function statRow(name, value, tone) {
@@ -941,10 +1077,14 @@
     let content = "";
     state.editingCustomInboundId = type === "inbound" ? itemId : null;
     state.editingOutboundId = type === "outbound" ? itemId : null;
+    state.editingRouteRuleId = type === "route" ? itemId : null;
+    state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
     if (type === "subscription") content = subscriptionModal();
     else if (type === "inbound") content = inboundModal(itemId);
     else if (type === "outbound") content = outboundModal(itemId);
-    else if (["route", "dns-rule"].includes(type)) content = genericModal(type === "route" ? "新增路由规则" : "新增 DNS 规则", "规则将添加到当前列表末尾", "rule", [
+    else if (type === "route") content = routeRuleModal(itemId);
+    else if (type === "route-ruleset") content = routeRulesetModal(itemId);
+    else if (type === "dns-rule") content = genericModal("新增 DNS 规则", "规则将添加到当前列表末尾", "rule", [
       ["规则名称", "新规则"], ["匹配类型", "domain_suffix", "select", ["domain", "domain_suffix", "ip_cidr", "rule_set", "process_name"]], ["匹配内容", ""], ["目标出站", "节点选择", "select", ["节点选择", "自动选择", "direct", "block"]]
     ]);
     else if (type === "dns") content = genericModal("新增 DNS 服务器", "配置上游 DNS 解析器", "dns", [
@@ -1334,6 +1474,164 @@
     return config;
   }
 
+  function routeSegmentedControl(name, value, options, className = "") {
+    return `<div class="route-segmented ${className}">${options.map(([optionValue, label, iconName]) => `<label><input type="radio" name="${name}" value="${escapeHtml(optionValue)}" ${String(optionValue) === String(value) ? "checked" : ""} /><span>${iconName ? icon(iconName) : ""}${escapeHtml(label)}</span></label>`).join("")}</div>`;
+  }
+
+  function routeEditorRow(label, hint, content, className = "") {
+    return `<div class="route-editor-row ${className}"><span class="route-editor-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><div class="route-editor-control">${content}</div></div>`;
+  }
+
+  function routeRuleSetChoice(ruleset, selectedIds) {
+    return `<label class="route-choice-card"><input type="checkbox" name="route-rule-ruleset" value="${escapeHtml(ruleset.id)}" ${selectedIds.has(ruleset.id) ? "checked" : ""} /><span><strong>${escapeHtml(ruleset.tag)}</strong><small>${escapeHtml(ruleset.type)} · ${escapeHtml(ruleset.type === "inline" ? "source" : ruleset.format)}</small>${icon("check")}</span></label>`;
+  }
+
+  function renderRouteRulePayloadFields(type, rule = {}) {
+    const payload = rule.payload || "";
+    if (type === "rule_set") {
+      const selectedIds = new Set(payload.split(",").filter(Boolean));
+      return `<div class="route-modal-divider"><span>选择规则集</span><strong data-route-rule-set-count>已选 ${selectedIds.size}</strong></div>${state.routeRuleSets.length ? `<div class="route-choice-grid route-ruleset-choices">${state.routeRuleSets.map((ruleset) => routeRuleSetChoice(ruleset, selectedIds)).join("")}</div>` : `<div class="route-modal-empty">${icon("rules")}<strong>尚未配置规则集</strong><span>请先关闭弹窗，在页面的“规则集”区块中新增。</span></div>`}`;
+    }
+    if (type === "inbound") {
+      return routeEditorRow("入站标签", "payload", `<select class="field-select" name="route-rule-payload">${selectOptionsMarkup([["", "请选择入站"], ...routeInboundOptions()], payload)}</select>`);
+    }
+    if (type === "clash_mode") {
+      return routeEditorRow("Clash 模式", "payload", routeSegmentedControl("route-rule-payload", payload || "global", [["global", "全局"], ["direct", "直连"]], "two"));
+    }
+    if (type === "ip_is_private") {
+      return routeEditorRow("是否为私有 IP", "payload", `<div class="route-inline-toggle"><span>匹配私有网络地址</span><label class="form-switch"><input type="checkbox" name="route-rule-private" value="true" ${payload !== "false" ? "checked" : ""} /><span class="switch"></span></label></div>`);
+    }
+    if (type === "inline") {
+      return routeEditorRow("内联规则", "payload", `<textarea class="field-textarea route-code-input" name="route-rule-payload" spellcheck="false" placeholder='{"domain_suffix":["example.com"]}'>${escapeHtml(payload || "{\n  \"domain_suffix\": [\"example.com\"]\n}")}</textarea>`, "align-start");
+    }
+    const placeholders = {
+      network: "tcp 或 udp",
+      protocol: "例如 dns、quic、http",
+      domain: "example.com",
+      domain_suffix: "example.com",
+      domain_keyword: "keyword",
+      domain_regex: "^.+\\.example\\.com$",
+      source_ip_cidr: "192.168.1.0/24",
+      ip_cidr: "172.16.0.0/12",
+      source_port: "443",
+      source_port_range: "1000:2000",
+      port: "443",
+      port_range: "80:443",
+      process_name: "chrome",
+      process_path: "/usr/bin/chrome",
+      process_path_regex: ".*chrome$",
+    };
+    const numeric = ["source_port", "port"].includes(type);
+    return routeEditorRow("匹配内容", "payload", `<input class="field-input" name="route-rule-payload" type="${numeric ? "number" : "text"}" value="${escapeHtml(payload)}" placeholder="${escapeHtml(placeholders[type] || "输入匹配内容，多个值用逗号分隔")}" />`);
+  }
+
+  function renderRouteRuleActionFields(action, rule = {}) {
+    if (action === "route") {
+      return routeEditorRow("出站标签", "outbound", `<select class="field-select" name="route-rule-outbound">${selectOptionsMarkup([["", "请选择目标出站"], ...routeOutboundOptions()], rule.outbound || "")}</select>`);
+    }
+    if (action === "route-options") {
+      return routeEditorRow("路由选项", "JSON", `<textarea class="field-textarea route-code-input" name="route-rule-outbound" spellcheck="false">${escapeHtml(rule.outbound || "{\n  \"override_address\": \"1.1.1.1\"\n}")}</textarea>`, "align-start");
+    }
+    if (action === "reject") {
+      return routeEditorRow("拒绝方式", "method", routeSegmentedControl("route-rule-reject", rule.outbound || "default", [["default", "默认"], ["drop", "静默丢弃"], ["reply", "返回响应"]], "three"));
+    }
+    if (action === "hijack-dns") {
+      return `<div class="route-action-empty">${icon("dns")}<strong>DNS 请求将被劫持到 sing-box DNS 模块</strong><span>此动作不需要额外参数。</span></div>`;
+    }
+    if (action === "sniff") {
+      const selected = new Set(rule.sniffer || []);
+      const sniffers = ["http", "tls", "quic", "stun", "dns", "bittorrent", "dtls", "ssh", "rdp", "ntp"];
+      return routeEditorRow("探测器", "留空表示全部", `<div class="route-sniffer-grid">${sniffers.map((sniffer) => `<label><input type="checkbox" name="route-rule-sniffer" value="${sniffer}" ${selected.has(sniffer) ? "checked" : ""} /><span>${sniffer}${icon("check")}</span></label>`).join("")}</div>`, "align-start");
+    }
+    return `${routeEditorRow("解析策略", "strategy", `<select class="field-select" name="route-rule-strategy">${selectOptionsMarkup([["", "默认"], ["prefer_ipv4", "IPv4 优先"], ["prefer_ipv6", "IPv6 优先"], ["ipv4_only", "仅 IPv4"], ["ipv6_only", "仅 IPv6"]], rule.strategy || "")}</select>`)}${routeEditorRow("DNS 服务器", "server", `<select class="field-select" name="route-rule-server">${selectOptionsMarkup(routeDnsOptions(), rule.server || "")}</select>`)}`;
+  }
+
+  function routeRuleModal(itemId) {
+    const existing = state.routeRules.find((rule) => rule.id === itemId && rule.type !== "insertion");
+    const rule = existing || { type: "rule_set", payload: "", invert: false, action: "route", outbound: "", sniffer: [], strategy: "", server: "" };
+    const body = `<form class="modal-body route-editor-body" id="route-rule-form" data-form="route-rule">
+      <div class="route-editor-grid">
+        ${routeEditorRow("规则类型", "type", `<select class="field-select" name="route-rule-type" data-route-rule-type>${selectOptionsMarkup(routeRuleTypeOptions, rule.type)}</select>`)}
+        ${routeEditorRow("规则动作", "action", routeSegmentedControl("route-rule-action", rule.action, routeRuleActionOptions, "six"))}
+        ${routeEditorRow("反向匹配", "invert", `<div class="route-inline-toggle"><span>匹配不符合当前条件的流量</span><label class="form-switch"><input type="checkbox" name="route-rule-invert" value="true" ${rule.invert ? "checked" : ""} /><span class="switch"></span></label></div>`)}
+        <div data-route-rule-payload-fields>${renderRouteRulePayloadFields(rule.type, rule)}</div>
+        <div class="route-action-panel" data-route-rule-action-fields>${renderRouteRuleActionFields(rule.action, rule)}</div>
+      </div>
+    </form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="route-rule-form">${icon(existing ? "save" : "check")}${existing ? "保存规则" : "确认添加"}</button></div>`;
+    return modalFrame(existing ? "编辑规则" : "新增规则", "设置匹配条件、执行动作以及对应的出站或 DNS 参数", body, footer, "modal-route-rule");
+  }
+
+  function buildRouteRuleConfig(form, itemId = null) {
+    const data = new FormData(form);
+    const type = String(data.get("route-rule-type") || "rule_set");
+    const action = String(data.get("route-rule-action") || "route");
+    let payload = String(data.get("route-rule-payload") || "").trim();
+    if (type === "rule_set") payload = data.getAll("route-rule-ruleset").map(String).join(",");
+    if (type === "ip_is_private") payload = data.get("route-rule-private") === "true" ? "true" : "false";
+    let outbound = "";
+    if (["route", "route-options"].includes(action)) outbound = String(data.get("route-rule-outbound") || "").trim();
+    if (action === "reject") outbound = String(data.get("route-rule-reject") || "default");
+    const existing = state.routeRules.find((rule) => rule.id === itemId);
+    return {
+      id: itemId || `route-rule-${Date.now()}`,
+      type,
+      enable: existing?.enable ?? true,
+      payload,
+      invert: data.get("route-rule-invert") === "true",
+      action,
+      outbound,
+      sniffer: data.getAll("route-rule-sniffer").map(String),
+      strategy: String(data.get("route-rule-strategy") || ""),
+      server: String(data.get("route-rule-server") || ""),
+    };
+  }
+
+  function routeResourceChoice(resource, selectedPath) {
+    return `<label class="route-choice-card"><input type="radio" name="route-ruleset-resource" value="${escapeHtml(resource.id)}" data-route-resource data-resource-name="${escapeHtml(resource.name)}" ${String(resource.id) === String(selectedPath) ? "checked" : ""} /><span><strong>${escapeHtml(resource.name)}</strong><small>${escapeHtml(resource.type)} · ${escapeHtml(resource.format)}</small>${icon("check")}</span></label>`;
+  }
+
+  function renderRouteRulesetTypeFields(type, ruleset = {}) {
+    if (type === "local") {
+      return `<div class="route-modal-divider"><span>选择本地规则资源</span></div>${state.rulesets.length ? `<div class="route-choice-grid">${state.rulesets.map((resource) => routeResourceChoice(resource, ruleset.path || "")).join("")}</div>` : `<div class="route-modal-empty">${icon("folder")}<strong>暂无本地规则资源</strong></div>`}`;
+    }
+    if (type === "remote") {
+      return `<div class="route-ruleset-fields">${routeEditorRow("格式", "format", routeSegmentedControl("route-ruleset-format", ruleset.format || "binary", [["source", "源文件"], ["binary", "二进制"]], "two"))}${routeEditorRow("远程链接", "url", `<input class="field-input" name="route-ruleset-url" type="url" value="${escapeHtml(ruleset.url || "")}" placeholder="https://example.com/rules.srs" />`)}${routeEditorRow("下载方式", "download_detour", `<select class="field-select" name="route-ruleset-detour">${selectOptionsMarkup([["", "默认网络"], ...routeOutboundOptions()], ruleset.download_detour || "")}</select>`)}${routeEditorRow("更新间隔", "update_interval", `<input class="field-input" name="route-ruleset-interval" value="${escapeHtml(ruleset.update_interval || "1d")}" placeholder="1d" />`)}</div>`;
+    }
+    return routeEditorRow("内联规则", "JSON", `<textarea class="field-textarea route-code-input route-inline-rules" name="route-ruleset-rules" spellcheck="false">${escapeHtml(ruleset.rules || "{\n  \"version\": 1,\n  \"rules\": []\n}")}</textarea>`, "align-start");
+  }
+
+  function routeRulesetModal(itemId) {
+    const existing = state.routeRuleSets.find((ruleset) => ruleset.id === itemId);
+    const ruleset = existing || { tag: "", type: "local", format: "binary", url: "", download_detour: "", update_interval: "", path: "", rules: "" };
+    const body = `<form class="modal-body route-editor-body" id="route-ruleset-form" data-form="route-ruleset">
+      <div class="route-editor-grid">
+        ${routeEditorRow("名称", "tag", `<input class="field-input" name="route-ruleset-tag" value="${escapeHtml(ruleset.tag)}" placeholder="例如 GeoSite-CN" required />`)}
+        ${routeEditorRow("来源类型", "type", routeSegmentedControl("route-ruleset-type", ruleset.type, [["inline", "内联", "code"], ["local", "本地", "folder"], ["remote", "远程", "download"]], "three"))}
+        <div data-route-ruleset-type-fields>${renderRouteRulesetTypeFields(ruleset.type, ruleset)}</div>
+      </div>
+    </form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="route-ruleset-form">${icon(existing ? "save" : "check")}${existing ? "保存规则集" : "确认添加"}</button></div>`;
+    return modalFrame(existing ? "编辑规则集" : "新增规则集", "配置规则集名称、来源与更新方式", body, footer, "modal-route-rule");
+  }
+
+  function buildRouteRulesetConfig(form, itemId = null) {
+    const data = new FormData(form);
+    const type = String(data.get("route-ruleset-type") || "local");
+    const resource = state.rulesets.find((item) => String(item.id) === String(data.get("route-ruleset-resource")));
+    return {
+      id: itemId || `route-ruleset-${Date.now()}`,
+      tag: String(data.get("route-ruleset-tag") || resource?.name || "新规则集").trim(),
+      type,
+      format: type === "inline" ? "source" : type === "local" ? resource?.format || "binary" : String(data.get("route-ruleset-format") || "binary"),
+      url: type === "remote" ? String(data.get("route-ruleset-url") || "").trim() : "",
+      download_detour: type === "remote" ? String(data.get("route-ruleset-detour") || "") : "",
+      update_interval: type === "remote" ? String(data.get("route-ruleset-interval") || "").trim() : "",
+      path: type === "local" ? String(data.get("route-ruleset-resource") || "") : "",
+      rules: type === "inline" ? String(data.get("route-ruleset-rules") || "").trim() : "",
+    };
+  }
+
   function copyText(text) {
     if (navigator.clipboard?.writeText) return navigator.clipboard.writeText(text).catch(() => copyTextFallback(text));
     copyTextFallback(text);
@@ -1371,7 +1669,7 @@
   }
 
   function jsonModal() {
-    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>配置结构检查通过，共包含 ${inboundCount()} 个入站、12 个出站与 16 条路由规则。</span></div></div>`;
+    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>配置结构检查通过，共包含 ${inboundCount()} 个入站、${state.outbounds.length} 个出站与 ${routeRuleCount()} 条路由规则。</span></div></div>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="copy-json">${icon("copy")}复制 JSON</button><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
     return modalFrame("配置 JSON 预览", "由当前表单实时生成，只读展示", body, footer);
   }
@@ -1387,6 +1685,8 @@
     modalRoot.innerHTML = "";
     state.editingCustomInboundId = null;
     state.editingOutboundId = null;
+    state.editingRouteRuleId = null;
+    state.editingRouteRulesetId = null;
     document.body.style.overflow = "";
   }
 
@@ -1467,6 +1767,36 @@
   });
 
   document.addEventListener("click", (event) => {
+    const routeRemoveTarget = event.target.closest("[data-route-remove]");
+    if (routeRemoveTarget) {
+      const id = routeRemoveTarget.dataset.id;
+      if (routeRemoveTarget.dataset.routeRemove === "rule") {
+        const rule = state.routeRules.find((item) => item.id === id);
+        state.routeRules = state.routeRules.filter((item) => item.id !== id);
+        state.dirty = true;
+        render();
+        showToast("路由规则已移除", `${rule?.type || "规则"} 已从配置草稿移除。`, "info");
+      } else {
+        const ruleset = state.routeRuleSets.find((item) => item.id === id);
+        const referenceCount = state.routeRules.filter((rule) => rule.type === "rule_set" && rule.payload.split(",").includes(id)).length;
+        state.routeRuleSets = state.routeRuleSets.filter((item) => item.id !== id);
+        state.dirty = true;
+        render();
+        showToast("规则集已移除", referenceCount ? `${ruleset?.tag || "规则集"} 仍被 ${referenceCount} 条规则引用，请继续检查。` : `${ruleset?.tag || "规则集"} 已从配置草稿移除。`, "info");
+      }
+      return;
+    }
+
+    const routeToggleTarget = event.target.closest("[data-route-toggle]");
+    if (routeToggleTarget) {
+      const key = routeToggleTarget.dataset.routeToggle;
+      state[key] = !state[key];
+      state.dirty = true;
+      render();
+      showToast("路由设置已更新", "该更改已在当前配置草稿中生效。", "info");
+      return;
+    }
+
     const command = event.target.closest("[data-command-page]");
     if (command) {
       navigate(command.dataset.commandPage, command.dataset.commandConfig || null);
@@ -1491,7 +1821,7 @@
       return;
     }
 
-    const accentTarget = event.target.closest("[data-accent]");
+    const accentTarget = event.target.closest(".color-swatch[data-accent]");
     if (accentTarget) {
       setAccent(accentTarget.dataset.accent);
       render();
@@ -1679,6 +2009,54 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-route-common]")) {
+      state[event.target.name] = event.target.value;
+      state.dirty = true;
+      const button = document.querySelector("#save-config-button");
+      if (button) button.innerHTML = `${icon("save")}保存更改`;
+      return;
+    }
+    if (event.target.matches("[data-route-rule-enabled]")) {
+      const rule = state.routeRules.find((item) => item.id === event.target.dataset.id);
+      if (rule) rule.enable = event.target.checked;
+      event.target.closest(".route-rule-row")?.classList.toggle("is-disabled", !event.target.checked);
+      state.dirty = true;
+      const enabledRules = state.routeRules.filter((item) => item.type !== "insertion" && item.enable).length;
+      const badge = document.querySelector("#route-rules-section .route-section-badge");
+      if (badge) badge.textContent = `已启用 ${enabledRules}/${routeRuleCount()}`;
+      return;
+    }
+    if (event.target.matches("[data-route-rule-type]")) {
+      const form = event.target.closest("#route-rule-form");
+      const fields = form?.querySelector("[data-route-rule-payload-fields]");
+      if (fields) fields.innerHTML = renderRouteRulePayloadFields(event.target.value, { type: event.target.value, payload: "" });
+      return;
+    }
+    if (event.target.matches('[name="route-rule-action"]')) {
+      const form = event.target.closest("#route-rule-form");
+      const fields = form?.querySelector("[data-route-rule-action-fields]");
+      if (fields) fields.innerHTML = renderRouteRuleActionFields(event.target.value, { action: event.target.value });
+      return;
+    }
+    if (event.target.matches('[name="route-rule-ruleset"]')) {
+      const form = event.target.closest("#route-rule-form");
+      const count = form?.querySelectorAll('[name="route-rule-ruleset"]:checked').length || 0;
+      const label = form?.querySelector("[data-route-rule-set-count]");
+      if (label) label.textContent = `已选 ${count}`;
+      return;
+    }
+    if (event.target.matches('[name="route-ruleset-type"]')) {
+      const form = event.target.closest("#route-ruleset-form");
+      const fields = form?.querySelector("[data-route-ruleset-type-fields]");
+      if (fields) fields.innerHTML = renderRouteRulesetTypeFields(event.target.value, { type: event.target.value });
+      return;
+    }
+    if (event.target.matches("[data-route-resource]")) {
+      const form = event.target.closest("#route-ruleset-form");
+      const tag = form?.querySelector('[name="route-ruleset-tag"]');
+      if (tag) tag.value = event.target.dataset.resourceName || tag.value;
+      return;
+    }
     if (event.target.matches("[data-outbound-type]")) {
       const form = event.target.closest("#outbound-form");
       if (form) updateOutboundTypeFields(form, event.target.value);
@@ -1779,6 +2157,55 @@
       closeModal();
       render();
       showToast(existingIndex >= 0 ? "出站已更新" : "出站已添加", `${config.tag}（${config.type}）已加入当前配置草稿，请保存后应用。`, "success");
+    } else if (type === "route-rule") {
+      const rule = buildRouteRuleConfig(form, state.editingRouteRuleId);
+      if (!rule.payload) {
+        showToast("缺少匹配内容", rule.type === "rule_set" ? "请至少选择一个规则集。" : "请填写该规则类型的匹配内容。", "info");
+        return;
+      }
+      if (rule.action === "route" && !rule.outbound) {
+        showToast("缺少目标出站", "路由动作需要选择一个出站标签。", "info");
+        return;
+      }
+      if ([rule.type === "inline" ? rule.payload : "", rule.action === "route-options" ? rule.outbound : ""].filter(Boolean).some((json) => {
+        try { JSON.parse(json); return false; } catch { return true; }
+      })) {
+        showToast("JSON 格式错误", "请检查内联规则或路由选项的 JSON 语法。", "info");
+        return;
+      }
+      const existingIndex = state.routeRules.findIndex((item) => item.id === state.editingRouteRuleId);
+      if (existingIndex >= 0) state.routeRules.splice(existingIndex, 1, rule);
+      else {
+        const insertionIndex = state.routeRules.findIndex((item) => item.type === "insertion");
+        state.routeRules.splice(insertionIndex >= 0 ? insertionIndex + 1 : 0, 0, rule);
+      }
+      state.dirty = true;
+      closeModal();
+      render();
+      showToast(existingIndex >= 0 ? "路由规则已更新" : "路由规则已添加", `${rule.type} · ${routeRuleActionLabel(rule)}`, "success");
+    } else if (type === "route-ruleset") {
+      const ruleset = buildRouteRulesetConfig(form, state.editingRouteRulesetId);
+      if (ruleset.type === "local" && !ruleset.path) {
+        showToast("请选择本地资源", "本地规则集必须关联一个已下载的规则资源。", "info");
+        return;
+      }
+      if (ruleset.type === "remote" && !ruleset.url) {
+        showToast("缺少远程链接", "远程规则集需要填写下载 URL。", "info");
+        return;
+      }
+      if (ruleset.type === "inline") {
+        try { JSON.parse(ruleset.rules); } catch {
+          showToast("JSON 格式错误", "请检查内联规则集的 JSON 语法。", "info");
+          return;
+        }
+      }
+      const existingIndex = state.routeRuleSets.findIndex((item) => item.id === state.editingRouteRulesetId);
+      if (existingIndex >= 0) state.routeRuleSets.splice(existingIndex, 1, ruleset);
+      else state.routeRuleSets.unshift(ruleset);
+      state.dirty = true;
+      closeModal();
+      render();
+      showToast(existingIndex >= 0 ? "规则集已更新" : "规则集已添加", `${ruleset.tag}（${ruleset.type}）已加入当前配置草稿。`, "success");
     } else if (type === "subscription") {
       const data = new FormData(form);
       state.subscriptions.push({
