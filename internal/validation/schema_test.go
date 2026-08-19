@@ -76,6 +76,34 @@ func TestSchemaValidatorReportsJSONPointer(t *testing.T) {
 	}
 }
 
+func TestServiceValidateGloballySortsSchemaAndSemanticIssues(t *testing.T) {
+	validator, err := NewSchemaValidator([]byte(`{
+		"type":"object",
+		"properties":{"z":{"type":"string"}}
+	}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(validator, "1.13.19", func() time.Time { return time.Time{} })
+
+	result := service.Validate(json.RawMessage(`{
+		"z": 1,
+		"outbounds":[{"tag":"select","type":"selector","outbounds":["missing"]}]
+	}`))
+	want := []Issue{
+		{Stage: "semantic", Path: "/outbounds/0/outbounds/0", Code: "missing_outbound", Message: "引用的出站不存在"},
+		{Stage: "schema", Path: "/z", Code: "type", Message: "配置不符合 Schema 约束"},
+	}
+	if len(result.Issues) != len(want) {
+		t.Fatalf("issues = %#v", result.Issues)
+	}
+	for index := range want {
+		if result.Issues[index] != want[index] {
+			t.Fatalf("issues[%d] = %#v, want %#v", index, result.Issues[index], want[index])
+		}
+	}
+}
+
 func TestServiceValidateDraftBlocksNonpublishableBuffers(t *testing.T) {
 	validator, err := NewSchemaValidator([]byte(`{"type":"object"}`))
 	if err != nil {

@@ -49,12 +49,7 @@ func (validator *SchemaValidator) Validate(config json.RawMessage) []Issue {
 		}
 		issues := make([]Issue, 0)
 		flattenValidationError(validationError, &issues)
-		sort.SliceStable(issues, func(left, right int) bool {
-			if issues[left].Path != issues[right].Path {
-				return issues[left].Path < issues[right].Path
-			}
-			return issues[left].Code < issues[right].Code
-		})
+		sortIssues(issues)
 		return issues
 	}
 	return nil
@@ -95,6 +90,7 @@ func NewService(schema *SchemaValidator, targetVersion string, now func() time.T
 func (service *Service) Validate(config json.RawMessage) Result {
 	issues := append([]Issue(nil), service.schema.Validate(config)...)
 	issues = append(issues, ValidateSemantics(config)...)
+	sortIssues(issues)
 	return service.result(issues)
 }
 

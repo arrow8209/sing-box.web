@@ -3,7 +3,6 @@ package validation
 import (
 	"bytes"
 	"encoding/json"
-	"sort"
 )
 
 var semanticMessages = map[string]string{
@@ -38,12 +37,7 @@ func ValidateSemantics(config json.RawMessage) []Issue {
 	checkDomainResolvers(dns, "/dns", dnsTags, &issues)
 	checkDomainResolver(route["default_domain_resolver"], "/route/default_domain_resolver", dnsTags, &issues)
 
-	sort.SliceStable(issues, func(left, right int) bool {
-		if issues[left].Path != issues[right].Path {
-			return issues[left].Path < issues[right].Path
-		}
-		return issues[left].Code < issues[right].Code
-	})
+	sortIssues(issues)
 	return issues
 }
 

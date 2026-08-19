@@ -1,6 +1,9 @@
 package validation
 
-import "time"
+import (
+	"sort"
+	"time"
+)
 
 type Issue struct {
 	Stage   string `json:"stage"`
@@ -15,4 +18,13 @@ type Result struct {
 	TargetVersion    string    `json:"targetVersion"`
 	InstalledVersion string    `json:"installedVersion"`
 	CheckedAt        time.Time `json:"checkedAt"`
+}
+
+func sortIssues(issues []Issue) {
+	sort.SliceStable(issues, func(left, right int) bool {
+		if issues[left].Path != issues[right].Path {
+			return issues[left].Path < issues[right].Path
+		}
+		return issues[left].Code < issues[right].Code
+	})
 }
