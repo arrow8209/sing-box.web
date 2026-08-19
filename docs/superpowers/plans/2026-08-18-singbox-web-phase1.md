@@ -1412,6 +1412,8 @@ git commit -m "实现配置模块拆合与脱敏"
 
 ### Task 9: 固定最新版 Schema 并实现 Schema/语义预检
 
+> **稳定版 Schema 固定说明（2026-08-19）：** 目标版本固定为 sing-box `1.13.19`。官方 live URL `https://sing-box.sagernet.org/schema.json` 已提前部署 1.14 字段，不能作为 1.13.19 的发布资产；本任务改为固定官方仓库 deployment commit `583a690e888cdf6e8b024bf017ebf6297e08338d` 的根目录 `schema.json`，预期 SHA-256 为 `ee03dcaffe9282100418de280c61d3f0c8022712af50bc79c072994247133c41`。维护脚本必须拒绝其他本机版本，并 guard 1.13 字段 `dns.independent_cache` 与 remote rule-set `download_detour`，Task 17/18 继续使用这两个字段，不迁移到 live Schema 的 1.14 写法。
+
 **Files:**
 - Create: `scripts/update-singbox-schema.sh`
 - Create: `internal/assets/sing-box.schema.json`
@@ -1438,21 +1440,33 @@ Create `scripts/update-singbox-schema.sh` with `set -eu`. It must:
 set -eu
 
 singbox_bin=${SING_BOX_BIN:-sing-box}
-schema_url=https://sing-box.sagernet.org/schema.json
+target_version=1.13.19
+schema_commit=583a690e888cdf6e8b024bf017ebf6297e08338d
+schema_url=https://raw.githubusercontent.com/SagerNet/sing-box/$schema_commit/schema.json
+expected_sha256=ee03dcaffe9282100418de280c61d3f0c8022712af50bc79c072994247133c41
 asset_dir=internal/assets
-temp_file=$(mktemp)
-trap 'rm -f "$temp_file"' EXIT
+schema_temp=$(mktemp "$asset_dir/.sing-box.schema.json.XXXXXX")
+metadata_temp=$(mktemp "$asset_dir/.schema.version.json.XXXXXX")
+trap 'rm -f "$schema_temp" "$metadata_temp"' EXIT
 
 version=$($singbox_bin version | sed -n '1s/.* //p')
 test -n "$version"
-curl -fsSL "$schema_url" -o "$temp_file"
-jq -e . "$temp_file" >/dev/null
-sha256=$(sha256sum "$temp_file" | sed 's/ .*//')
+test "$version" = "$target_version"
+curl -fsSL "$schema_url" -o "$schema_temp"
+jq -e . "$schema_temp" >/dev/null
+sha256=$(sha256sum "$schema_temp" | sed 's/ .*//')
+test "$sha256" = "$expected_sha256"
+jq -e '
+  . as $schema
+  | ($schema["$defs"].DNS.properties.independent_cache.type == "boolean")
+  and ($schema["$defs"].RuleSet.oneOf | any(.properties.type.const == "remote" and .properties.download_detour.type == "string"))
+' "$schema_temp" >/dev/null
 fetched_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-mv "$temp_file" "$asset_dir/sing-box.schema.json"
-jq -n --arg targetVersion "$version" --arg schemaURL "$schema_url" --arg sha256 "$sha256" --arg fetchedAt "$fetched_at" \
-  '{targetVersion:$targetVersion,schemaURL:$schemaURL,sha256:$sha256,fetchedAt:$fetchedAt}' \
-  > "$asset_dir/schema.version.json"
+jq -n --arg targetVersion "$target_version" --arg schemaURL "$schema_url" --arg schemaCommit "$schema_commit" --arg sha256 "$sha256" --arg fetchedAt "$fetched_at" \
+  '{targetVersion:$targetVersion,schemaURL:$schemaURL,schemaCommit:$schemaCommit,sha256:$sha256,fetchedAt:$fetchedAt}' \
+  > "$metadata_temp"
+mv "$schema_temp" "$asset_dir/sing-box.schema.json"
+mv "$metadata_temp" "$asset_dir/schema.version.json"
 ```
 
 Run only after installing the latest stable sing-box and confirming network approval:
@@ -1463,6 +1477,8 @@ chmod +x scripts/update-singbox-schema.sh
 ```
 
 Expected: both JSON files parse with `jq`; metadata target version equals `sing-box version` output.
+
+Web 本身不下载、编译或调度规则资源；它只保存并发布配置。生成配置中的 remote `route.rule_set` URL 会由 sing-box 在执行检查或运行配置时按其原生行为下载，这不表示 Web 提供了规则下载能力。
 
 - [ ] **Step 2: 写入 Schema 错误路径失败测试**
 
