@@ -4,8 +4,12 @@ import { useCapabilitiesStore } from "./stores/capabilities";
 import { useProfilesStore } from "./stores/profiles";
 import LoginView from "./features/auth/LoginView.vue";
 import AppShell from "./features/shell/AppShell.vue";
-import CapabilityUnavailable from "./features/placeholders/CapabilityUnavailable.vue";
 import ConfigWorkspace from "./features/config/ConfigWorkspace.vue";
+import DashboardView from "./features/dashboard/DashboardView.vue";
+import SettingsView from "./features/settings/SettingsView.vue";
+import RuntimePlaceholderView from "./features/placeholders/RuntimePlaceholderView.vue";
+import SubscriptionPlaceholderView from "./features/placeholders/SubscriptionPlaceholderView.vue";
+import RulesetPlaceholderView from "./features/placeholders/RulesetPlaceholderView.vue";
 
 export const routes = [
   { path: "/login", name: "login", component: LoginView, meta: { public: true } },
@@ -17,8 +21,7 @@ export const routes = [
       {
         path: "dashboard",
         name: "dashboard",
-        component: CapabilityUnavailable,
-        props: { title: "配置仪表盘", description: "配置摘要将在档案功能完成后显示。" },
+        component: DashboardView,
       },
       {
         path: "config/:profileId?/:module?",
@@ -39,26 +42,22 @@ export const routes = [
       {
         path: "runtime",
         name: "runtime",
-        component: CapabilityUnavailable,
-        props: { title: "运行状态", description: "核心状态与生命周期控制将在二期接入。" },
+        component: RuntimePlaceholderView,
       },
       {
         path: "subscriptions",
         name: "subscriptions",
-        component: CapabilityUnavailable,
-        props: { title: "订阅配置", description: "代理订阅同步不在一期范围内。" },
+        component: SubscriptionPlaceholderView,
       },
       {
         path: "rulesets",
         name: "rulesets",
-        component: CapabilityUnavailable,
-        props: { title: "规则集中心", description: "规则资源下载与调度不在一期范围内。" },
+        component: RulesetPlaceholderView,
       },
       {
         path: "settings",
         name: "settings",
-        component: CapabilityUnavailable,
-        props: { title: "系统设置", description: "管理员与界面设置将在后续前端任务接入。" },
+        component: SettingsView,
       },
     ],
   },

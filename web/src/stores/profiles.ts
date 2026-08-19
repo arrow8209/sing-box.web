@@ -57,5 +57,11 @@ export const useProfilesStore = defineStore("profiles", {
       const draft = useDraftStore();
       await draft.load(id);
     },
+    async remove(id: string): Promise<void> {
+      this.items = this.items.filter((item) => item.id !== id);
+      if (this.activeId === id) {
+        this.activeId = this.items[0]?.id ?? null;
+      }
+    },
   },
 });

@@ -5,6 +5,7 @@ import { useDraftStore } from "../../stores/draft";
 import { modules, topLevelKey } from "./modules";
 import ModuleTabs from "./components/ModuleTabs.vue";
 import RawModuleEditor from "./components/RawModuleEditor.vue";
+import PublicationBar from "../publication/PublicationBar.vue";
 import GeneralEditor from "./editors/GeneralEditor.vue";
 import DNSEditor from "./editors/DNSEditor.vue";
 import AdvancedEditor from "./editors/AdvancedEditor.vue";
@@ -82,6 +83,8 @@ function replaceCollection(rows: unknown[]): void {
     </header>
 
     <ModuleTabs :profile-id="profileId" />
+
+    <PublicationBar v-if="draft.status !== 'error'" />
 
     <p v-if="draftError" class="workspace-error" role="alert">{{ draftError }}</p>
 

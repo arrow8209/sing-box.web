@@ -4,12 +4,14 @@ import { useProfilesStore } from "../../stores/profiles";
 import { useDraftStore } from "../../stores/draft";
 import CreateProfileDialog from "./CreateProfileDialog.vue";
 import RenameProfileDialog from "./RenameProfileDialog.vue";
+import DeleteProfileDialog from "./DeleteProfileDialog.vue";
 
 const profiles = useProfilesStore();
 const draft = useDraftStore();
 
 const showCreateDialog = ref(false);
 const showRenameDialog = ref(false);
+const showDeleteDialog = ref(false);
 
 const saveStatusText = computed(() => {
   switch (draft.status) {
@@ -77,6 +79,14 @@ async function overwriteAfterConflict(): Promise<void> {
         >
           重命名档案
         </button>
+        <button
+          v-if="profile.id === profiles.activeId"
+          class="profile-action"
+          name="删除档案"
+          @click="showDeleteDialog = true"
+        >
+          删除档案
+        </button>
       </li>
     </ul>
 
@@ -104,6 +114,11 @@ async function overwriteAfterConflict(): Promise<void> {
       v-if="showRenameDialog && profiles.activeId !== null"
       :profile-id="profiles.activeId"
       @close="showRenameDialog = false"
+    />
+    <DeleteProfileDialog
+      v-if="showDeleteDialog && profiles.activeId !== null"
+      :profile-id="profiles.activeId"
+      @close="showDeleteDialog = false"
     />
 
     <!-- 草稿冲突 -->
