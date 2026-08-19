@@ -64,6 +64,23 @@ func TestSplitRejectsInvalidAndNonObjectInput(t *testing.T) {
 	}
 }
 
+func TestSplitAndMergeRejectDuplicateTopLevelKeys(t *testing.T) {
+	duplicate := json.RawMessage(`{"log":{},"log":{}}`)
+	if files, err := Split(duplicate); err == nil || files != nil {
+		t.Fatalf("Split accepted duplicate key: %#v, %v", files, err)
+	}
+	if merged, err := Merge([]ModuleFile{{Content: duplicate}}); err == nil || merged != nil {
+		t.Fatalf("Merge accepted duplicate key: %s, %v", merged, err)
+	}
+}
+
+func TestMergeRejectsTrailingSecondJSONValue(t *testing.T) {
+	files := []ModuleFile{{Content: []byte(`{"log":{}} {}`)}}
+	if merged, err := Merge(files); err == nil || merged != nil {
+		t.Fatalf("Merge accepted trailing JSON value: %s, %v", merged, err)
+	}
+}
+
 func TestMergeUsesContentAndRejectsInvalidModuleFiles(t *testing.T) {
 	merged, err := Merge([]ModuleFile{{Name: "untrusted.json", TopKey: "wrong", Content: []byte("{\n  \"log\": {\n    \"level\": \"info\"\n  }\n}\n")}})
 	if err != nil {
@@ -91,6 +108,18 @@ func TestDigestSortsFilesByName(t *testing.T) {
 	b := []ModuleFile{{Name: "a.json", Content: []byte("a")}, {Name: "b.json", Content: []byte("b")}}
 	if Digest(a) != Digest(b) {
 		t.Fatal("Digest depends on input order")
+	}
+}
+
+func TestDigestSortsSameNameFilesByContent(t *testing.T) {
+	forward := []ModuleFile{{Name: "same.json", Content: []byte("second")}, {Name: "same.json", Content: []byte("first")}}
+	reverse := []ModuleFile{{Name: "same.json", Content: []byte("first")}, {Name: "same.json", Content: []byte("second")}}
+	if Digest(forward) != Digest(reverse) {
+		t.Fatal("Digest depends on same-name input order")
+	}
+	different := []ModuleFile{{Name: "same.json", Content: []byte("first")}, {Name: "same.json", Content: []byte("third")}}
+	if Digest(forward) == Digest(different) {
+		t.Fatal("Digest did not include same-name file contents")
 	}
 }
 

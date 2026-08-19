@@ -153,7 +153,12 @@ func Merge(files []ModuleFile) (json.RawMessage, error) {
 // Digest returns the SHA-256 digest of module names and their contents.
 func Digest(files []ModuleFile) string {
 	sorted := append([]ModuleFile(nil), files...)
-	sort.SliceStable(sorted, func(i, j int) bool { return sorted[i].Name < sorted[j].Name })
+	sort.Slice(sorted, func(i, j int) bool {
+		if sorted[i].Name != sorted[j].Name {
+			return sorted[i].Name < sorted[j].Name
+		}
+		return bytes.Compare(sorted[i].Content, sorted[j].Content) < 0
+	})
 	hash := sha256.New()
 	for _, file := range sorted {
 		hash.Write([]byte(file.Name))
@@ -167,19 +172,48 @@ func Digest(files []ModuleFile) string {
 func decodeConfigObject(raw []byte) (map[string]any, error) {
 	decoder := json.NewDecoder(bytes.NewReader(raw))
 	decoder.UseNumber()
-	var value any
-	if err := decoder.Decode(&value); err != nil {
+
+	token, err := decoder.Token()
+	if err != nil {
 		return nil, err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '{' {
+		return nil, fmt.Errorf("config must be a top-level object")
+	}
+
+	object := make(map[string]any)
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return nil, err
+		}
+		key, ok := token.(string)
+		if !ok {
+			return nil, fmt.Errorf("top-level object key is not a string")
+		}
+		if _, exists := object[key]; exists {
+			return nil, fmt.Errorf("duplicate top-level key %q", key)
+		}
+
+		var value any
+		if err := decoder.Decode(&value); err != nil {
+			return nil, err
+		}
+		object[key] = value
+	}
+
+	token, err = decoder.Token()
+	if err != nil {
+		return nil, err
+	}
+	if delimiter, ok := token.(json.Delim); !ok || delimiter != '}' {
+		return nil, fmt.Errorf("config must be a top-level object")
 	}
 	if err := decoder.Decode(&struct{}{}); err != io.EOF {
 		if err == nil {
 			return nil, fmt.Errorf("multiple JSON values")
 		}
 		return nil, err
-	}
-	object, ok := value.(map[string]any)
-	if !ok {
-		return nil, fmt.Errorf("config must be a top-level object")
 	}
 	return object, nil
 }
