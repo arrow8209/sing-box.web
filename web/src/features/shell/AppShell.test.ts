@@ -16,11 +16,20 @@ function makeRouter() {
   return router;
 }
 
-function stubCapabilitiesFetch() {
+function stubFetchAll() {
   vi.stubGlobal(
     "fetch",
-    vi.fn().mockImplementation(() =>
-      Promise.resolve(
+    vi.fn().mockImplementation((input: RequestInfo | URL) => {
+      const path = typeof input === "string" ? input : input.toString();
+      if (path.includes("/profiles")) {
+        return Promise.resolve(
+          new Response(JSON.stringify([]), {
+            status: 200,
+            headers: { "Content-Type": "application/json" },
+          }),
+        );
+      }
+      return Promise.resolve(
         new Response(
           JSON.stringify({
             capabilities: {
@@ -35,8 +44,8 @@ function stubCapabilitiesFetch() {
           }),
           { status: 200, headers: { "Content-Type": "application/json" } },
         ),
-      ),
-    ),
+      );
+    }),
   );
 }
 
@@ -48,7 +57,7 @@ describe("AppShell", () => {
   });
 
   it("renders navigation with accessible names and no runtime metric text", async () => {
-    stubCapabilitiesFetch();
+    stubFetchAll();
     const auth = useAuthStore();
     auth.session = {
       username: "admin",
@@ -70,7 +79,7 @@ describe("AppShell", () => {
   });
 
   it("logs out via the store when 退出登录 is clicked", async () => {
-    stubCapabilitiesFetch();
+    stubFetchAll();
     const auth = useAuthStore();
     auth.session = {
       username: "admin",

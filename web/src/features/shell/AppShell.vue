@@ -1,15 +1,27 @@
 <script setup lang="ts">
-import { ref } from "vue";
+import { onMounted, ref } from "vue";
 import { useRouter } from "vue-router";
 import { useAuthStore } from "../../stores/auth";
 import { useCapabilitiesStore } from "../../stores/capabilities";
+import { useProfilesStore } from "../../stores/profiles";
+import { useDraftAutosave } from "../config/useDraftAutosave";
+import ProfileSidebar from "../profiles/ProfileSidebar.vue";
 
 const auth = useAuthStore();
 const capabilities = useCapabilitiesStore();
+const profiles = useProfilesStore();
 const router = useRouter();
+
+useDraftAutosave();
 
 const sidebarOpen = ref(false);
 const sidebarCollapsed = ref(false);
+
+onMounted(async () => {
+  if (profiles.items.length === 0) {
+    await profiles.load().catch(() => undefined);
+  }
+});
 
 const navGroups = [
   {
@@ -77,6 +89,7 @@ function closeSidebar(): void {
           </RouterLink>
         </template>
       </nav>
+      <ProfileSidebar />
       <div class="sidebar-footer">
         <button class="nav-item logout-item" name="退出登录" @click="logout">
           <span>退出登录</span>

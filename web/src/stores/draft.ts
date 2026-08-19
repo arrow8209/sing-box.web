@@ -1,0 +1,190 @@
+import { defineStore } from "pinia";
+import { apiClient, APIClientError } from "../api/client";
+import { useProfilesStore } from "./profiles";
+import type { APIError, Draft } from "../api/types";
+
+export interface DraftConflictState {
+  localContent: Draft["content"];
+  serverRevision: number;
+}
+
+type DraftStatus = "idle" | "loading" | "dirty" | "saving" | "saved" | "offline" | "conflict" | "error";
+
+interface DraftState {
+  draft: Draft | null;
+  etag: string | null;
+  status: DraftStatus;
+  lastError: APIError | null;
+  conflict: DraftConflictState | null;
+}
+
+const SAVE_DEBOUNCE_MS = 600;
+
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
+
+function cloneDraft(draft: Draft): Draft {
+  return JSON.parse(JSON.stringify(draft)) as Draft;
+}
+
+export const useDraftStore = defineStore("draft", {
+  state: (): DraftState => ({
+    draft: null,
+    etag: null,
+    status: "idle",
+    lastError: null,
+    conflict: null,
+  }),
+  actions: {
+    async load(profileId: string): Promise<void> {
+      const profiles = useProfilesStore();
+      const profile = profiles.items.find((item) => item.id === profileId);
+      if (profile?.draftReadOnly) {
+        this.draft = null;
+        this.etag = null;
+        this.status = "error";
+        this.lastError = {
+          code: "draft_read_only",
+          message: profile.draftError || "草稿只读，需要管理员在服务器修复",
+        };
+        return;
+      }
+      this.status = "loading";
+      try {
+        const { data, etag } = await apiClient.request<Draft>(`/profiles/${profileId}/draft`);
+        this.draft = data;
+        this.etag = etag;
+        this.status = "saved";
+        this.lastError = null;
+        this.conflict = null;
+      } catch (error) {
+        this.status = "error";
+        this.lastError =
+          error instanceof APIClientError
+            ? error.detail
+            : { code: "network_error", message: "草稿载入失败" };
+        throw error;
+      }
+    },
+    replaceConfig(config: Record<string, unknown>): void {
+      if (this.status === "error") {
+        // 损坏草稿拒绝本地变更：绝不能从浏览器状态修复服务器文件。
+        return;
+      }
+      if (this.draft === null) {
+        return;
+      }
+      const next = cloneDraft(this.draft);
+      next.content = { ...next.content, config };
+      this.draft = next;
+      this.status = "dirty";
+      this.scheduleSave();
+    },
+    setEditorBuffer(module: string, text: string): void {
+      if (this.status === "error" || this.draft === null) {
+        return;
+      }
+      const next = cloneDraft(this.draft);
+      const buffers = { ...next.content.editorBuffers };
+      const previous = buffers[module];
+      buffers[module] = {
+        text,
+        valid: false,
+        applied: previous?.applied ?? false,
+      };
+      next.content = { ...next.content, editorBuffers: buffers };
+      this.draft = next;
+      this.status = "dirty";
+      this.scheduleSave();
+    },
+    async save(): Promise<void> {
+      if (this.draft === null || this.etag === null) {
+        return;
+      }
+      if (this.status === "conflict" || this.status === "error") {
+        return;
+      }
+      const profiles = useProfilesStore();
+      const profile = profiles.active;
+      if (profile?.draftReadOnly) {
+        this.status = "error";
+        this.lastError = {
+          code: "draft_read_only",
+          message: profile.draftError || "草稿只读，需要管理员在服务器修复",
+        };
+        return;
+      }
+      const profileId = this.draft.profileId;
+      const content = cloneDraft(this.draft).content;
+      this.status = "saving";
+      try {
+        const { data, etag } = await apiClient.request<Draft>(`/profiles/${profileId}/draft`, {
+          method: "PUT",
+          headers: { "If-Match": this.etag },
+          body: JSON.stringify(content),
+        });
+        this.draft = data;
+        this.etag = etag;
+        this.status = "saved";
+        this.lastError = null;
+      } catch (error) {
+        if (error instanceof APIClientError && error.status === 409) {
+          this.status = "conflict";
+          this.conflict = {
+            localContent: content,
+            serverRevision: error.detail.currentRevision ?? 0,
+          };
+          this.lastError = error.detail;
+          return;
+        }
+        this.status = "offline";
+        this.lastError =
+          error instanceof APIClientError
+            ? error.detail
+            : { code: "network_error", message: "草稿保存失败" };
+      }
+    },
+    async reloadAfterConflict(): Promise<void> {
+      if (this.conflict === null || this.draft === null) {
+        return;
+      }
+      if (!window.confirm("放弃本地更改并重新载入服务器版本？")) {
+        return;
+      }
+      const profileId = this.draft.profileId;
+      this.conflict = null;
+      await this.load(profileId);
+    },
+    async overwriteAfterConflict(): Promise<void> {
+      if (this.conflict === null || this.draft === null) {
+        return;
+      }
+      const profileId = this.draft.profileId;
+      const localContent = cloneDraft(this.draft);
+      localContent.content = this.conflict.localContent;
+      const latest = await apiClient.request<Draft>(`/profiles/${profileId}/draft`);
+      const headers: Record<string, string> = {};
+      if (latest.etag !== null) {
+        headers["If-Match"] = latest.etag;
+      }
+      const { data, etag } = await apiClient.request<Draft>(`/profiles/${profileId}/draft`, {
+        method: "PUT",
+        headers,
+        body: JSON.stringify(this.conflict.localContent),
+      });
+      this.draft = data;
+      this.etag = etag;
+      this.status = "saved";
+      this.conflict = null;
+      this.lastError = null;
+    },
+    scheduleSave(): void {
+      if (saveTimer !== null) {
+        clearTimeout(saveTimer);
+      }
+      saveTimer = setTimeout(() => {
+        saveTimer = null;
+        void this.save();
+      }, SAVE_DEBOUNCE_MS);
+    },
+  },
+});

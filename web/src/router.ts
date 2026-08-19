@@ -1,6 +1,7 @@
 import { createRouter, createWebHistory } from "vue-router";
 import { useAuthStore } from "./stores/auth";
 import { useCapabilitiesStore } from "./stores/capabilities";
+import { useProfilesStore } from "./stores/profiles";
 import LoginView from "./features/auth/LoginView.vue";
 import AppShell from "./features/shell/AppShell.vue";
 import CapabilityUnavailable from "./features/placeholders/CapabilityUnavailable.vue";
@@ -23,6 +24,17 @@ export const routes = [
         name: "config",
         component: CapabilityUnavailable,
         props: { title: "配置工作区", description: "请先创建或选择配置档案。" },
+        beforeEnter: async (to: import("vue-router").RouteLocationNormalized) => {
+          const profiles = useProfilesStore();
+          if (profiles.items.length === 0) {
+            await profiles.load().catch(() => undefined);
+          }
+          const profileId = to.params.profileId;
+          if (typeof profileId === "string" && profiles.activeId !== profileId) {
+            await profiles.select(profileId).catch(() => undefined);
+          }
+          return true;
+        },
       },
       {
         path: "runtime",
