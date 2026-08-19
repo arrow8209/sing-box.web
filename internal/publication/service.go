@@ -490,6 +490,10 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 		if err := service.callFailpoint("after_delete_intent"); err != nil {
 			return err
 		}
+		current, err := service.options.Profiles.Get(ctx, item.ID)
+		if err != nil || !service.deletionIntentMatchesProfile(current, intent) {
+			return ErrExternalDrift
+		}
 		moved, err := service.deleteStable(item, intent, stableInfo)
 		if err != nil {
 			if !moved {
@@ -508,7 +512,7 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 		if err := service.callFailpoint("after_delete_link"); err != nil {
 			return err
 		}
-		return service.completeAuthorizedDeletion(ctx, item, deletionTombstone)
+		return service.completeAuthorizedDeletion(ctx, item, intent, deletionTombstone)
 	}
 	if err := service.removeProfileGenerations(item.ID); err != nil {
 		return err
@@ -767,6 +771,10 @@ func (service *Service) deleteTombstone(profileID, txID string) string {
 	return filepath.Join(service.options.ConfigRoot, ".delete-"+profileID+"-"+txID)
 }
 
+func (service *Service) finalDeleteTombstone(profileID, txID string) string {
+	return filepath.Join(service.options.ConfigRoot, ".delete-final-"+profileID+"-"+txID)
+}
+
 func (service *Service) deletionMarkers(profileID string) ([]string, error) {
 	entries, err := os.ReadDir(service.options.ConfigRoot)
 	if errors.Is(err, os.ErrNotExist) {
@@ -775,20 +783,27 @@ func (service *Service) deletionMarkers(profileID string) ([]string, error) {
 	if err != nil {
 		return nil, err
 	}
-	prefix := ".delete-" + profileID
+	prefixes := []string{".delete-" + profileID + "-", ".delete-final-" + profileID + "-"}
 	var result []string
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), prefix) {
-			result = append(result, filepath.Join(service.options.ConfigRoot, entry.Name()))
+		for _, prefix := range prefixes {
+			if strings.HasPrefix(entry.Name(), prefix) {
+				result = append(result, filepath.Join(service.options.ConfigRoot, entry.Name()))
+				break
+			}
 		}
 	}
 	return result, nil
 }
 
 func (service *Service) recoverDeletion(ctx context.Context, item profile.Profile, intent profile.DeletionIntent, markers []string) error {
+	if !service.deletionIntentMatchesProfile(item, intent) {
+		return ErrExternalDrift
+	}
 	stable := filepath.Join(service.options.ConfigRoot, item.Slug)
 	_, stableErr := os.Lstat(stable)
 	expected := service.deleteTombstone(item.ID, intent.TxID)
+	final := service.finalDeleteTombstone(item.ID, intent.TxID)
 	switch intent.Phase {
 	case profile.DeletionPhasePrepared:
 		if stableErr == nil {
@@ -819,7 +834,7 @@ func (service *Service) recoverDeletion(ctx context.Context, item profile.Profil
 			return fmt.Errorf("%w: authorize recovered deletion: %v", ErrRecoveryRequired, err)
 		}
 		intent.Phase = profile.DeletionPhaseDiskRemovalAuthorized
-		return service.completeAuthorizedDeletion(ctx, item, expected)
+		return service.completeAuthorizedDeletion(ctx, item, intent, expected)
 	case profile.DeletionPhaseDiskRemovalAuthorized:
 		if stableErr == nil {
 			return ErrExternalDrift
@@ -827,14 +842,17 @@ func (service *Service) recoverDeletion(ctx context.Context, item profile.Profil
 		if !errors.Is(stableErr, os.ErrNotExist) {
 			return stableErr
 		}
-		if len(markers) > 1 || (len(markers) == 1 && (markers[0] != expected || !service.validDeletionMarker(intent, expected, true))) {
+		if len(markers) > 1 || (len(markers) == 1 && markers[0] != expected && markers[0] != final) {
 			return ErrExternalDrift
 		}
 		marker := ""
 		if len(markers) == 1 {
-			marker = expected
+			marker = markers[0]
+			if !service.validDeletionMarker(intent, marker, true) {
+				return ErrExternalDrift
+			}
 		}
-		return service.completeAuthorizedDeletion(ctx, item, marker)
+		return service.completeAuthorizedDeletion(ctx, item, intent, marker)
 	default:
 		return ErrExternalDrift
 	}
@@ -853,12 +871,9 @@ func (service *Service) validDeletionMarker(intent profile.DeletionIntent, marke
 	return err == nil && matches
 }
 
-func (service *Service) completeAuthorizedDeletion(ctx context.Context, item profile.Profile, marker string) error {
+func (service *Service) completeAuthorizedDeletion(ctx context.Context, item profile.Profile, intent profile.DeletionIntent, marker string) error {
 	if marker != "" {
-		if err := os.Remove(marker); err != nil {
-			return err
-		}
-		if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
+		if err := service.removeDeletionMarker(intent, marker); err != nil {
 			return err
 		}
 		if err := service.callFailpoint("after_delete_marker"); err != nil {
@@ -879,6 +894,55 @@ func (service *Service) completeAuthorizedDeletion(ctx context.Context, item pro
 		return metadataErr
 	}
 	return metadataErr
+}
+
+func (service *Service) removeDeletionMarker(intent profile.DeletionIntent, marker string) error {
+	original := service.deleteTombstone(intent.ProfileID, intent.TxID)
+	final := service.finalDeleteTombstone(intent.ProfileID, intent.TxID)
+	if marker != original && marker != final {
+		return ErrExternalDrift
+	}
+	if marker == original {
+		expectedInfo, err := os.Lstat(original)
+		if err != nil || expectedInfo.Mode()&os.ModeSymlink == 0 {
+			return ErrExternalDrift
+		}
+		if err := unix.Renameat2(unix.AT_FDCWD, original, unix.AT_FDCWD, final, unix.RENAME_NOREPLACE); err != nil {
+			return ErrExternalDrift
+		}
+		if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
+			return err
+		}
+		if err := service.callFailpoint("after_delete_final_rename"); err != nil {
+			return err
+		}
+		movedInfo, lstatErr := os.Lstat(final)
+		movedTarget, readErr := os.Readlink(final)
+		if lstatErr != nil || movedInfo.Mode()&os.ModeSymlink == 0 || readErr != nil || movedTarget != intent.Target || !os.SameFile(expectedInfo, movedInfo) {
+			if lstatErr == nil {
+				_ = unix.Renameat2(unix.AT_FDCWD, final, unix.AT_FDCWD, original, unix.RENAME_NOREPLACE)
+				_ = service.syncDirectory(service.options.ConfigRoot)
+			}
+			return ErrExternalDrift
+		}
+		marker = final
+	}
+	if !service.validDeletionMarker(intent, marker, true) {
+		return ErrExternalDrift
+	}
+	if err := os.Remove(marker); err != nil {
+		return err
+	}
+	return service.syncDirectory(service.options.ConfigRoot)
+}
+
+func (service *Service) deletionIntentMatchesProfile(item profile.Profile, intent profile.DeletionIntent) bool {
+	publicationID, _, err := service.parseOwnedTarget(intent.ProfileID, intent.Target)
+	if err != nil || item.ID != intent.ProfileID || item.PublishedRevision == nil || item.PublishedDigest != intent.Digest {
+		return false
+	}
+	revision, prefix, err := parsePublicationID(publicationID)
+	return err == nil && revision == *item.PublishedRevision && strings.HasPrefix(intent.Digest, prefix)
 }
 
 func (service *Service) rollbackDelete(stable, tombstone string, cause error) error {

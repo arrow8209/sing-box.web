@@ -118,7 +118,8 @@ func TestRepositoryDeletionIntentPersistsCancelsAndIsRemovedAtomically(t *testin
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	revision := uint64(1)
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1, PublishedRevision: &revision, PublishedDigest: strings.Repeat("01", 32)}
 	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -170,7 +171,8 @@ func TestRepositoryDeletionIntentDurabilityUncertainUpdatesMemory(t *testing.T) 
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	revision := uint64(1)
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1, PublishedRevision: &revision, PublishedDigest: strings.Repeat("01", 32)}
 	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
@@ -195,8 +197,9 @@ func TestDeletionIntentRejectsInvalidTargetAndPhase(t *testing.T) {
 	id := "01010101010101010101010101010101"
 	valid := DeletionIntent{ProfileID: id, Target: ".generations/" + id + "/1-010101010101", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16), Phase: DeletionPhasePrepared}
 	for name, mutate := range map[string]func(*DeletionIntent){
-		"absolute target": func(intent *DeletionIntent) { intent.Target = "/.generations/" + id + "/1-010101010101" },
-		"unclean target":  func(intent *DeletionIntent) { intent.Target = ".generations/../.generations/" + id + "/1-010101010101" },
+		"absolute target":  func(intent *DeletionIntent) { intent.Target = "/.generations/" + id + "/1-010101010101" },
+		"unclean target":   func(intent *DeletionIntent) { intent.Target = ".generations/../.generations/" + id + "/1-010101010101" },
+		"backslash target": func(intent *DeletionIntent) { intent.Target = `.generations\` + id + `\1-010101010101` },
 		"other profile": func(intent *DeletionIntent) {
 			intent.Target = ".generations/" + strings.Repeat("03", 16) + "/1-010101010101"
 		},
@@ -221,12 +224,62 @@ func TestDeletionIntentRejectsInvalidTargetAndPhase(t *testing.T) {
 	}
 }
 
+func TestDeletionIntentMustMatchPublishedProfileOnBeginAndOpen(t *testing.T) {
+	id := "01010101010101010101010101010101"
+	revision := uint64(1)
+	digest := strings.Repeat("01", 32)
+	item := Profile{ID: id, Name: "One", Slug: "one", DraftRevision: 1, PublishedRevision: &revision, PublishedDigest: digest}
+	valid := DeletionIntent{ProfileID: id, Target: ".generations/" + id + "/1-010101010101", Digest: digest, TxID: strings.Repeat("02", 16), Phase: DeletionPhasePrepared}
+	for name, mutate := range map[string]func(*DeletionIntent, *Profile){
+		"backslash": func(intent *DeletionIntent, _ *Profile) { intent.Target = `.generations\` + id + `\1-010101010101` },
+		"unpublished": func(_ *DeletionIntent, item *Profile) {
+			item.PublishedRevision = nil
+			item.PublishedDigest = ""
+		},
+		"stale revision": func(intent *DeletionIntent, _ *Profile) { intent.Target = ".generations/" + id + "/2-010101010101" },
+		"stale digest": func(intent *DeletionIntent, _ *Profile) {
+			intent.Digest = strings.Repeat("03", 32)
+			intent.Target = ".generations/" + id + "/1-030303030303"
+		},
+	} {
+		t.Run("begin/"+name, func(t *testing.T) {
+			repo, err := OpenRepository(t.TempDir(), time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			candidate := cloneProfile(item)
+			intent := valid
+			mutate(&intent, &candidate)
+			if err := repo.Insert(context.Background(), candidate, Draft{ProfileID: id, Revision: 1}); err != nil {
+				t.Fatal(err)
+			}
+			if err := repo.BeginDeletion(context.Background(), id, intent); err == nil {
+				t.Fatal("BeginDeletion accepted mismatched intent")
+			}
+		})
+		t.Run("open/"+name, func(t *testing.T) {
+			dir := t.TempDir()
+			candidate := cloneProfile(item)
+			intent := valid
+			mutate(&intent, &candidate)
+			disk := indexFile{Version: indexVersion, Profiles: []Profile{candidate}, PendingDeletions: map[string]DeletionIntent{id: intent}}
+			if err := atomicfile.WriteJSON(filepath.Join(dir, "profiles.json"), 0o600, disk); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := OpenRepository(dir, time.Now); err == nil {
+				t.Fatal("OpenRepository accepted mismatched intent")
+			}
+		})
+	}
+}
+
 func TestRepositoryOrdinaryCommitRetainsDeletionIntent(t *testing.T) {
 	repo, err := OpenRepository(t.TempDir(), time.Now)
 	if err != nil {
 		t.Fatal(err)
 	}
-	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	revision := uint64(1)
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1, PublishedRevision: &revision, PublishedDigest: strings.Repeat("01", 32)}
 	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
 		t.Fatal(err)
 	}

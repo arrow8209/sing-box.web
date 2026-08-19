@@ -549,6 +549,64 @@ func TestRecoverAuthorizedDeletionAfterMarkerRemovalCompletes(t *testing.T) {
 	}
 }
 
+func TestRecoverCompletesAfterFinalDeleteMarkerRename(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("interrupt after final marker rename")
+	fixture.service.failpoint = func(stage string) error {
+		if stage == "after_delete_final_rename" {
+			return injected
+		}
+		return nil
+	}
+	if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, injected) {
+		t.Fatalf("Delete error = %v", err)
+	}
+	markers, err := fixture.service.deletionMarkers(fixture.item.ID)
+	if err != nil || len(markers) != 1 || markers[0] != fixture.service.finalDeleteTombstone(fixture.item.ID, strings.Repeat("01", 16)) {
+		t.Fatalf("final marker = %#v, %v", markers, err)
+	}
+	fixture = reopenPublicationFixture(t, fixture)
+	if err := fixture.service.Recover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err == nil {
+		t.Fatal("profile metadata remains")
+	}
+}
+
+func TestDeleteMarkerReplacementRaceDoesNotDeleteProfile(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	fixture.service.failpoint = func(stage string) error {
+		if stage != "after_delete_final_rename" {
+			return nil
+		}
+		final := fixture.service.finalDeleteTombstone(fixture.item.ID, strings.Repeat("01", 16))
+		if err := os.Remove(final); err != nil {
+			return err
+		}
+		return os.Symlink("../replacement", final)
+	}
+	if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, ErrExternalDrift) {
+		t.Fatalf("Delete error = %v", err)
+	}
+	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err != nil {
+		t.Fatalf("metadata removed: %v", err)
+	}
+	if _, err := os.Lstat(fixture.service.profileGenerationRoot(fixture.item.ID)); err != nil {
+		t.Fatalf("generation removed: %v", err)
+	}
+	markers, err := fixture.service.deletionMarkers(fixture.item.ID)
+	if err != nil || len(markers) != 1 {
+		t.Fatalf("replacement marker not preserved: %#v, %v", markers, err)
+	}
+}
+
 func TestDeleteRemovesMarkerBeforeMetadata(t *testing.T) {
 	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
 	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {

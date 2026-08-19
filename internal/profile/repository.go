@@ -497,10 +497,11 @@ func (repo *Repository) BeginDeletion(ctx context.Context, id string, intent Del
 	if intent.Phase != DeletionPhasePrepared {
 		return fmt.Errorf("deletion intent must begin in prepared phase")
 	}
-	if _, exists := repo.profileByID(id); !exists {
+	item, exists := repo.profileByID(id)
+	if !exists {
 		return fmt.Errorf("profile %q not found", id)
 	}
-	if err := validateDeletionIntent(intent); err != nil {
+	if err := validateDeletionIntentForProfile(intent, item); err != nil {
 		return err
 	}
 	if _, exists := repo.pendingDeletions[id]; exists {
@@ -718,15 +719,16 @@ func nonNilDeletionIntents(intents map[string]DeletionIntent) map[string]Deletio
 }
 
 func validateDeletionIntents(intents map[string]DeletionIntent, profiles []Profile) error {
-	profileIDs := make(map[string]bool, len(profiles))
+	profilesByID := make(map[string]Profile, len(profiles))
 	for _, item := range profiles {
-		profileIDs[item.ID] = true
+		profilesByID[item.ID] = item
 	}
 	for id, intent := range intents {
-		if id != intent.ProfileID || !profileIDs[id] {
+		item, exists := profilesByID[id]
+		if id != intent.ProfileID || !exists {
 			return fmt.Errorf("invalid pending deletion for %q", id)
 		}
-		if err := validateDeletionIntent(intent); err != nil {
+		if err := validateDeletionIntentForProfile(intent, item); err != nil {
 			return err
 		}
 	}
@@ -749,18 +751,8 @@ func validateDeletionIntent(intent DeletionIntent) error {
 	if intent.Phase != DeletionPhasePrepared && intent.Phase != DeletionPhaseDiskRemovalAuthorized {
 		return fmt.Errorf("invalid deletion phase")
 	}
-	if filepath.IsAbs(intent.Target) || filepath.Clean(intent.Target) != intent.Target {
-		return fmt.Errorf("invalid deletion target")
-	}
-	parts := strings.Split(filepath.ToSlash(intent.Target), "/")
-	if len(parts) != 3 || parts[0] != ".generations" || parts[1] != intent.ProfileID {
-		return fmt.Errorf("invalid deletion target")
-	}
-	publication := deletionPublicationPattern.FindStringSubmatch(parts[2])
-	if publication == nil || publication[2] != intent.Digest[:12] {
-		return fmt.Errorf("invalid deletion target")
-	}
-	if revision, err := strconv.ParseUint(publication[1], 10, 64); err != nil || revision == 0 {
+	_, prefix, err := parseDeletionTarget(intent.ProfileID, intent.Target)
+	if err != nil || prefix != intent.Digest[:12] {
 		return fmt.Errorf("invalid deletion target")
 	}
 	if len(intent.TxID) != 32 || strings.ToLower(intent.TxID) != intent.TxID {
@@ -770,6 +762,39 @@ func validateDeletionIntent(intent DeletionIntent) error {
 		return fmt.Errorf("invalid deletion transaction ID")
 	}
 	return nil
+}
+
+func validateDeletionIntentForProfile(intent DeletionIntent, item Profile) error {
+	if err := validateDeletionIntent(intent); err != nil {
+		return err
+	}
+	revision, _, err := parseDeletionTarget(intent.ProfileID, intent.Target)
+	if err != nil || item.ID != intent.ProfileID || item.PublishedRevision == nil || *item.PublishedRevision != revision {
+		return fmt.Errorf("deletion target does not match published revision")
+	}
+	if item.PublishedDigest != intent.Digest {
+		return fmt.Errorf("deletion digest does not match published digest")
+	}
+	return nil
+}
+
+func parseDeletionTarget(profileID, target string) (uint64, string, error) {
+	if target == "" || strings.Contains(target, `\`) || filepath.ToSlash(target) != target || filepath.IsAbs(target) || filepath.Clean(target) != target {
+		return 0, "", fmt.Errorf("invalid deletion target")
+	}
+	parts := strings.Split(target, "/")
+	if len(parts) != 3 || parts[0] != ".generations" || parts[1] != profileID {
+		return 0, "", fmt.Errorf("invalid deletion target")
+	}
+	publication := deletionPublicationPattern.FindStringSubmatch(parts[2])
+	if publication == nil {
+		return 0, "", fmt.Errorf("invalid deletion target")
+	}
+	revision, err := strconv.ParseUint(publication[1], 10, 64)
+	if err != nil || revision == 0 {
+		return 0, "", fmt.Errorf("invalid deletion target")
+	}
+	return revision, publication[2], nil
 }
 
 func validateProfiles(profiles []Profile) error {
