@@ -1,6 +1,7 @@
 package profile
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -298,6 +299,132 @@ func TestRepositoryOpenRemovesOrphanDraft(t *testing.T) {
 	}
 	if _, err := os.Stat(path); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("orphan draft remains: %v", err)
+	}
+}
+
+func TestCorruptDraftIsReadOnlyWithoutBlockingOtherProfiles(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items := []Profile{
+		{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1},
+		{ID: "02020202020202020202020202020202", Name: "Two", Slug: "two", DraftRevision: 1},
+	}
+	for _, item := range items {
+		if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1, Content: DraftContent{Config: json.RawMessage(`{}`)}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	corruptPath := repo.DraftPath(items[0].ID)
+	if err := os.WriteFile(corruptPath, []byte("{"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	repo, err = OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(repo, nil, nil)
+	listed, err := service.List(context.Background())
+	if err != nil || len(listed) != 2 {
+		t.Fatalf("List = %#v, %v", listed, err)
+	}
+	status := service.DraftStatus(context.Background(), items[0].ID)
+	if !status.ReadOnly || status.Message != "草稿 JSON 损坏，需要管理员在服务器修复" {
+		t.Fatalf("status = %#v", status)
+	}
+	if _, err := service.GetDraft(context.Background(), items[0].ID); !errors.Is(err, ErrDraftCorrupt) {
+		t.Fatalf("GetDraft error = %v", err)
+	}
+	if _, err := service.SaveDraft(context.Background(), items[0].ID, 1, DraftContent{Config: json.RawMessage(`{}`)}); !errors.Is(err, ErrDraftCorrupt) {
+		t.Fatalf("SaveDraft error = %v", err)
+	}
+	raw, err := os.ReadFile(corruptPath)
+	if err != nil || string(raw) != "{" {
+		t.Fatalf("corrupt bytes = %q, %v", raw, err)
+	}
+	if _, err := service.SaveDraft(context.Background(), items[1].ID, 1, DraftContent{Config: json.RawMessage(`{}`)}); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestOpenRepairsOneStepDraftCommit(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1, Content: DraftContent{Config: json.RawMessage(`{"n":1}`)}}); err != nil {
+		t.Fatal(err)
+	}
+	draft := Draft{ProfileID: item.ID, Revision: 2, Content: DraftContent{Config: json.RawMessage(`{"n":9007199254740993}`)}, SavedAt: time.Now()}
+	if err := atomicfile.WriteJSON(repo.DraftPath(item.ID), 0o600, draft); err != nil {
+		t.Fatal(err)
+	}
+	before, _ := os.ReadFile(repo.DraftPath(item.ID))
+	repo, err = OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := repo.Get(context.Background(), item.ID)
+	if err != nil || got.DraftRevision != 2 {
+		t.Fatalf("profile = %#v, %v", got, err)
+	}
+	after, _ := os.ReadFile(repo.DraftPath(item.ID))
+	if !bytes.Equal(before, after) {
+		t.Fatal("repair changed draft bytes")
+	}
+}
+
+func TestOpenIsolatesUnsafeDraftRevisionMismatch(t *testing.T) {
+	tests := []struct {
+		name     string
+		profile  uint64
+		draftID  string
+		draftRev uint64
+		remove   bool
+	}{
+		{name: "missing", profile: 1, draftRev: 1, remove: true},
+		{name: "profile ahead", profile: 2, draftRev: 1},
+		{name: "gap exceeds one", profile: 1, draftRev: 3},
+		{name: "ID differs", profile: 1, draftID: "02020202020202020202020202020202", draftRev: 1},
+		{name: "zero", profile: 1, draftRev: 0},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			dir := t.TempDir()
+			repo, err := OpenRepository(dir, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: test.profile}
+			if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: test.profile, Content: DraftContent{Config: json.RawMessage(`{}`)}}); err != nil {
+				t.Fatal(err)
+			}
+			path := repo.DraftPath(item.ID)
+			if test.remove {
+				if err := os.Remove(path); err != nil {
+					t.Fatal(err)
+				}
+			} else {
+				id := test.draftID
+				if id == "" {
+					id = item.ID
+				}
+				if err := atomicfile.WriteJSON(path, 0o600, Draft{ProfileID: id, Revision: test.draftRev, Content: DraftContent{Config: json.RawMessage(`{}`)}}); err != nil {
+					t.Fatal(err)
+				}
+			}
+			repo, err = OpenRepository(dir, time.Now)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if status := NewService(repo, nil, nil).DraftStatus(context.Background(), item.ID); !status.ReadOnly {
+				t.Fatalf("status = %#v", status)
+			}
+		})
 	}
 }
 

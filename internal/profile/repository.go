@@ -37,6 +37,7 @@ type Repository struct {
 	draftsPath     string
 	now            func() time.Time
 	profiles       []Profile
+	draftCorrupt   map[string]bool
 	writeIndexFile func(string, indexFile) error
 	stateErr       error
 }
@@ -85,15 +86,160 @@ func OpenRepository(dataDir string, now func() time.Time) (*Repository, error) {
 		return nil, err
 	}
 
+	profiles := cloneProfiles(disk.Profiles)
+	draftCorrupt := make(map[string]bool)
+	indexNeedsRepair := false
+	for index := range profiles {
+		item := profiles[index]
+		var draft Draft
+		if err := atomicfile.ReadJSON(filepath.Join(draftsPath, item.ID+".json"), &draft); err != nil {
+			draftCorrupt[item.ID] = true
+			continue
+		}
+		if draft.ProfileID != item.ID || draft.Revision == 0 || item.DraftRevision == 0 {
+			draftCorrupt[item.ID] = true
+			continue
+		}
+		switch {
+		case draft.Revision == item.DraftRevision:
+		case draft.Revision == item.DraftRevision+1:
+			profiles[index].DraftRevision = draft.Revision
+			indexNeedsRepair = true
+		default:
+			draftCorrupt[item.ID] = true
+		}
+	}
+	if indexNeedsRepair {
+		if err := atomicfile.WriteJSON(indexPath, 0o600, indexFile{Version: indexVersion, Profiles: profiles}); err != nil {
+			return nil, fmt.Errorf("repair profile draft revision: %w", err)
+		}
+	}
+
 	return &Repository{
-		indexPath:  indexPath,
-		draftsPath: draftsPath,
-		now:        now,
-		profiles:   cloneProfiles(disk.Profiles),
+		indexPath:    indexPath,
+		draftsPath:   draftsPath,
+		now:          now,
+		profiles:     profiles,
+		draftCorrupt: draftCorrupt,
 		writeIndexFile: func(path string, disk indexFile) error {
 			return atomicfile.WriteJSON(path, 0o600, disk)
 		},
 	}, nil
+}
+
+func (repo *Repository) getDraft(ctx context.Context, id string) (Draft, error) {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Draft{}, err
+	}
+	if repo.stateErr != nil {
+		return Draft{}, repo.stateErr
+	}
+	if err := validateID(id); err != nil {
+		return Draft{}, err
+	}
+	profile, exists := repo.profileByID(id)
+	if !exists {
+		return Draft{}, fmt.Errorf("profile %q not found", id)
+	}
+	if repo.draftCorrupt[id] {
+		return Draft{}, ErrDraftCorrupt
+	}
+	var draft Draft
+	if err := atomicfile.ReadJSON(repo.draftPath(id), &draft); err != nil || draft.ProfileID != id || draft.Revision == 0 || draft.Revision != profile.DraftRevision {
+		repo.draftCorrupt[id] = true
+		return Draft{}, ErrDraftCorrupt
+	}
+	return cloneDraft(draft), nil
+}
+
+func (repo *Repository) saveDraft(ctx context.Context, id string, expected uint64, content DraftContent) (Draft, error) {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Draft{}, err
+	}
+	if repo.stateErr != nil {
+		return Draft{}, repo.stateErr
+	}
+	if err := validateID(id); err != nil {
+		return Draft{}, err
+	}
+	profileIndex := -1
+	for index := range repo.profiles {
+		if repo.profiles[index].ID == id {
+			profileIndex = index
+			break
+		}
+	}
+	if profileIndex < 0 {
+		return Draft{}, fmt.Errorf("profile %q not found", id)
+	}
+	if repo.draftCorrupt[id] {
+		return Draft{}, ErrDraftCorrupt
+	}
+
+	var previous Draft
+	if err := atomicfile.ReadJSON(repo.draftPath(id), &previous); err != nil || previous.ProfileID != id || previous.Revision == 0 || previous.Revision != repo.profiles[profileIndex].DraftRevision {
+		repo.draftCorrupt[id] = true
+		return Draft{}, ErrDraftCorrupt
+	}
+	current := repo.profiles[profileIndex].DraftRevision
+	if expected != previous.Revision || expected != current {
+		return Draft{}, &RevisionConflict{Current: current}
+	}
+	normalized, err := normalizeDraftContent(content)
+	if err != nil {
+		return Draft{}, err
+	}
+
+	draft := Draft{ProfileID: id, Revision: expected + 1, Content: normalized, SavedAt: repo.now()}
+	if draft.Revision == 0 {
+		return Draft{}, fmt.Errorf("draft revision overflow")
+	}
+	if err := atomicfile.WriteJSON(repo.draftPath(id), 0o600, draft); err != nil {
+		return Draft{}, fmt.Errorf("write profile draft: %w", err)
+	}
+	next := cloneProfiles(repo.profiles)
+	next[profileIndex].DraftRevision = draft.Revision
+	status, err := repo.commitIndex(next)
+	switch status {
+	case indexReplaced:
+		repo.profiles = next
+		return cloneDraft(draft), err
+	case indexNotReplaced:
+		if restoreErr := atomicfile.WriteJSON(repo.draftPath(id), 0o600, previous); restoreErr != nil {
+			repo.stateErr = fmt.Errorf("profile draft rollback failed; reopen repository: index error: %v; rollback error: %w", err, restoreErr)
+			return Draft{}, repo.stateErr
+		}
+		return Draft{}, err
+	case indexUncertain:
+		// Preserve the new draft so reopening can resolve the one-step commit,
+		// matching the repository's existing uncertain-durability contract.
+		return Draft{}, err
+	default:
+		return Draft{}, fmt.Errorf("profile index was not replaced without an error")
+	}
+}
+
+func (repo *Repository) draftStatus(ctx context.Context, id string) DraftStatus {
+	repo.mu.RLock()
+	defer repo.mu.RUnlock()
+	_, exists := repo.profileByID(id)
+	if ctx.Err() != nil || validateID(id) != nil || !exists || !repo.draftCorrupt[id] {
+		return DraftStatus{}
+	}
+	return DraftStatus{ReadOnly: true, Message: draftCorruptMessage}
+}
+
+func (repo *Repository) profileByID(id string) (Profile, bool) {
+	for _, item := range repo.profiles {
+		if item.ID == id {
+			return item, true
+		}
+	}
+	return Profile{}, false
 }
 
 func (repo *Repository) List(ctx context.Context) ([]Profile, error) {
@@ -244,6 +390,7 @@ func (repo *Repository) RemoveMetadata(ctx context.Context, id string) error {
 		return err
 	}
 	repo.profiles = next
+	delete(repo.draftCorrupt, id)
 	if err != nil {
 		return err
 	}

@@ -94,6 +94,27 @@ func (service *Service) Get(ctx context.Context, id string) (Profile, error) {
 	return service.repo.Get(ctx, id)
 }
 
+func (service *Service) GetDraft(ctx context.Context, id string) (Draft, error) {
+	if service == nil || service.repo == nil {
+		return Draft{}, fmt.Errorf("profile repository is nil")
+	}
+	return service.repo.getDraft(ctx, id)
+}
+
+func (service *Service) SaveDraft(ctx context.Context, id string, expected uint64, content DraftContent) (Draft, error) {
+	if service == nil || service.repo == nil {
+		return Draft{}, fmt.Errorf("profile repository is nil")
+	}
+	return service.repo.saveDraft(ctx, id, expected, content)
+}
+
+func (service *Service) DraftStatus(ctx context.Context, id string) DraftStatus {
+	if service == nil || service.repo == nil {
+		return DraftStatus{}
+	}
+	return service.repo.draftStatus(ctx, id)
+}
+
 func (service *Service) Rename(ctx context.Context, id, name string) (Profile, error) {
 	if service == nil || service.repo == nil {
 		return Profile{}, fmt.Errorf("profile repository is nil")
