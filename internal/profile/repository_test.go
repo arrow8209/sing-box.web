@@ -9,6 +9,8 @@ import (
 	"reflect"
 	"testing"
 	"time"
+
+	"singbox-web/internal/atomicfile"
 )
 
 func TestRepositoryPersistsOrderAndDraftsAcrossRestart(t *testing.T) {
@@ -142,11 +144,8 @@ func TestRepositoryInsertRollsBackDraftWhenIndexWriteFails(t *testing.T) {
 	}
 	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
 	draft := Draft{ProfileID: item.ID, Revision: 1}
-	blocked := filepath.Join(dir, "blocked-index")
-	if err := os.Mkdir(blocked, 0o700); err != nil {
-		t.Fatal(err)
-	}
-	repo.indexPath = blocked
+	wantErr := errors.New("rename failed")
+	repo.writeIndexFile = func(string, indexFile) error { return wantErr }
 	if err := repo.Insert(context.Background(), item, draft); err == nil {
 		t.Fatal("Insert succeeded when index could not be committed")
 	}
@@ -156,6 +155,96 @@ func TestRepositoryInsertRollsBackDraftWhenIndexWriteFails(t *testing.T) {
 	items, err := repo.List(context.Background())
 	if err != nil || len(items) != 0 {
 		t.Fatalf("List = %#v, %v", items, err)
+	}
+}
+
+func TestRepositoryInsertPreservesDraftAndSynchronizesMemoryWhenIndexWasReplaced(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("directory sync failed")
+	repo.writeIndexFile = func(path string, disk indexFile) error {
+		if err := atomicfile.WriteJSON(path, 0o600, disk); err != nil {
+			return err
+		}
+		return wantErr
+	}
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	draft := Draft{ProfileID: item.ID, Revision: 1}
+	if err := repo.Insert(context.Background(), item, draft); !errors.Is(err, wantErr) {
+		t.Fatalf("Insert error = %v, want %v", err, wantErr)
+	}
+	if _, err := os.Stat(repo.DraftPath(item.ID)); err != nil {
+		t.Fatalf("draft was removed after index replacement: %v", err)
+	}
+	items, err := repo.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(items, []Profile{item}) {
+		t.Fatalf("in-memory List = %#v", items)
+	}
+
+	reopened, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err = reopened.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(items, []Profile{item}) {
+		t.Fatalf("reopened List = %#v", items)
+	}
+}
+
+func TestRepositoryInsertPreservesDraftAndRequiresReopenWhenIndexStateIsUncertain(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("uncertain write failure")
+	backupPath := repo.indexPath + ".backup"
+	repo.writeIndexFile = func(path string, _ indexFile) error {
+		if err := os.Rename(path, backupPath); err != nil {
+			return err
+		}
+		if err := os.Mkdir(path, 0o700); err != nil {
+			return err
+		}
+		return wantErr
+	}
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); !errors.Is(err, wantErr) {
+		t.Fatalf("Insert error = %v, want %v", err, wantErr)
+	}
+	draftPath := repo.DraftPath(item.ID)
+	if _, err := os.Stat(draftPath); err != nil {
+		t.Fatalf("draft was removed while index state was uncertain: %v", err)
+	}
+	if _, err := repo.List(context.Background()); err == nil {
+		t.Fatal("List succeeded while repository requires recovery")
+	}
+
+	if err := os.Remove(repo.indexPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Rename(backupPath, repo.indexPath); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	items, err := reopened.List(context.Background())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("recovered List = %#v, %v", items, err)
+	}
+	if _, err := os.Stat(draftPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("orphan draft remains after recovery: %v", err)
 	}
 }
 

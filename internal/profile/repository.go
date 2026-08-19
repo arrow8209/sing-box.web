@@ -1,8 +1,10 @@
 package profile
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -26,12 +28,22 @@ type indexFile struct {
 }
 
 type Repository struct {
-	mu         sync.RWMutex
-	indexPath  string
-	draftsPath string
-	now        func() time.Time
-	profiles   []Profile
+	mu             sync.RWMutex
+	indexPath      string
+	draftsPath     string
+	now            func() time.Time
+	profiles       []Profile
+	writeIndexFile func(string, indexFile) error
+	stateErr       error
 }
+
+type indexCommitStatus uint8
+
+const (
+	indexNotReplaced indexCommitStatus = iota
+	indexReplaced
+	indexUncertain
+)
 
 func OpenRepository(dataDir string, now func() time.Time) (*Repository, error) {
 	if now == nil {
@@ -74,6 +86,9 @@ func OpenRepository(dataDir string, now func() time.Time) (*Repository, error) {
 		draftsPath: draftsPath,
 		now:        now,
 		profiles:   cloneProfiles(disk.Profiles),
+		writeIndexFile: func(path string, disk indexFile) error {
+			return atomicfile.WriteJSON(path, 0o600, disk)
+		},
 	}, nil
 }
 
@@ -83,6 +98,9 @@ func (repo *Repository) List(ctx context.Context) ([]Profile, error) {
 	if err := ctx.Err(); err != nil {
 		return nil, err
 	}
+	if repo.stateErr != nil {
+		return nil, repo.stateErr
+	}
 	return cloneProfiles(repo.profiles), nil
 }
 
@@ -91,6 +109,9 @@ func (repo *Repository) Get(ctx context.Context, id string) (Profile, error) {
 	defer repo.mu.RUnlock()
 	if err := ctx.Err(); err != nil {
 		return Profile{}, err
+	}
+	if repo.stateErr != nil {
+		return Profile{}, repo.stateErr
 	}
 	if err := validateID(id); err != nil {
 		return Profile{}, err
@@ -113,6 +134,9 @@ func (repo *Repository) insert(ctx context.Context, item Profile, draft Draft) (
 	defer repo.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return Draft{}, err
+	}
+	if repo.stateErr != nil {
+		return Draft{}, repo.stateErr
 	}
 	if err := validateProfile(item); err != nil {
 		return Draft{}, err
@@ -138,14 +162,21 @@ func (repo *Repository) insert(ctx context.Context, item Profile, draft Draft) (
 		return Draft{}, fmt.Errorf("write profile draft: %w", err)
 	}
 	next := append(cloneProfiles(repo.profiles), cloneProfile(item))
-	if err := repo.writeIndex(next); err != nil {
+	status, err := repo.commitIndex(next)
+	if status == indexReplaced {
+		repo.profiles = next
+		return cloneDraft(draft), err
+	}
+	if status == indexUncertain {
+		return Draft{}, err
+	}
+	if err != nil {
 		if removeErr := os.Remove(draftPath); removeErr != nil && !errors.Is(removeErr, os.ErrNotExist) {
 			return Draft{}, fmt.Errorf("write profile index: %w (rollback draft: %v)", err, removeErr)
 		}
 		return Draft{}, err
 	}
-	repo.profiles = next
-	return cloneDraft(draft), nil
+	return Draft{}, fmt.Errorf("profile index was not replaced without an error")
 }
 
 func (repo *Repository) Rename(ctx context.Context, id, name string) (Profile, error) {
@@ -153,6 +184,9 @@ func (repo *Repository) Rename(ctx context.Context, id, name string) (Profile, e
 	defer repo.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return Profile{}, err
+	}
+	if repo.stateErr != nil {
+		return Profile{}, repo.stateErr
 	}
 	if err := validateID(id); err != nil {
 		return Profile{}, err
@@ -167,11 +201,12 @@ func (repo *Repository) Rename(ctx context.Context, id, name string) (Profile, e
 			continue
 		}
 		next[index].Name = trimmed
-		if err := repo.writeIndex(next); err != nil {
-			return Profile{}, err
+		status, err := repo.commitIndex(next)
+		if status == indexReplaced {
+			repo.profiles = next
+			return cloneProfile(next[index]), err
 		}
-		repo.profiles = next
-		return cloneProfile(next[index]), nil
+		return Profile{}, err
 	}
 	return Profile{}, fmt.Errorf("profile %q not found", id)
 }
@@ -181,6 +216,9 @@ func (repo *Repository) RemoveMetadata(ctx context.Context, id string) error {
 	defer repo.mu.Unlock()
 	if err := ctx.Err(); err != nil {
 		return err
+	}
+	if repo.stateErr != nil {
+		return repo.stateErr
 	}
 	if err := validateID(id); err != nil {
 		return err
@@ -197,10 +235,14 @@ func (repo *Repository) RemoveMetadata(ctx context.Context, id string) error {
 	}
 	next := cloneProfiles(repo.profiles[:index])
 	next = append(next, cloneProfiles(repo.profiles[index+1:])...)
-	if err := repo.writeIndex(next); err != nil {
+	status, err := repo.commitIndex(next)
+	if status != indexReplaced {
 		return err
 	}
 	repo.profiles = next
+	if err != nil {
+		return err
+	}
 	if err := os.Remove(repo.draftPath(id)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return fmt.Errorf("remove profile draft: %w", err)
 	}
@@ -220,12 +262,39 @@ func (repo *Repository) draftPath(id string) string {
 	return filepath.Join(repo.draftsPath, id+".json")
 }
 
-func (repo *Repository) writeIndex(profiles []Profile) error {
+func (repo *Repository) commitIndex(profiles []Profile) (indexCommitStatus, error) {
 	disk := indexFile{Version: indexVersion, Profiles: profiles}
-	if err := atomicfile.WriteJSON(repo.indexPath, 0o600, disk); err != nil {
-		return fmt.Errorf("write profile index: %w", err)
+	writeErr := repo.writeIndexFile(repo.indexPath, disk)
+	if writeErr == nil {
+		return indexReplaced, nil
 	}
-	return nil
+
+	var current indexFile
+	if readErr := atomicfile.ReadJSON(repo.indexPath, &current); readErr != nil {
+		repo.stateErr = fmt.Errorf("profile index state is uncertain; reopen repository: write failed: %w; confirmation failed: %v", writeErr, readErr)
+		return indexUncertain, repo.stateErr
+	}
+	if current.Version == indexVersion && profilesEqual(current.Profiles, profiles) {
+		return indexReplaced, fmt.Errorf("profile index was replaced but durability confirmation failed: %w", writeErr)
+	}
+	if current.Version == indexVersion && profilesEqual(current.Profiles, repo.profiles) {
+		return indexNotReplaced, fmt.Errorf("write profile index: %w", writeErr)
+	}
+	repo.stateErr = fmt.Errorf("profile index state is uncertain; reopen repository: write failed: %w", writeErr)
+	return indexUncertain, repo.stateErr
+}
+
+func profilesEqual(left, right []Profile) bool {
+	leftJSON, leftErr := json.Marshal(indexFile{Version: indexVersion, Profiles: nonNilProfiles(left)})
+	rightJSON, rightErr := json.Marshal(indexFile{Version: indexVersion, Profiles: nonNilProfiles(right)})
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
+}
+
+func nonNilProfiles(profiles []Profile) []Profile {
+	if profiles == nil {
+		return []Profile{}
+	}
+	return profiles
 }
 
 func validateProfiles(profiles []Profile) error {
