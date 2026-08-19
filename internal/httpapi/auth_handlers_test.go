@@ -3,6 +3,7 @@ package httpapi
 import (
 	"bytes"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -12,6 +13,25 @@ import (
 
 	"singbox-web/internal/auth"
 )
+
+type clearingLimiterAuth struct{ now time.Time }
+
+func (service clearingLimiterAuth) Login(_ string, password []byte) (auth.Session, error) {
+	if string(password) != "correct" {
+		return auth.Session{}, errors.New("invalid credentials")
+	}
+	return auth.Session{Token: "token", CSRFToken: "csrf", ExpiresAt: service.now.Add(24 * time.Hour)}, nil
+}
+
+func (clearingLimiterAuth) Validate(string) (auth.Claims, error) {
+	return auth.Claims{}, errors.New("unused")
+}
+
+func (clearingLimiterAuth) Refresh(string) (auth.Session, bool, error) {
+	return auth.Session{}, false, errors.New("unused")
+}
+
+func (clearingLimiterAuth) ChangePassword([]byte) error { return errors.New("unused") }
 
 type authHarness struct {
 	handler http.Handler
@@ -153,5 +173,34 @@ func TestOriginCSRFAndLoginRateLimit(t *testing.T) {
 	cleared := performJSON(harness.handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"a-strong-password"}`, nil, "")
 	if cleared.Code != http.StatusOK {
 		t.Fatalf("after limit status=%d body=%q", cleared.Code, cleared.Body.String())
+	}
+}
+
+func TestSuccessfulLoginClearsPreviousFailures(t *testing.T) {
+	current := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	handler := New(Dependencies{
+		Auth:         clearingLimiterAuth{now: current},
+		PublicOrigin: "https://admin.example",
+		Now:          func() time.Time { return current },
+	})
+	for index := 0; index < 4; index++ {
+		response := performJSON(handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"wrong"}`, nil, "")
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("initial failure %d status=%d", index+1, response.Code)
+		}
+	}
+	success := performJSON(handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"correct"}`, nil, "")
+	if success.Code != http.StatusOK {
+		t.Fatalf("success status=%d body=%q", success.Code, success.Body.String())
+	}
+	for index := 0; index < 5; index++ {
+		response := performJSON(handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"wrong"}`, nil, "")
+		if response.Code != http.StatusUnauthorized {
+			t.Fatalf("post-success failure %d status=%d", index+1, response.Code)
+		}
+	}
+	limited := performJSON(handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"wrong"}`, nil, "")
+	if limited.Code != http.StatusTooManyRequests {
+		t.Fatalf("post-success limit status=%d body=%q", limited.Code, limited.Body.String())
 	}
 }

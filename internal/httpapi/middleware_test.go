@@ -96,6 +96,68 @@ func TestForwardedAddressIsTrustedOnlyFromLoopbackOrConfiguredProxy(t *testing.T
 	}
 }
 
+func TestUntrustedProxyStripsEveryForwardingHeaderCaseInsensitively(t *testing.T) {
+	service := &server{deps: Dependencies{}}
+	var got http.Header
+	handler := service.trustedProxyMiddleware(http.HandlerFunc(func(_ http.ResponseWriter, request *http.Request) {
+		got = request.Header.Clone()
+	}))
+	request := httptest.NewRequest(http.MethodGet, "/healthz", nil)
+	request.RemoteAddr = "198.51.100.7:1234"
+	request.Header.Set("Forwarded", "for=203.0.113.1")
+	request.Header.Set("X-Forwarded-For", "203.0.113.2")
+	request.Header.Set("X-Forwarded-Host", "evil.example")
+	request.Header.Set("X-Forwarded-Proto", "https")
+	request.Header.Set("X-Forwarded-Port", "443")
+	request.Header.Set("X-Forwarded-Prefix", "/admin")
+	request.Header["x-FoRwArDeD-Custom"] = []string{"attacker-controlled"}
+	request.Header["FORWARDED"] = []string{"by=203.0.113.3"}
+	request.Header.Set("X-Feature", "keep-me")
+	handler.ServeHTTP(httptest.NewRecorder(), request)
+
+	for name := range got {
+		lowerName := strings.ToLower(name)
+		if lowerName == "forwarded" || strings.HasPrefix(lowerName, "x-forwarded-") {
+			t.Errorf("untrusted forwarding header remained: %q", name)
+		}
+	}
+	if got.Get("X-Feature") != "keep-me" {
+		t.Fatalf("ordinary header was removed: %v", got)
+	}
+}
+
+func TestEmptyPublicOriginFailsClosedOnlyForUnsafeAPIRequests(t *testing.T) {
+	handler := New(Dependencies{})
+	for _, test := range []struct {
+		method string
+		path   string
+	}{
+		{method: http.MethodPost, path: "/api/v1/auth/login"},
+		{method: http.MethodPost, path: "/api/v1/auth/logout"},
+		{method: http.MethodPut, path: "/api/v1/auth/password"},
+		{method: http.MethodPost, path: "/api/v1/future-route"},
+	} {
+		request := httptest.NewRequest(test.method, test.path, strings.NewReader("{}"))
+		request.Header.Set("Origin", "https://admin.example")
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, request)
+		if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"forbidden_origin"`) {
+			t.Errorf("%s %s status=%d body=%q", test.method, test.path, response.Code, response.Body.String())
+		}
+	}
+
+	health := httptest.NewRecorder()
+	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
+	if health.Code != http.StatusOK {
+		t.Fatalf("health status=%d", health.Code)
+	}
+	session := httptest.NewRecorder()
+	handler.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil))
+	if session.Code != http.StatusUnauthorized {
+		t.Fatalf("safe API GET status=%d", session.Code)
+	}
+}
+
 func TestMiddlewareOrderBodyOriginAuthenticationCSRF(t *testing.T) {
 	service := &server{deps: Dependencies{PublicOrigin: "https://admin.example"}}
 	var handler http.Handler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})

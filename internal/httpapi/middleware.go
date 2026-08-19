@@ -99,11 +99,12 @@ func (service *server) trustedProxyMiddleware(next http.Handler) http.Handler {
 				client = forwarded
 			}
 		} else {
-			request.Header.Del("Forwarded")
-			request.Header.Del("X-Forwarded-For")
-			request.Header.Del("X-Forwarded-Host")
-			request.Header.Del("X-Forwarded-Proto")
-			request.Header.Del("X-Forwarded-Port")
+			for name := range request.Header {
+				lowerName := strings.ToLower(name)
+				if lowerName == "forwarded" || strings.HasPrefix(lowerName, "x-forwarded-") {
+					delete(request.Header, name)
+				}
+			}
 		}
 		ctx := context.WithValue(request.Context(), clientIPContextKey, client)
 		next.ServeHTTP(response, request.WithContext(ctx))
@@ -128,9 +129,9 @@ func firstForwardedIP(values []string) net.IP {
 
 func (service *server) originMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if isUnsafeAPIRequest(request) && service.deps.PublicOrigin != "" {
+		if isUnsafeAPIRequest(request) {
 			origins := request.Header.Values("Origin")
-			if len(origins) != 1 || origins[0] != service.deps.PublicOrigin {
+			if service.deps.PublicOrigin == "" || len(origins) != 1 || origins[0] != service.deps.PublicOrigin {
 				writeAPIError(response, http.StatusForbidden, "forbidden_origin", "请求来源无效")
 				return
 			}
