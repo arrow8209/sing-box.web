@@ -30,6 +30,7 @@ import (
 	"singbox-web/internal/publication"
 	"singbox-web/internal/singbox"
 	"singbox-web/internal/validation"
+	"singbox-web/internal/webui"
 )
 
 type Options struct {
@@ -165,9 +166,13 @@ func Run(ctx context.Context, options Options) error {
 		PublicOrigin: options.PublicOrigin,
 		Now:          now,
 	})
+	mux := &http.ServeMux{}
+	mux.Handle("/healthz", handler)
+	mux.Handle("/api/", handler)
+	mux.Handle("/", webui.Handler())
 	server := &http.Server{
 		Addr:              options.Listen,
-		Handler:           handler,
+		Handler:           httpapi.WithSecurityHeaders(mux),
 		ReadHeaderTimeout: 5 * time.Second,
 		ReadTimeout:       15 * time.Second,
 		WriteTimeout:      60 * time.Second,

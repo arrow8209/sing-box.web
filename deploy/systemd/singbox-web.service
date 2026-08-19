@@ -1,0 +1,25 @@
+[Unit]
+Description=sing-box Web configuration manager
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=singbox-web
+Group=singbox-web
+SupplementaryGroups=sing-box
+ExecStart=/usr/local/bin/singbox-web serve --listen 127.0.0.1:8080 --data-dir /var/lib/singbox-web --config-root /etc/sing-box/web-profiles --sing-box /usr/local/bin/sing-box --config-group sing-box --public-origin https://singbox.example.com
+Restart=on-failure
+RestartSec=3s
+UMask=0027
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/lib/singbox-web /etc/sing-box/web-profiles
+RestrictSUIDSGID=true
+LockPersonality=true
+
+[Install]
+WantedBy=multi-user.target
+
