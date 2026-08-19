@@ -16,6 +16,8 @@ type APIError struct {
 	Message         string             `json:"message"`
 	FieldIssues     []validation.Issue `json:"fieldIssues,omitempty"`
 	CurrentRevision *uint64            `json:"currentRevision,omitempty"`
+	Key             string             `json:"key,omitempty"`
+	Bytes           *int               `json:"bytes,omitempty"`
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

@@ -9,6 +9,7 @@ import (
 
 	"singbox-web/internal/auth"
 	"singbox-web/internal/capabilities"
+	"singbox-web/internal/profile"
 )
 
 const sessionCookieName = "sb_session"
@@ -24,9 +25,22 @@ type CapabilityService interface {
 	Snapshot(context.Context) capabilities.Snapshot
 }
 
+type ProfileService interface {
+	Create(context.Context, profile.CreateInput) (profile.Profile, profile.Draft, error)
+	List(context.Context) ([]profile.Profile, error)
+	Get(context.Context, string) (profile.Profile, error)
+	Rename(context.Context, string, string) (profile.Profile, error)
+	GetDraft(context.Context, string) (profile.Draft, error)
+	SaveDraft(context.Context, string, uint64, profile.DraftContent) (profile.Draft, error)
+	DraftStatus(context.Context, string) profile.DraftStatus
+	RecordValidation(context.Context, string, uint64, profile.ValidationSummary) (profile.Profile, error)
+}
+
 type Dependencies struct {
 	Auth         AuthService
 	Capabilities CapabilityService
+	Profiles     ProfileService
+	ConfigRoot   string
 	PublicOrigin string
 	TrustedProxy func(net.IP) bool
 	Now          func() time.Time
@@ -49,6 +63,12 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("GET /api/v1/auth/session", service.session)
 	mux.HandleFunc("PUT /api/v1/auth/password", service.changePassword)
 	mux.HandleFunc("GET /api/v1/capabilities", service.capabilities)
+	mux.HandleFunc("POST /api/v1/profiles", service.createProfile)
+	mux.HandleFunc("GET /api/v1/profiles", service.listProfiles)
+	mux.HandleFunc("PATCH /api/v1/profiles/{id}", service.renameProfile)
+	mux.HandleFunc("GET /api/v1/profiles/{id}/draft", service.getDraft)
+	mux.HandleFunc("PUT /api/v1/profiles/{id}/draft", service.saveDraft)
+	mux.HandleFunc("/api/v1/profiles/", service.profileRouteNotFound)
 
 	var handler http.Handler = mux
 	handler = service.csrfMiddleware(handler)
