@@ -10,6 +10,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -20,7 +21,10 @@ import (
 
 const indexVersion = 1
 
-var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+var (
+	slugPattern                = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
+	deletionPublicationPattern = regexp.MustCompile(`^([1-9][0-9]*)-([0-9a-f]{12})$`)
+)
 
 // ErrIndexDurabilityUncertain means the new index is visible, but its durability
 // could not be confirmed. The operation's returned profile values are valid.
@@ -37,7 +41,13 @@ type DeletionIntent struct {
 	Target    string `json:"target"`
 	Digest    string `json:"digest"`
 	TxID      string `json:"txId"`
+	Phase     string `json:"phase"`
 }
+
+const (
+	DeletionPhasePrepared              = "prepared"
+	DeletionPhaseDiskRemovalAuthorized = "disk-removal-authorized"
+)
 
 type Repository struct {
 	mu               sync.RWMutex
@@ -484,6 +494,9 @@ func (repo *Repository) BeginDeletion(ctx context.Context, id string, intent Del
 	if intent.ProfileID != id {
 		return fmt.Errorf("deletion intent profile ID does not match")
 	}
+	if intent.Phase != DeletionPhasePrepared {
+		return fmt.Errorf("deletion intent must begin in prepared phase")
+	}
 	if _, exists := repo.profileByID(id); !exists {
 		return fmt.Errorf("profile %q not found", id)
 	}
@@ -497,6 +510,41 @@ func (repo *Repository) BeginDeletion(ctx context.Context, id string, intent Del
 	if next == nil {
 		next = make(map[string]DeletionIntent)
 	}
+	next[id] = intent
+	status, err := repo.commitState(repo.profiles, next)
+	if status == indexReplaced {
+		repo.pendingDeletions = next
+	}
+	return err
+}
+
+func (repo *Repository) TransitionDeletionPhase(ctx context.Context, id, txID, from, to string) error {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if repo.stateErr != nil {
+		return repo.stateErr
+	}
+	if err := validateID(id); err != nil {
+		return err
+	}
+	if from != DeletionPhasePrepared || to != DeletionPhaseDiskRemovalAuthorized {
+		return fmt.Errorf("invalid deletion phase transition")
+	}
+	intent, exists := repo.pendingDeletions[id]
+	if !exists {
+		return fmt.Errorf("profile deletion is not pending")
+	}
+	if intent.TxID != txID {
+		return fmt.Errorf("deletion transaction does not match")
+	}
+	if intent.Phase != from {
+		return fmt.Errorf("deletion phase does not match")
+	}
+	next := cloneDeletionIntents(repo.pendingDeletions)
+	intent.Phase = to
 	next[id] = intent
 	status, err := repo.commitState(repo.profiles, next)
 	if status == indexReplaced {
@@ -697,6 +745,23 @@ func validateDeletionIntent(intent DeletionIntent) error {
 	}
 	if decoded, err := hex.DecodeString(intent.Digest); err != nil || len(decoded) != 32 {
 		return fmt.Errorf("invalid deletion digest")
+	}
+	if intent.Phase != DeletionPhasePrepared && intent.Phase != DeletionPhaseDiskRemovalAuthorized {
+		return fmt.Errorf("invalid deletion phase")
+	}
+	if filepath.IsAbs(intent.Target) || filepath.Clean(intent.Target) != intent.Target {
+		return fmt.Errorf("invalid deletion target")
+	}
+	parts := strings.Split(filepath.ToSlash(intent.Target), "/")
+	if len(parts) != 3 || parts[0] != ".generations" || parts[1] != intent.ProfileID {
+		return fmt.Errorf("invalid deletion target")
+	}
+	publication := deletionPublicationPattern.FindStringSubmatch(parts[2])
+	if publication == nil || publication[2] != intent.Digest[:12] {
+		return fmt.Errorf("invalid deletion target")
+	}
+	if revision, err := strconv.ParseUint(publication[1], 10, 64); err != nil || revision == 0 {
+		return fmt.Errorf("invalid deletion target")
 	}
 	if len(intent.TxID) != 32 || strings.ToLower(intent.TxID) != intent.TxID {
 		return fmt.Errorf("invalid deletion transaction ID")

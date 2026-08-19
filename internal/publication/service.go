@@ -466,7 +466,6 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 	if item.PublishedRevision != nil && !exists {
 		return ErrExternalDrift
 	}
-	deletionTombstone := ""
 	if exists {
 		stableInfo, err := os.Lstat(filepath.Join(service.options.ConfigRoot, item.Slug))
 		if err != nil || stableInfo.Mode()&os.ModeSymlink == 0 {
@@ -480,8 +479,8 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 		if err != nil {
 			return err
 		}
-		intent := profile.DeletionIntent{ProfileID: item.ID, Target: target, Digest: item.PublishedDigest, TxID: txID}
-		deletionTombstone = service.deleteTombstone(item.ID, txID)
+		intent := profile.DeletionIntent{ProfileID: item.ID, Target: target, Digest: item.PublishedDigest, TxID: txID, Phase: profile.DeletionPhasePrepared}
+		deletionTombstone := service.deleteTombstone(item.ID, txID)
 		if err := service.options.Profiles.BeginDeletion(ctx, item.ID, intent); err != nil {
 			if errors.Is(err, profile.ErrIndexDurabilityUncertain) {
 				service.setRecoveryRequired(true)
@@ -501,9 +500,15 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 			}
 			return err
 		}
+		if err := service.options.Profiles.TransitionDeletionPhase(ctx, item.ID, txID, profile.DeletionPhasePrepared, profile.DeletionPhaseDiskRemovalAuthorized); err != nil {
+			service.setRecoveryRequired(true)
+			return fmt.Errorf("%w: authorize deletion: %v", ErrRecoveryRequired, err)
+		}
+		intent.Phase = profile.DeletionPhaseDiskRemovalAuthorized
 		if err := service.callFailpoint("after_delete_link"); err != nil {
 			return err
 		}
+		return service.completeAuthorizedDeletion(ctx, item, deletionTombstone)
 	}
 	if err := service.removeProfileGenerations(item.ID); err != nil {
 		return err
@@ -514,19 +519,7 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 	if err := service.callFailpoint("before_delete_metadata"); err != nil {
 		return err
 	}
-	metadataErr := service.options.Profiles.RemoveMetadata(ctx, profileID)
-	if metadataErr != nil && !errors.Is(metadataErr, profile.ErrIndexDurabilityUncertain) {
-		return metadataErr
-	}
-	if deletionTombstone != "" {
-		if err := os.Remove(deletionTombstone); err != nil {
-			return err
-		}
-		if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
-			return err
-		}
-	}
-	return metadataErr
+	return service.options.Profiles.RemoveMetadata(ctx, profileID)
 }
 
 func (service *Service) valid() error {
@@ -796,8 +789,12 @@ func (service *Service) recoverDeletion(ctx context.Context, item profile.Profil
 	stable := filepath.Join(service.options.ConfigRoot, item.Slug)
 	_, stableErr := os.Lstat(stable)
 	expected := service.deleteTombstone(item.ID, intent.TxID)
-	if len(markers) == 0 {
+	switch intent.Phase {
+	case profile.DeletionPhasePrepared:
 		if stableErr == nil {
+			if len(markers) != 0 {
+				return ErrExternalDrift
+			}
 			target, err := os.Readlink(stable)
 			if err != nil || target != intent.Target {
 				return ErrExternalDrift
@@ -811,38 +808,75 @@ func (service *Service) recoverDeletion(ctx context.Context, item profile.Profil
 		if !errors.Is(stableErr, os.ErrNotExist) {
 			return stableErr
 		}
-		if err := service.removeProfileGenerations(item.ID); err != nil {
+		if len(markers) == 0 {
+			return ErrExternalDrift
+		}
+		if len(markers) != 1 || markers[0] != expected || !service.validDeletionMarker(intent, expected, false) {
+			return ErrExternalDrift
+		}
+		if err := service.options.Profiles.TransitionDeletionPhase(ctx, item.ID, intent.TxID, profile.DeletionPhasePrepared, profile.DeletionPhaseDiskRemovalAuthorized); err != nil {
+			service.setRecoveryRequired(true)
+			return fmt.Errorf("%w: authorize recovered deletion: %v", ErrRecoveryRequired, err)
+		}
+		intent.Phase = profile.DeletionPhaseDiskRemovalAuthorized
+		return service.completeAuthorizedDeletion(ctx, item, expected)
+	case profile.DeletionPhaseDiskRemovalAuthorized:
+		if stableErr == nil {
+			return ErrExternalDrift
+		}
+		if !errors.Is(stableErr, os.ErrNotExist) {
+			return stableErr
+		}
+		if len(markers) > 1 || (len(markers) == 1 && (markers[0] != expected || !service.validDeletionMarker(intent, expected, true))) {
+			return ErrExternalDrift
+		}
+		marker := ""
+		if len(markers) == 1 {
+			marker = expected
+		}
+		return service.completeAuthorizedDeletion(ctx, item, marker)
+	default:
+		return ErrExternalDrift
+	}
+}
+
+func (service *Service) validDeletionMarker(intent profile.DeletionIntent, marker string, allowMissingGeneration bool) bool {
+	info, err := os.Lstat(marker)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return false
+	}
+	target, err := os.Readlink(marker)
+	if err != nil || target != intent.Target {
+		return false
+	}
+	matches, err := service.intentTargetMatches(intent, allowMissingGeneration)
+	return err == nil && matches
+}
+
+func (service *Service) completeAuthorizedDeletion(ctx context.Context, item profile.Profile, marker string) error {
+	if marker != "" {
+		if err := os.Remove(marker); err != nil {
 			return err
 		}
-		return service.options.Profiles.RemoveMetadata(ctx, item.ID)
-	}
-	if len(markers) != 1 || markers[0] != expected || stableErr == nil || !errors.Is(stableErr, os.ErrNotExist) {
-		return ErrExternalDrift
-	}
-	info, err := os.Lstat(expected)
-	if err != nil || info.Mode()&os.ModeSymlink == 0 {
-		return ErrExternalDrift
-	}
-	target, err := os.Readlink(expected)
-	if err != nil || target != intent.Target {
-		return ErrExternalDrift
-	}
-	matches, err := service.intentTargetMatches(intent, true)
-	if err != nil || !matches {
-		return ErrExternalDrift
+		if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
+			return err
+		}
+		if err := service.callFailpoint("after_delete_marker"); err != nil {
+			return err
+		}
 	}
 	if err := service.removeProfileGenerations(item.ID); err != nil {
+		return err
+	}
+	if err := service.callFailpoint("after_delete_generations"); err != nil {
+		return err
+	}
+	if err := service.callFailpoint("before_delete_metadata"); err != nil {
 		return err
 	}
 	metadataErr := service.options.Profiles.RemoveMetadata(ctx, item.ID)
 	if metadataErr != nil && !errors.Is(metadataErr, profile.ErrIndexDurabilityUncertain) {
 		return metadataErr
-	}
-	if err := os.Remove(expected); err != nil {
-		return err
-	}
-	if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
-		return err
 	}
 	return metadataErr
 }

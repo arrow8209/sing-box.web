@@ -481,6 +481,97 @@ func TestDeleteInterruptionAfterRenameCompletesOnRecovery(t *testing.T) {
 	}
 }
 
+func TestRecoverPreparedDeletionWithoutStableOrMarkerDoesNotDelete(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	stable := filepath.Join(fixture.configRoot, fixture.item.Slug)
+	target, err := os.Readlink(stable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	published, err := fixture.repo.Get(context.Background(), fixture.item.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intent := profile.DeletionIntent{ProfileID: fixture.item.ID, Target: target, Digest: published.PublishedDigest, TxID: strings.Repeat("03", 16), Phase: profile.DeletionPhasePrepared}
+	if err := fixture.repo.BeginDeletion(context.Background(), fixture.item.ID, intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(stable); err != nil {
+		t.Fatal(err)
+	}
+	generation := filepath.Join(fixture.configRoot, target)
+	fixture = reopenPublicationFixture(t, fixture)
+	if err := fixture.service.Recover(context.Background()); !errors.Is(err, ErrExternalDrift) {
+		t.Fatalf("Recover error = %v", err)
+	}
+	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err != nil {
+		t.Fatalf("metadata changed: %v", err)
+	}
+	if _, err := os.Lstat(fixture.repo.DraftPath(fixture.item.ID)); err != nil {
+		t.Fatalf("draft changed: %v", err)
+	}
+	if _, err := os.Lstat(generation); err != nil {
+		t.Fatalf("generation changed: %v", err)
+	}
+}
+
+func TestRecoverAuthorizedDeletionAfterMarkerRemovalCompletes(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("interrupt after marker")
+	fixture.service.failpoint = func(stage string) error {
+		if stage == "after_delete_marker" {
+			return injected
+		}
+		return nil
+	}
+	if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, injected) {
+		t.Fatalf("Delete error = %v", err)
+	}
+	if markers, err := fixture.service.deletionMarkers(fixture.item.ID); err != nil || len(markers) != 0 {
+		t.Fatalf("marker remains: %#v, %v", markers, err)
+	}
+	intents, err := fixture.repo.PendingDeletions(context.Background())
+	if err != nil || len(intents) != 1 || intents[0].Phase != profile.DeletionPhaseDiskRemovalAuthorized {
+		t.Fatalf("intent = %#v, %v", intents, err)
+	}
+	fixture = reopenPublicationFixture(t, fixture)
+	if err := fixture.service.Recover(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err == nil {
+		t.Fatal("profile metadata remains")
+	}
+}
+
+func TestDeleteRemovesMarkerBeforeMetadata(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	injected := errors.New("stop before metadata")
+	fixture.service.failpoint = func(stage string) error {
+		if stage == "before_delete_metadata" {
+			return injected
+		}
+		return nil
+	}
+	if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, injected) {
+		t.Fatalf("Delete error = %v", err)
+	}
+	if markers, err := fixture.service.deletionMarkers(fixture.item.ID); err != nil || len(markers) != 0 {
+		t.Fatalf("marker remains before metadata: %#v, %v", markers, err)
+	}
+	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err != nil {
+		t.Fatalf("metadata removed early: %v", err)
+	}
+}
+
 func TestRecoverRejectsConflictingOrInvalidDeleteTombstone(t *testing.T) {
 	for _, variant := range []string{"valid-without-intent", "stable-and-tombstone", "regular", "outside-link"} {
 		t.Run(variant, func(t *testing.T) {

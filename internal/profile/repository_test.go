@@ -122,7 +122,7 @@ func TestRepositoryDeletionIntentPersistsCancelsAndIsRemovedAtomically(t *testin
 	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
-	intent := DeletionIntent{ProfileID: item.ID, Target: ".generations/" + item.ID + "/1-0123456789ab", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16)}
+	intent := DeletionIntent{ProfileID: item.ID, Target: ".generations/" + item.ID + "/1-010101010101", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16), Phase: DeletionPhasePrepared}
 	if err := repo.BeginDeletion(context.Background(), item.ID, intent); err != nil {
 		t.Fatal(err)
 	}
@@ -142,6 +142,17 @@ func TestRepositoryDeletionIntentPersistsCancelsAndIsRemovedAtomically(t *testin
 	}
 	if err := repo.BeginDeletion(context.Background(), item.ID, intent); err != nil {
 		t.Fatal(err)
+	}
+	if err := repo.TransitionDeletionPhase(context.Background(), item.ID, intent.TxID, DeletionPhasePrepared, DeletionPhaseDiskRemovalAuthorized); err != nil {
+		t.Fatal(err)
+	}
+	repo, err = OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intents, err = repo.PendingDeletions(context.Background())
+	if err != nil || len(intents) != 1 || intents[0].Phase != DeletionPhaseDiskRemovalAuthorized {
+		t.Fatalf("transitioned intents = %#v, %v", intents, err)
 	}
 	if err := repo.RemoveMetadata(context.Background(), item.ID); err != nil {
 		t.Fatal(err)
@@ -163,7 +174,7 @@ func TestRepositoryDeletionIntentDurabilityUncertainUpdatesMemory(t *testing.T) 
 	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
 		t.Fatal(err)
 	}
-	intent := DeletionIntent{ProfileID: item.ID, Target: ".generations/" + item.ID + "/1-0123456789ab", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16)}
+	intent := DeletionIntent{ProfileID: item.ID, Target: ".generations/" + item.ID + "/1-010101010101", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16), Phase: DeletionPhasePrepared}
 	wantErr := errors.New("sync failed")
 	repo.writeIndexFile = func(path string, disk indexFile) error {
 		if err := atomicfile.WriteJSON(path, 0o600, disk); err != nil {
@@ -177,6 +188,58 @@ func TestRepositoryDeletionIntentDurabilityUncertainUpdatesMemory(t *testing.T) 
 	intents, err := repo.PendingDeletions(context.Background())
 	if err != nil || len(intents) != 1 || intents[0] != intent {
 		t.Fatalf("intents = %#v, %v", intents, err)
+	}
+}
+
+func TestDeletionIntentRejectsInvalidTargetAndPhase(t *testing.T) {
+	id := "01010101010101010101010101010101"
+	valid := DeletionIntent{ProfileID: id, Target: ".generations/" + id + "/1-010101010101", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16), Phase: DeletionPhasePrepared}
+	for name, mutate := range map[string]func(*DeletionIntent){
+		"absolute target": func(intent *DeletionIntent) { intent.Target = "/.generations/" + id + "/1-010101010101" },
+		"unclean target":  func(intent *DeletionIntent) { intent.Target = ".generations/../.generations/" + id + "/1-010101010101" },
+		"other profile": func(intent *DeletionIntent) {
+			intent.Target = ".generations/" + strings.Repeat("03", 16) + "/1-010101010101"
+		},
+		"zero revision": func(intent *DeletionIntent) { intent.Target = ".generations/" + id + "/0-010101010101" },
+		"signed revision": func(intent *DeletionIntent) {
+			intent.Target = ".generations/" + id + "/+1-010101010101"
+		},
+		"wrong prefix": func(intent *DeletionIntent) { intent.Target = ".generations/" + id + "/1-020202020202" },
+		"uppercase prefix": func(intent *DeletionIntent) {
+			intent.Digest = strings.Repeat("ab", 32)
+			intent.Target = ".generations/" + id + "/1-ABABABABABAB"
+		},
+		"invalid phase": func(intent *DeletionIntent) { intent.Phase = "removing" },
+	} {
+		t.Run(name, func(t *testing.T) {
+			intent := valid
+			mutate(&intent)
+			if err := validateDeletionIntent(intent); err == nil {
+				t.Fatalf("validateDeletionIntent(%#v) succeeded", intent)
+			}
+		})
+	}
+}
+
+func TestRepositoryOrdinaryCommitRetainsDeletionIntent(t *testing.T) {
+	repo, err := OpenRepository(t.TempDir(), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	intent := DeletionIntent{ProfileID: item.ID, Target: ".generations/" + item.ID + "/1-010101010101", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16), Phase: DeletionPhasePrepared}
+	if err := repo.BeginDeletion(context.Background(), item.ID, intent); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := repo.Rename(context.Background(), item.ID, "Renamed"); err != nil {
+		t.Fatal(err)
+	}
+	intents, err := repo.PendingDeletions(context.Background())
+	if err != nil || !reflect.DeepEqual(intents, []DeletionIntent{intent}) {
+		t.Fatalf("intents after rename = %#v, %v", intents, err)
 	}
 }
 
