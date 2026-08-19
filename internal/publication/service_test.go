@@ -28,9 +28,24 @@ type fakeChecker struct {
 
 type checkOnlyErrorChecker struct{ cause error }
 
+type unsafeOutputChecker struct {
+	configRoot string
+	oversized  string
+	cause      error
+}
+
 func (checker checkOnlyErrorChecker) Version(context.Context) (string, error) { return "v", nil }
 func (checker checkOnlyErrorChecker) Check(context.Context, string) (singbox.CheckResult, error) {
 	return singbox.CheckResult{}, checker.cause
+}
+
+func (checker unsafeOutputChecker) Version(context.Context) (string, error) { return "v", nil }
+func (checker unsafeOutputChecker) Check(_ context.Context, staging string) (singbox.CheckResult, error) {
+	return singbox.CheckResult{
+		Valid:  false,
+		Stdout: "secret=do-not-leak " + checker.configRoot + " " + staging + " " + checker.oversized,
+		Stderr: "password=do-not-leak " + checker.configRoot + " " + staging + " " + checker.oversized,
+	}, checker.cause
 }
 
 func (checker fakeChecker) Version(context.Context) (string, error) {
@@ -166,6 +181,26 @@ func TestCheckErrorIsClassifiableWithoutLeakingText(t *testing.T) {
 	_, err = fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1})
 	if !errors.Is(err, singbox.ErrCheckFailed) || errors.Is(err, unknown) || strings.Contains(err.Error(), "unknown-secret") || strings.Contains(errors.Unwrap(err).Error(), "unknown-secret") {
 		t.Fatalf("unsafe unknown error = %v, unwrap=%v", err, errors.Unwrap(err))
+	}
+}
+
+func TestCheckerErrorSanitizesRootsSecretsAndCapsUntrustedOutput(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	oversized := strings.Repeat("x", 70*1024)
+	cause := fmt.Errorf("raw cause %s: %w", fixture.configRoot, singbox.ErrTimeout)
+	fixture.service.options.Checker = unsafeOutputChecker{configRoot: fixture.configRoot, oversized: oversized, cause: cause}
+	_, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1})
+	var checkerError *CheckerError
+	if !errors.As(err, &checkerError) || !errors.Is(err, singbox.ErrTimeout) {
+		t.Fatalf("error=%T %v", err, err)
+	}
+	for _, output := range []string{checkerError.Stdout(), checkerError.Stderr()} {
+		if len([]byte(output)) > checkerOutputLimit || strings.Contains(output, "do-not-leak") || strings.Contains(output, fixture.configRoot) || !strings.Contains(output, "REDACTED") {
+			t.Fatalf("unsafe output bytes=%d prefix=%q", len([]byte(output)), output[:min(len(output), 160)])
+		}
+	}
+	if strings.Contains(err.Error(), "raw cause") || errors.Is(err, cause) {
+		t.Fatalf("raw cause reachable: %v", err)
 	}
 }
 

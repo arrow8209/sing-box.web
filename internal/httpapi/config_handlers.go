@@ -116,13 +116,13 @@ func (service *server) publishProfile(response http.ResponseWriter, request *htt
 		writeJSON(response, http.StatusConflict, ErrorBody{Error: APIError{Code: resultCode, Message: "草稿已被其他页面更新", CurrentRevision: &current}})
 	case errors.Is(err, singbox.ErrUnavailable):
 		resultCode = "singbox_unavailable"
-		writeCheckerError(response, http.StatusServiceUnavailable, resultCode, "sing-box 不可用")
+		writeCheckerError(response, http.StatusServiceUnavailable, resultCode, "sing-box 不可用", err)
 	case errors.Is(err, singbox.ErrTimeout):
 		resultCode = "singbox_check_timeout"
-		writeCheckerError(response, http.StatusGatewayTimeout, resultCode, "sing-box check 超时")
+		writeCheckerError(response, http.StatusGatewayTimeout, resultCode, "sing-box check 超时", err)
 	case errors.Is(err, singbox.ErrCheckFailed) || (errors.Is(err, publication.ErrValidationFailed) && receipt.Validation.Valid):
 		resultCode = "singbox_check_failed"
-		writeCheckerError(response, http.StatusUnprocessableEntity, resultCode, "sing-box check 失败")
+		writeCheckerError(response, http.StatusUnprocessableEntity, resultCode, "sing-box check 失败", err)
 	case errors.Is(err, publication.ErrValidationFailed):
 		resultCode = "validation_failed"
 		writeJSON(response, http.StatusUnprocessableEntity, ErrorBody{Error: APIError{Code: resultCode, Message: "配置校验失败", FieldIssues: receipt.Validation.Issues}})
@@ -131,8 +131,13 @@ func (service *server) publishProfile(response http.ResponseWriter, request *htt
 	}
 }
 
-func writeCheckerError(response http.ResponseWriter, status int, code, message string) {
-	writeJSON(response, status, ErrorBody{Error: APIError{Code: code, Message: message, Stderr: message}})
+func writeCheckerError(response http.ResponseWriter, status int, code, message string, err error) {
+	safeStderr := message
+	var checkerError *publication.CheckerError
+	if errors.As(err, &checkerError); checkerError != nil && checkerError.Stderr() != "" {
+		safeStderr += ": " + checkerError.Stderr()
+	}
+	writeJSON(response, status, ErrorBody{Error: APIError{Code: code, Message: message, Stderr: safeStderr}})
 }
 
 func (service *server) exportProfile(response http.ResponseWriter, request *http.Request) {

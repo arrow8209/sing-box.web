@@ -13,6 +13,7 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 
 	"golang.org/x/sys/unix"
 	"singbox-web/internal/configdoc"
@@ -83,12 +84,20 @@ func NewService(options Options) *Service {
 	return &Service{options: options, locks: make(map[string]*sync.Mutex), syncDirectory: syncDirectory}
 }
 
-type CheckerError struct{ classification error }
+const checkerOutputLimit = 64 * 1024
 
-func (err *CheckerError) Error() string { return "sing-box check 失败" }
-func (err *CheckerError) Unwrap() error { return err.classification }
+type CheckerError struct {
+	classification error
+	stdout         string
+	stderr         string
+}
 
-func safeCheckerError(cause error) error {
+func (err *CheckerError) Error() string  { return "sing-box check 失败" }
+func (err *CheckerError) Unwrap() error  { return err.classification }
+func (err *CheckerError) Stdout() string { return err.stdout }
+func (err *CheckerError) Stderr() string { return err.stderr }
+
+func safeCheckerError(cause error, result singbox.CheckResult, roots ...string) *CheckerError {
 	classification := error(singbox.ErrCheckFailed)
 	for _, trusted := range []error{singbox.ErrUnavailable, singbox.ErrTimeout, singbox.ErrCheckFailed} {
 		if errors.Is(cause, trusted) {
@@ -96,7 +105,29 @@ func safeCheckerError(cause error) error {
 			break
 		}
 	}
-	return &CheckerError{classification: classification}
+	return &CheckerError{
+		classification: classification,
+		stdout:         safeCheckerOutput(result.Stdout, roots...),
+		stderr:         safeCheckerOutput(result.Stderr, roots...),
+	}
+}
+
+func safeCheckerOutput(output string, roots ...string) string {
+	output = singbox.Sanitize(output)
+	for index := len(roots) - 1; index >= 0; index-- {
+		if roots[index] != "" {
+			output = strings.ReplaceAll(output, roots[index], "[REDACTED_PATH]")
+		}
+	}
+	output = strings.ToValidUTF8(output, "�")
+	if len(output) <= checkerOutputLimit {
+		return output
+	}
+	output = output[:checkerOutputLimit]
+	for !utf8.ValidString(output) {
+		output = output[:len(output)-1]
+	}
+	return output
 }
 
 func (service *Service) Publish(ctx context.Context, request Request) (Receipt, error) {
@@ -163,7 +194,7 @@ func (service *Service) Publish(ctx context.Context, request Request) (Receipt, 
 	}
 	installedVersion, err := service.options.Checker.Version(ctx)
 	if err != nil {
-		return Receipt{}, err
+		return Receipt{}, safeCheckerError(err, singbox.CheckResult{}, service.options.ConfigRoot)
 	}
 	if err := service.prepareRoot(); err != nil {
 		return Receipt{}, err
@@ -202,9 +233,9 @@ func (service *Service) Publish(ctx context.Context, request Request) (Receipt, 
 			return Receipt{}, recordErr
 		}
 		if checkErr != nil {
-			return Receipt{}, safeCheckerError(checkErr)
+			return Receipt{}, safeCheckerError(checkErr, check, service.options.ConfigRoot, staging)
 		}
-		return Receipt{}, ErrValidationFailed
+		return Receipt{}, fmt.Errorf("%w: %w", ErrValidationFailed, safeCheckerError(singbox.ErrCheckFailed, check, service.options.ConfigRoot, staging))
 	}
 	currentTarget, currentExists, currentManaged, currentDrift, inspectErr := service.inspectStable(item)
 	if inspectErr != nil {

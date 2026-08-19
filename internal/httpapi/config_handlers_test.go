@@ -1,17 +1,21 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 	"time"
 
+	"singbox-web/internal/assets"
 	"singbox-web/internal/profile"
 	"singbox-web/internal/publication"
+	"singbox-web/internal/singbox"
 	"singbox-web/internal/validation"
 )
 
@@ -52,6 +56,14 @@ type publicationStub struct {
 	err          error
 	publishCalls int
 	deletedName  string
+}
+
+type httpUnsafeChecker struct{ root string }
+
+func (checker httpUnsafeChecker) Version(context.Context) (string, error) { return "v", nil }
+func (checker httpUnsafeChecker) Check(_ context.Context, staging string) (singbox.CheckResult, error) {
+	output := "secret=do-not-leak " + checker.root + " " + staging + " " + strings.Repeat("x", 70*1024)
+	return singbox.CheckResult{Stderr: output}, fmt.Errorf("raw-do-not-leak: %w", singbox.ErrCheckFailed)
 }
 
 func (stub *publicationStub) Publish(_ context.Context, _ publication.Request) (publication.Receipt, error) {
@@ -97,6 +109,39 @@ func TestPublishErrorClassificationIsSafe(t *testing.T) {
 	service.publishProfile(response, request)
 	if response.Code != http.StatusInternalServerError || publicationService.publishCalls != 1 || strings.Contains(response.Body.String(), "secret") || strings.Contains(response.Body.String(), "/absolute") {
 		t.Fatalf("status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestPublishReturnsOnlyStructuredSanitizedCheckerOutput(t *testing.T) {
+	harness := newProfileHarness(t)
+	item, _, err := harness.service.Create(context.Background(), profile.CreateInput{Name: "安全输出", Slug: "safe-output"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := validation.NewSchemaValidator(assets.SingBoxSchema)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now
+	publicationService := publication.NewService(publication.Options{
+		ConfigRoot: harness.configRoot,
+		Profiles:   harness.repo,
+		Preflight:  validation.NewService(schema, "target", now),
+		Checker:    httpUnsafeChecker{root: harness.configRoot},
+		Now:        now,
+		Random:     bytes.NewReader(bytes.Repeat([]byte{3}, 256)),
+	})
+	service := server{deps: Dependencies{Profiles: harness.service, Publication: publicationService, Now: now}}
+	request := configRequest(http.MethodPost, "/api/v1/profiles/"+item.ID+"/publish", `{}`, item.ID)
+	request.Header.Set("If-Match", `"draft-1"`)
+	response := httptest.NewRecorder()
+	service.publishProfile(response, request)
+	var body ErrorBody
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusUnprocessableEntity || body.Error.Code != "singbox_check_failed" || strings.Contains(body.Error.Stderr, "do-not-leak") || strings.Contains(body.Error.Stderr, harness.configRoot) || !strings.Contains(body.Error.Stderr, "REDACTED") || len([]byte(body.Error.Stderr)) > 64*1024+64 {
+		t.Fatalf("status=%d code=%q stderrBytes=%d prefix=%q", response.Code, body.Error.Code, len([]byte(body.Error.Stderr)), body.Error.Stderr[:min(len(body.Error.Stderr), 160)])
 	}
 }
 

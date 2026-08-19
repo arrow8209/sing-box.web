@@ -49,6 +49,13 @@ type schemaMetadata struct {
 	TargetVersion string `json:"targetVersion"`
 }
 
+var (
+	refreshCapabilities = func(ctx context.Context, service *capabilities.Service) { service.Refresh(ctx) }
+	recoverPublication  = func(ctx context.Context, service *publication.Service) error { return service.Recover(ctx) }
+	newHTTPHandler      = httpapi.New
+	listenTCP           = net.Listen
+)
+
 func Run(ctx context.Context, options Options) error {
 	if err := validateNetwork(options.Listen, options.PublicOrigin, options.AllowPublicListen, options.Development); err != nil {
 		return err
@@ -124,7 +131,7 @@ func Run(ctx context.Context, options Options) error {
 	preflight := validation.NewService(schema, metadata.TargetVersion, now)
 	runner := singbox.NewRunner(options.SingBoxPath, 30*time.Second, 16*1024)
 	capabilityService := capabilities.New(metadata.TargetVersion, runner)
-	capabilityService.Refresh(ctx)
+	refreshCapabilities(ctx, capabilityService)
 	publicationService := publication.NewService(publication.Options{
 		ConfigRoot: options.ConfigRoot,
 		Profiles:   repository,
@@ -136,7 +143,7 @@ func Run(ctx context.Context, options Options) error {
 		DirMode:    0o750,
 		GroupID:    &gid,
 	})
-	if err := publicationService.Recover(ctx); err != nil {
+	if err := recoverPublication(ctx, publicationService); err != nil {
 		return fmt.Errorf("发布状态恢复失败")
 	}
 	if err := ctx.Err(); err != nil {
@@ -147,7 +154,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 	auditor := audit.New(options.LogOutput, now)
 	authService := auth.NewSessionManager(store, now, rand.Reader)
-	handler := httpapi.New(httpapi.Dependencies{
+	handler := newHTTPHandler(httpapi.Dependencies{
 		Auth:         authService,
 		Capabilities: capabilityService,
 		Profiles:     profiles,
@@ -166,7 +173,7 @@ func Run(ctx context.Context, options Options) error {
 		WriteTimeout:      60 * time.Second,
 		IdleTimeout:       60 * time.Second,
 	}
-	listener, err := net.Listen("tcp", options.Listen)
+	listener, err := listenTCP("tcp", options.Listen)
 	if err != nil {
 		return fmt.Errorf("监听地址不可用")
 	}
