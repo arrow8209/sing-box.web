@@ -284,8 +284,8 @@ func TestDeleteRechecksDigestAfterRenameAndRollsBack(t *testing.T) {
 	if got, err := os.Readlink(stable); err != nil || got != target {
 		t.Fatalf("stable not restored: %q, %v", got, err)
 	}
-	if _, err := os.Lstat(fixture.service.deleteTombstone(fixture.item.ID)); !errors.Is(err, os.ErrNotExist) {
-		t.Fatalf("tombstone remains: %v", err)
+	if markers, err := fixture.service.deletionMarkers(fixture.item.ID); err != nil || len(markers) != 0 {
+		t.Fatalf("tombstones remain: %#v, %v", markers, err)
 	}
 	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err != nil {
 		t.Fatalf("metadata removed: %v", err)
@@ -459,8 +459,9 @@ func TestDeleteInterruptionAfterRenameCompletesOnRecovery(t *testing.T) {
 	if _, err := os.Lstat(filepath.Join(fixture.configRoot, fixture.item.Slug)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("stable exists: %v", err)
 	}
-	if _, err := os.Lstat(fixture.service.deleteTombstone(fixture.item.ID)); err != nil {
-		t.Fatalf("tombstone missing: %v", err)
+	markers, err := fixture.service.deletionMarkers(fixture.item.ID)
+	if err != nil || len(markers) != 1 {
+		t.Fatalf("tombstone missing: %#v, %v", markers, err)
 	}
 	fixture = reopenPublicationFixture(t, fixture)
 	if err := fixture.service.Recover(context.Background()); err != nil {
@@ -472,7 +473,7 @@ func TestDeleteInterruptionAfterRenameCompletesOnRecovery(t *testing.T) {
 	if _, err := os.Lstat(fixture.repo.DraftPath(fixture.item.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("draft remains: %v", err)
 	}
-	if _, err := os.Lstat(fixture.service.deleteTombstone(fixture.item.ID)); !errors.Is(err, os.ErrNotExist) {
+	if _, err := os.Lstat(markers[0]); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("tombstone remains: %v", err)
 	}
 	if _, err := os.Lstat(fixture.service.profileGenerationRoot(fixture.item.ID)); !errors.Is(err, os.ErrNotExist) {
@@ -481,7 +482,7 @@ func TestDeleteInterruptionAfterRenameCompletesOnRecovery(t *testing.T) {
 }
 
 func TestRecoverRejectsConflictingOrInvalidDeleteTombstone(t *testing.T) {
-	for _, variant := range []string{"stable-and-tombstone", "regular", "outside-link"} {
+	for _, variant := range []string{"valid-without-intent", "stable-and-tombstone", "regular", "outside-link"} {
 		t.Run(variant, func(t *testing.T) {
 			fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
 			if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
@@ -492,11 +493,12 @@ func TestRecoverRejectsConflictingOrInvalidDeleteTombstone(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			tombstone := fixture.service.deleteTombstone(fixture.item.ID)
+			tombstone := fixture.service.deleteTombstone(fixture.item.ID, strings.Repeat("03", 16))
 			if err := os.Rename(stable, tombstone); err != nil {
 				t.Fatal(err)
 			}
 			switch variant {
+			case "valid-without-intent":
 			case "stable-and-tombstone":
 				if err := os.Symlink(target, stable); err != nil {
 					t.Fatal(err)
@@ -527,6 +529,61 @@ func TestRecoverRejectsConflictingOrInvalidDeleteTombstone(t *testing.T) {
 			}
 			if _, err := os.Lstat(tombstone); err != nil {
 				t.Fatalf("tombstone removed: %v", err)
+			}
+			if _, err := os.Lstat(filepath.Join(fixture.configRoot, target)); err != nil {
+				t.Fatalf("generation removed: %v", err)
+			}
+		})
+	}
+}
+
+func TestRecoverDeletionRejectsSymlinkedGenerationParentsWithoutDeleting(t *testing.T) {
+	for _, parentKind := range []string{"generations", "profile"} {
+		t.Run(parentKind, func(t *testing.T) {
+			fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+			if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+				t.Fatal(err)
+			}
+			injected := errors.New("interrupt")
+			fixture.service.failpoint = func(stage string) error {
+				if stage == "after_delete_rename" {
+					return injected
+				}
+				return nil
+			}
+			if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, injected) {
+				t.Fatalf("Delete error = %v", err)
+			}
+			outside := t.TempDir()
+			if err := os.WriteFile(filepath.Join(outside, "sentinel"), []byte("keep"), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			parent := fixture.service.profileGenerationRoot(fixture.item.ID)
+			if parentKind == "generations" {
+				parent = filepath.Join(fixture.configRoot, ".generations")
+			}
+			backup := parent + ".backup"
+			if err := os.Rename(parent, backup); err != nil {
+				t.Fatal(err)
+			}
+			if err := os.Symlink(outside, parent); err != nil {
+				t.Fatal(err)
+			}
+			fixture = reopenPublicationFixture(t, fixture)
+			if err := fixture.service.Recover(context.Background()); !errors.Is(err, ErrExternalDrift) {
+				t.Fatalf("Recover error = %v", err)
+			}
+			if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err != nil {
+				t.Fatalf("profile removed: %v", err)
+			}
+			if _, err := os.Lstat(fixture.repo.DraftPath(fixture.item.ID)); err != nil {
+				t.Fatalf("draft removed: %v", err)
+			}
+			if content, err := os.ReadFile(filepath.Join(outside, "sentinel")); err != nil || string(content) != "keep" {
+				t.Fatalf("outside touched: %q, %v", content, err)
+			}
+			if markers, err := fixture.service.deletionMarkers(fixture.item.ID); err != nil || len(markers) != 1 {
+				t.Fatalf("tombstone changed: %#v, %v", markers, err)
 			}
 		})
 	}

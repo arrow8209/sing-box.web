@@ -350,43 +350,30 @@ func (service *Service) Recover(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+	pending, err := service.options.Profiles.PendingDeletions(ctx)
+	if err != nil {
+		return err
+	}
+	intentByProfile := make(map[string]profile.DeletionIntent, len(pending))
+	for _, intent := range pending {
+		intentByProfile[intent.ProfileID] = intent
+	}
 	for _, item := range items {
-		stable := filepath.Join(service.options.ConfigRoot, item.Slug)
-		info, lstatErr := os.Lstat(stable)
-		tombstone := service.deleteTombstone(item.ID)
-		tombstoneInfo, tombstoneErr := os.Lstat(tombstone)
-		if tombstoneErr == nil {
-			if lstatErr == nil || !errors.Is(lstatErr, os.ErrNotExist) {
-				return ErrExternalDrift
-			}
-			if tombstoneInfo.Mode()&os.ModeSymlink == 0 {
-				return ErrExternalDrift
-			}
-			target, err := os.Readlink(tombstone)
-			if err != nil {
-				return err
-			}
-			matches, err := service.tombstoneMatchesPublication(item, target, true)
-			if err != nil || !matches {
-				return ErrExternalDrift
-			}
-			if err := service.removeProfileGenerations(item.ID); err != nil {
-				return err
-			}
-			if err := service.options.Profiles.RemoveMetadata(ctx, item.ID); err != nil {
-				return err
-			}
-			if err := os.Remove(tombstone); err != nil {
-				return err
-			}
-			if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
+		markers, err := service.deletionMarkers(item.ID)
+		if err != nil {
+			return err
+		}
+		if intent, exists := intentByProfile[item.ID]; exists {
+			if err := service.recoverDeletion(ctx, item, intent, markers); err != nil {
 				return err
 			}
 			continue
 		}
-		if tombstoneErr != nil && !errors.Is(tombstoneErr, os.ErrNotExist) {
-			return tombstoneErr
+		if len(markers) != 0 {
+			return ErrExternalDrift
 		}
+		stable := filepath.Join(service.options.ConfigRoot, item.Slug)
+		info, lstatErr := os.Lstat(stable)
 		if errors.Is(lstatErr, os.ErrNotExist) {
 			if item.PublishedRevision != nil {
 				if _, err := service.options.Profiles.RepairPublication(ctx, item.ID, nil); err != nil {
@@ -440,9 +427,6 @@ func (service *Service) Recover(ctx context.Context) error {
 			return err
 		}
 	}
-	if err := service.cleanupOrphanTombstones(ctx); err != nil {
-		return err
-	}
 	service.setRecoveryRequired(false)
 	return nil
 }
@@ -482,6 +466,7 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 	if item.PublishedRevision != nil && !exists {
 		return ErrExternalDrift
 	}
+	deletionTombstone := ""
 	if exists {
 		stableInfo, err := os.Lstat(filepath.Join(service.options.ConfigRoot, item.Slug))
 		if err != nil || stableInfo.Mode()&os.ModeSymlink == 0 {
@@ -491,7 +476,29 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 		if err != nil || stableTarget != target {
 			return ErrExternalDrift
 		}
-		if err := service.deleteStable(item, target, stableInfo); err != nil {
+		txID, err := service.randomTransactionID()
+		if err != nil {
+			return err
+		}
+		intent := profile.DeletionIntent{ProfileID: item.ID, Target: target, Digest: item.PublishedDigest, TxID: txID}
+		deletionTombstone = service.deleteTombstone(item.ID, txID)
+		if err := service.options.Profiles.BeginDeletion(ctx, item.ID, intent); err != nil {
+			if errors.Is(err, profile.ErrIndexDurabilityUncertain) {
+				service.setRecoveryRequired(true)
+			}
+			return err
+		}
+		if err := service.callFailpoint("after_delete_intent"); err != nil {
+			return err
+		}
+		moved, err := service.deleteStable(item, intent, stableInfo)
+		if err != nil {
+			if !moved {
+				if cancelErr := service.options.Profiles.CancelDeletion(ctx, item.ID, txID); cancelErr != nil {
+					service.setRecoveryRequired(true)
+					return fmt.Errorf("%w: cancel deletion intent failed", ErrRecoveryRequired)
+				}
+			}
 			return err
 		}
 		if err := service.callFailpoint("after_delete_link"); err != nil {
@@ -511,8 +518,8 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 	if metadataErr != nil && !errors.Is(metadataErr, profile.ErrIndexDurabilityUncertain) {
 		return metadataErr
 	}
-	if exists {
-		if err := os.Remove(service.deleteTombstone(item.ID)); err != nil {
+	if deletionTombstone != "" {
+		if err := os.Remove(deletionTombstone); err != nil {
 			return err
 		}
 		if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
@@ -661,6 +668,16 @@ func (service *Service) randomName(prefix string) (string, error) {
 	return prefix + hex.EncodeToString(bytes), nil
 }
 
+func (service *Service) randomTransactionID() (string, error) {
+	service.randomMu.Lock()
+	defer service.randomMu.Unlock()
+	value := make([]byte, 16)
+	if _, err := io.ReadFull(service.options.Random, value); err != nil {
+		return "", err
+	}
+	return hex.EncodeToString(value), nil
+}
+
 func (service *Service) swapLink(slug, target, expectedOldTarget string, existed bool) error {
 	tempName, err := service.randomName(".link-")
 	if err != nil {
@@ -720,41 +737,114 @@ func (service *Service) swapLink(slug, target, expectedOldTarget string, existed
 	return syncDirectory(service.options.ConfigRoot)
 }
 
-func (service *Service) deleteStable(item profile.Profile, expectedTarget string, expectedInfo fs.FileInfo) error {
+func (service *Service) deleteStable(item profile.Profile, intent profile.DeletionIntent, expectedInfo fs.FileInfo) (bool, error) {
 	stable := filepath.Join(service.options.ConfigRoot, item.Slug)
-	tombstone := service.deleteTombstone(item.ID)
+	tombstone := service.deleteTombstone(item.ID, intent.TxID)
 	if _, err := os.Lstat(tombstone); err == nil || !errors.Is(err, os.ErrNotExist) {
-		return ErrExternalDrift
+		return false, ErrExternalDrift
 	}
 	if err := service.callFailpoint("before_delete_exchange"); err != nil {
-		return err
+		return false, err
 	}
 	if err := unix.Renameat2(unix.AT_FDCWD, stable, unix.AT_FDCWD, tombstone, unix.RENAME_NOREPLACE); err != nil {
-		return ErrExternalDrift
+		return false, ErrExternalDrift
 	}
 	if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
-		return service.rollbackDelete(stable, tombstone, err)
+		return false, service.rollbackDelete(stable, tombstone, err)
 	}
 	if err := service.callFailpoint("after_delete_rename"); err != nil {
-		return err
+		return true, err
 	}
 	movedInfo, lstatErr := os.Lstat(tombstone)
 	movedTarget, readErr := os.Readlink(tombstone)
-	if lstatErr != nil || movedInfo.Mode()&os.ModeSymlink == 0 || readErr != nil || movedTarget != expectedTarget || !os.SameFile(expectedInfo, movedInfo) {
-		return service.rollbackDelete(stable, tombstone, ErrExternalDrift)
+	if lstatErr != nil || movedInfo.Mode()&os.ModeSymlink == 0 || readErr != nil || movedTarget != intent.Target || !os.SameFile(expectedInfo, movedInfo) {
+		return false, service.rollbackDelete(stable, tombstone, ErrExternalDrift)
 	}
 	if err := service.callFailpoint("before_delete_digest"); err != nil {
-		return service.rollbackDelete(stable, tombstone, err)
+		return false, service.rollbackDelete(stable, tombstone, err)
 	}
-	matches, err := service.tombstoneMatchesPublication(item, movedTarget, false)
+	matches, err := service.intentTargetMatches(intent, false)
 	if err != nil || !matches {
-		return service.rollbackDelete(stable, tombstone, ErrExternalDrift)
+		return false, service.rollbackDelete(stable, tombstone, ErrExternalDrift)
 	}
-	return nil
+	return true, nil
 }
 
-func (service *Service) deleteTombstone(profileID string) string {
-	return filepath.Join(service.options.ConfigRoot, ".delete-"+profileID)
+func (service *Service) deleteTombstone(profileID, txID string) string {
+	return filepath.Join(service.options.ConfigRoot, ".delete-"+profileID+"-"+txID)
+}
+
+func (service *Service) deletionMarkers(profileID string) ([]string, error) {
+	entries, err := os.ReadDir(service.options.ConfigRoot)
+	if errors.Is(err, os.ErrNotExist) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	prefix := ".delete-" + profileID
+	var result []string
+	for _, entry := range entries {
+		if strings.HasPrefix(entry.Name(), prefix) {
+			result = append(result, filepath.Join(service.options.ConfigRoot, entry.Name()))
+		}
+	}
+	return result, nil
+}
+
+func (service *Service) recoverDeletion(ctx context.Context, item profile.Profile, intent profile.DeletionIntent, markers []string) error {
+	stable := filepath.Join(service.options.ConfigRoot, item.Slug)
+	_, stableErr := os.Lstat(stable)
+	expected := service.deleteTombstone(item.ID, intent.TxID)
+	if len(markers) == 0 {
+		if stableErr == nil {
+			target, err := os.Readlink(stable)
+			if err != nil || target != intent.Target {
+				return ErrExternalDrift
+			}
+			matches, err := service.intentTargetMatches(intent, false)
+			if err != nil || !matches {
+				return ErrExternalDrift
+			}
+			return service.options.Profiles.CancelDeletion(ctx, item.ID, intent.TxID)
+		}
+		if !errors.Is(stableErr, os.ErrNotExist) {
+			return stableErr
+		}
+		if err := service.removeProfileGenerations(item.ID); err != nil {
+			return err
+		}
+		return service.options.Profiles.RemoveMetadata(ctx, item.ID)
+	}
+	if len(markers) != 1 || markers[0] != expected || stableErr == nil || !errors.Is(stableErr, os.ErrNotExist) {
+		return ErrExternalDrift
+	}
+	info, err := os.Lstat(expected)
+	if err != nil || info.Mode()&os.ModeSymlink == 0 {
+		return ErrExternalDrift
+	}
+	target, err := os.Readlink(expected)
+	if err != nil || target != intent.Target {
+		return ErrExternalDrift
+	}
+	matches, err := service.intentTargetMatches(intent, true)
+	if err != nil || !matches {
+		return ErrExternalDrift
+	}
+	if err := service.removeProfileGenerations(item.ID); err != nil {
+		return err
+	}
+	metadataErr := service.options.Profiles.RemoveMetadata(ctx, item.ID)
+	if metadataErr != nil && !errors.Is(metadataErr, profile.ErrIndexDurabilityUncertain) {
+		return metadataErr
+	}
+	if err := os.Remove(expected); err != nil {
+		return err
+	}
+	if err := service.syncDirectory(service.options.ConfigRoot); err != nil {
+		return err
+	}
+	return metadataErr
 }
 
 func (service *Service) rollbackDelete(stable, tombstone string, cause error) error {
@@ -773,8 +863,8 @@ func (service *Service) rollbackDelete(stable, tombstone string, cause error) er
 	return cause
 }
 
-func (service *Service) tombstoneMatchesPublication(item profile.Profile, target string, allowMissingGeneration bool) (bool, error) {
-	publicationID, generation, err := service.parseOwnedTarget(item.ID, target)
+func (service *Service) intentTargetMatches(intent profile.DeletionIntent, allowMissingGeneration bool) (bool, error) {
+	publicationID, generation, err := service.parseOwnedTarget(intent.ProfileID, intent.Target)
 	if err != nil {
 		return false, err
 	}
@@ -782,8 +872,14 @@ func (service *Service) tombstoneMatchesPublication(item profile.Profile, target
 	if err != nil {
 		return false, err
 	}
-	if item.PublishedRevision == nil || *item.PublishedRevision != revision || !strings.HasPrefix(item.PublishedDigest, prefix) {
+	if revision == 0 || !strings.HasPrefix(intent.Digest, prefix) {
 		return false, nil
+	}
+	if err := service.validateGenerationParents(intent.ProfileID); err != nil {
+		if allowMissingGeneration && errors.Is(err, os.ErrNotExist) {
+			return true, nil
+		}
+		return false, err
 	}
 	files, err := readModules(generation)
 	if allowMissingGeneration && errors.Is(err, os.ErrNotExist) {
@@ -793,7 +889,7 @@ func (service *Service) tombstoneMatchesPublication(item profile.Profile, target
 		return false, err
 	}
 	digest := configdoc.Digest(files)
-	return item.PublishedDigest == digest, nil
+	return intent.Digest == digest, nil
 }
 
 func (service *Service) parseOwnedTarget(profileID, target string) (string, string, error) {
@@ -821,62 +917,6 @@ func (service *Service) removeProfileGenerations(profileID string) error {
 		return err
 	}
 	return service.syncDirectory(filepath.Join(service.options.ConfigRoot, ".generations"))
-}
-
-func (service *Service) cleanupOrphanTombstones(ctx context.Context) error {
-	items, err := service.options.Profiles.List(ctx)
-	if err != nil {
-		return err
-	}
-	wanted := make(map[string]bool, len(items))
-	for _, item := range items {
-		wanted[item.ID] = true
-	}
-	entries, err := os.ReadDir(service.options.ConfigRoot)
-	if errors.Is(err, os.ErrNotExist) {
-		return nil
-	}
-	if err != nil {
-		return err
-	}
-	changed := false
-	for _, entry := range entries {
-		if !strings.HasPrefix(entry.Name(), ".delete-") {
-			continue
-		}
-		id := strings.TrimPrefix(entry.Name(), ".delete-")
-		decoded, decodeErr := hex.DecodeString(id)
-		if wanted[id] || decodeErr != nil || len(decoded) != 16 || strings.ToLower(id) != id {
-			continue
-		}
-		path := filepath.Join(service.options.ConfigRoot, entry.Name())
-		info, err := os.Lstat(path)
-		if err != nil {
-			return err
-		}
-		if info.Mode()&os.ModeSymlink == 0 {
-			return ErrExternalDrift
-		}
-		target, err := os.Readlink(path)
-		if err != nil {
-			return err
-		}
-		publicationID, _, err := service.parseOwnedTarget(id, target)
-		if err != nil {
-			return ErrExternalDrift
-		}
-		if _, _, err := parsePublicationID(publicationID); err != nil {
-			return ErrExternalDrift
-		}
-		if err := os.Remove(path); err != nil {
-			return err
-		}
-		changed = true
-	}
-	if changed {
-		return service.syncDirectory(service.options.ConfigRoot)
-	}
-	return nil
 }
 
 func (service *Service) restoreLink(slug, target, expectedCurrentTarget string, existed bool) error {

@@ -8,6 +8,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 
@@ -108,6 +109,74 @@ func TestRepositoryPublicationMetadataOperations(t *testing.T) {
 	}
 	if got.DraftRevision != 2 || got.PublishedRevision != nil || got.PublishedDigest != "" || got.PublishedAt != nil || got.LastValidation == nil || *got.LastValidation != recovery.Validation {
 		t.Fatalf("cleared profile = %#v", got)
+	}
+}
+
+func TestRepositoryDeletionIntentPersistsCancelsAndIsRemovedAtomically(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	intent := DeletionIntent{ProfileID: item.ID, Target: ".generations/" + item.ID + "/1-0123456789ab", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16)}
+	if err := repo.BeginDeletion(context.Background(), item.ID, intent); err != nil {
+		t.Fatal(err)
+	}
+	repo, err = OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	intents, err := repo.PendingDeletions(context.Background())
+	if err != nil || !reflect.DeepEqual(intents, []DeletionIntent{intent}) {
+		t.Fatalf("intents = %#v, %v", intents, err)
+	}
+	if err := repo.CancelDeletion(context.Background(), item.ID, intent.TxID); err != nil {
+		t.Fatal(err)
+	}
+	if intents, _ := repo.PendingDeletions(context.Background()); len(intents) != 0 {
+		t.Fatalf("cancelled intents = %#v", intents)
+	}
+	if err := repo.BeginDeletion(context.Background(), item.ID, intent); err != nil {
+		t.Fatal(err)
+	}
+	if err := repo.RemoveMetadata(context.Background(), item.ID); err != nil {
+		t.Fatal(err)
+	}
+	if intents, _ := repo.PendingDeletions(context.Background()); len(intents) != 0 {
+		t.Fatalf("removed profile intents = %#v", intents)
+	}
+	if _, err := os.Lstat(repo.DraftPath(item.ID)); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("draft remains: %v", err)
+	}
+}
+
+func TestRepositoryDeletionIntentDurabilityUncertainUpdatesMemory(t *testing.T) {
+	repo, err := OpenRepository(t.TempDir(), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 1}
+	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	intent := DeletionIntent{ProfileID: item.ID, Target: ".generations/" + item.ID + "/1-0123456789ab", Digest: strings.Repeat("01", 32), TxID: strings.Repeat("02", 16)}
+	wantErr := errors.New("sync failed")
+	repo.writeIndexFile = func(path string, disk indexFile) error {
+		if err := atomicfile.WriteJSON(path, 0o600, disk); err != nil {
+			return err
+		}
+		return wantErr
+	}
+	if err := repo.BeginDeletion(context.Background(), item.ID, intent); !errors.Is(err, ErrIndexDurabilityUncertain) {
+		t.Fatalf("BeginDeletion error = %v", err)
+	}
+	intents, err := repo.PendingDeletions(context.Background())
+	if err != nil || len(intents) != 1 || intents[0] != intent {
+		t.Fatalf("intents = %#v, %v", intents, err)
 	}
 }
 

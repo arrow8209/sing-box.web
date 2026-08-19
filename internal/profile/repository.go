@@ -27,19 +27,28 @@ var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 var ErrIndexDurabilityUncertain = errors.New("profile index durability is uncertain")
 
 type indexFile struct {
-	Version  int       `json:"version"`
-	Profiles []Profile `json:"profiles"`
+	Version          int                       `json:"version"`
+	Profiles         []Profile                 `json:"profiles"`
+	PendingDeletions map[string]DeletionIntent `json:"pendingDeletions,omitempty"`
+}
+
+type DeletionIntent struct {
+	ProfileID string `json:"profileId"`
+	Target    string `json:"target"`
+	Digest    string `json:"digest"`
+	TxID      string `json:"txId"`
 }
 
 type Repository struct {
-	mu             sync.RWMutex
-	indexPath      string
-	draftsPath     string
-	now            func() time.Time
-	profiles       []Profile
-	draftCorrupt   map[string]bool
-	writeIndexFile func(string, indexFile) error
-	stateErr       error
+	mu               sync.RWMutex
+	indexPath        string
+	draftsPath       string
+	now              func() time.Time
+	profiles         []Profile
+	pendingDeletions map[string]DeletionIntent
+	draftCorrupt     map[string]bool
+	writeIndexFile   func(string, indexFile) error
+	stateErr         error
 }
 
 type indexCommitStatus uint8
@@ -82,6 +91,9 @@ func OpenRepository(dataDir string, now func() time.Time) (*Repository, error) {
 	if err := validateProfiles(disk.Profiles); err != nil {
 		return nil, fmt.Errorf("validate profile index: %w", err)
 	}
+	if err := validateDeletionIntents(disk.PendingDeletions, disk.Profiles); err != nil {
+		return nil, fmt.Errorf("validate pending deletions: %w", err)
+	}
 	if err := removeOrphanDrafts(draftsPath, disk.Profiles); err != nil {
 		return nil, err
 	}
@@ -110,17 +122,18 @@ func OpenRepository(dataDir string, now func() time.Time) (*Repository, error) {
 		}
 	}
 	if indexNeedsRepair {
-		if err := atomicfile.WriteJSON(indexPath, 0o600, indexFile{Version: indexVersion, Profiles: profiles}); err != nil {
+		if err := atomicfile.WriteJSON(indexPath, 0o600, indexFile{Version: indexVersion, Profiles: profiles, PendingDeletions: disk.PendingDeletions}); err != nil {
 			return nil, fmt.Errorf("repair profile draft revision: %w", err)
 		}
 	}
 
 	return &Repository{
-		indexPath:    indexPath,
-		draftsPath:   draftsPath,
-		now:          now,
-		profiles:     profiles,
-		draftCorrupt: draftCorrupt,
+		indexPath:        indexPath,
+		draftsPath:       draftsPath,
+		now:              now,
+		profiles:         profiles,
+		pendingDeletions: cloneDeletionIntents(disk.PendingDeletions),
+		draftCorrupt:     draftCorrupt,
 		writeIndexFile: func(path string, disk indexFile) error {
 			return atomicfile.WriteJSON(path, 0o600, disk)
 		},
@@ -456,6 +469,85 @@ func (repo *Repository) Rename(ctx context.Context, id, name string) (Profile, e
 	return Profile{}, fmt.Errorf("profile %q not found", id)
 }
 
+func (repo *Repository) BeginDeletion(ctx context.Context, id string, intent DeletionIntent) error {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if repo.stateErr != nil {
+		return repo.stateErr
+	}
+	if err := validateID(id); err != nil {
+		return err
+	}
+	if intent.ProfileID != id {
+		return fmt.Errorf("deletion intent profile ID does not match")
+	}
+	if _, exists := repo.profileByID(id); !exists {
+		return fmt.Errorf("profile %q not found", id)
+	}
+	if err := validateDeletionIntent(intent); err != nil {
+		return err
+	}
+	if _, exists := repo.pendingDeletions[id]; exists {
+		return fmt.Errorf("profile deletion is already pending")
+	}
+	next := cloneDeletionIntents(repo.pendingDeletions)
+	if next == nil {
+		next = make(map[string]DeletionIntent)
+	}
+	next[id] = intent
+	status, err := repo.commitState(repo.profiles, next)
+	if status == indexReplaced {
+		repo.pendingDeletions = next
+	}
+	return err
+}
+
+func (repo *Repository) CancelDeletion(ctx context.Context, id, txID string) error {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if repo.stateErr != nil {
+		return repo.stateErr
+	}
+	intent, exists := repo.pendingDeletions[id]
+	if !exists {
+		return nil
+	}
+	if intent.TxID != txID {
+		return fmt.Errorf("deletion transaction does not match")
+	}
+	next := cloneDeletionIntents(repo.pendingDeletions)
+	delete(next, id)
+	status, err := repo.commitState(repo.profiles, next)
+	if status == indexReplaced {
+		repo.pendingDeletions = next
+	}
+	return err
+}
+
+func (repo *Repository) PendingDeletions(ctx context.Context) ([]DeletionIntent, error) {
+	repo.mu.RLock()
+	defer repo.mu.RUnlock()
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	if repo.stateErr != nil {
+		return nil, repo.stateErr
+	}
+	result := make([]DeletionIntent, 0, len(repo.pendingDeletions))
+	for _, item := range repo.profiles {
+		if intent, exists := repo.pendingDeletions[item.ID]; exists {
+			result = append(result, intent)
+		}
+	}
+	return result, nil
+}
+
 func (repo *Repository) RemoveMetadata(ctx context.Context, id string) error {
 	repo.mu.Lock()
 	defer repo.mu.Unlock()
@@ -480,11 +572,14 @@ func (repo *Repository) RemoveMetadata(ctx context.Context, id string) error {
 	}
 	next := cloneProfiles(repo.profiles[:index])
 	next = append(next, cloneProfiles(repo.profiles[index+1:])...)
-	status, err := repo.commitIndex(next)
+	nextIntents := cloneDeletionIntents(repo.pendingDeletions)
+	delete(nextIntents, id)
+	status, err := repo.commitState(next, nextIntents)
 	if status != indexReplaced {
 		return err
 	}
 	repo.profiles = next
+	repo.pendingDeletions = nextIntents
 	delete(repo.draftCorrupt, id)
 	if err != nil {
 		return err
@@ -509,7 +604,11 @@ func (repo *Repository) draftPath(id string) string {
 }
 
 func (repo *Repository) commitIndex(profiles []Profile) (indexCommitStatus, error) {
-	disk := indexFile{Version: indexVersion, Profiles: profiles}
+	return repo.commitState(profiles, repo.pendingDeletions)
+}
+
+func (repo *Repository) commitState(profiles []Profile, pendingDeletions map[string]DeletionIntent) (indexCommitStatus, error) {
+	disk := indexFile{Version: indexVersion, Profiles: profiles, PendingDeletions: nonNilDeletionIntents(pendingDeletions)}
 	writeErr := repo.writeIndexFile(repo.indexPath, disk)
 	if writeErr == nil {
 		return indexReplaced, nil
@@ -520,14 +619,23 @@ func (repo *Repository) commitIndex(profiles []Profile) (indexCommitStatus, erro
 		repo.stateErr = fmt.Errorf("profile index state is uncertain; reopen repository: write failed: %w; confirmation failed: %v", writeErr, readErr)
 		return indexUncertain, repo.stateErr
 	}
-	if current.Version == indexVersion && profilesEqual(current.Profiles, profiles) {
+	if current.Version == indexVersion && indexFilesEqual(current, disk) {
 		return indexReplaced, fmt.Errorf("%w: profile index was replaced but persistence confirmation failed: %w", ErrIndexDurabilityUncertain, writeErr)
 	}
-	if current.Version == indexVersion && profilesEqual(current.Profiles, repo.profiles) {
+	previous := indexFile{Version: indexVersion, Profiles: repo.profiles, PendingDeletions: nonNilDeletionIntents(repo.pendingDeletions)}
+	if current.Version == indexVersion && indexFilesEqual(current, previous) {
 		return indexNotReplaced, fmt.Errorf("write profile index: %w", writeErr)
 	}
 	repo.stateErr = fmt.Errorf("profile index state is uncertain; reopen repository: write failed: %w", writeErr)
 	return indexUncertain, repo.stateErr
+}
+
+func indexFilesEqual(left, right indexFile) bool {
+	left.Profiles, right.Profiles = nonNilProfiles(left.Profiles), nonNilProfiles(right.Profiles)
+	left.PendingDeletions, right.PendingDeletions = nonNilDeletionIntents(left.PendingDeletions), nonNilDeletionIntents(right.PendingDeletions)
+	leftJSON, leftErr := json.Marshal(left)
+	rightJSON, rightErr := json.Marshal(right)
+	return leftErr == nil && rightErr == nil && bytes.Equal(leftJSON, rightJSON)
 }
 
 func profilesEqual(left, right []Profile) bool {
@@ -541,6 +649,62 @@ func nonNilProfiles(profiles []Profile) []Profile {
 		return []Profile{}
 	}
 	return profiles
+}
+
+func cloneDeletionIntents(intents map[string]DeletionIntent) map[string]DeletionIntent {
+	if intents == nil {
+		return nil
+	}
+	result := make(map[string]DeletionIntent, len(intents))
+	for id, intent := range intents {
+		result[id] = intent
+	}
+	return result
+}
+
+func nonNilDeletionIntents(intents map[string]DeletionIntent) map[string]DeletionIntent {
+	if intents == nil {
+		return map[string]DeletionIntent{}
+	}
+	return intents
+}
+
+func validateDeletionIntents(intents map[string]DeletionIntent, profiles []Profile) error {
+	profileIDs := make(map[string]bool, len(profiles))
+	for _, item := range profiles {
+		profileIDs[item.ID] = true
+	}
+	for id, intent := range intents {
+		if id != intent.ProfileID || !profileIDs[id] {
+			return fmt.Errorf("invalid pending deletion for %q", id)
+		}
+		if err := validateDeletionIntent(intent); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func validateDeletionIntent(intent DeletionIntent) error {
+	if err := validateID(intent.ProfileID); err != nil {
+		return err
+	}
+	if intent.Target == "" {
+		return fmt.Errorf("deletion target is empty")
+	}
+	if len(intent.Digest) != 64 || strings.ToLower(intent.Digest) != intent.Digest {
+		return fmt.Errorf("invalid deletion digest")
+	}
+	if decoded, err := hex.DecodeString(intent.Digest); err != nil || len(decoded) != 32 {
+		return fmt.Errorf("invalid deletion digest")
+	}
+	if len(intent.TxID) != 32 || strings.ToLower(intent.TxID) != intent.TxID {
+		return fmt.Errorf("invalid deletion transaction ID")
+	}
+	if decoded, err := hex.DecodeString(intent.TxID); err != nil || len(decoded) != 16 {
+		return fmt.Errorf("invalid deletion transaction ID")
+	}
+	return nil
 }
 
 func validateProfiles(profiles []Profile) error {
