@@ -6,7 +6,6 @@ package singbox
 import (
 	"context"
 	"errors"
-	"fmt"
 	"io"
 	"io/fs"
 	"os/exec"
@@ -95,17 +94,16 @@ func (r *Runner) run(ctx context.Context, dir string, args ...string) (string, s
 		return out, errOut, nil
 	}
 	if errors.Is(childCtx.Err(), context.DeadlineExceeded) {
-		return out, errOut, fmt.Errorf("%w: %v", ErrTimeout, childCtx.Err())
+		return out, errOut, classifiedError{kind: ErrTimeout, cause: childCtx.Err()}
 	}
 	if isUnavailable(err) {
-		return out, errOut, fmt.Errorf("%w: %v", ErrUnavailable, err)
+		return out, errOut, classifiedError{kind: ErrUnavailable, cause: err}
 	}
-	return out, errOut, fmt.Errorf("%w: %v", ErrCheckFailed, err)
+	return out, errOut, classifiedError{kind: ErrCheckFailed, cause: err}
 }
 
 func isUnavailable(err error) bool {
-	var execErr *exec.Error
-	return errors.As(err, &execErr) || errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
+	return errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
 }
 
 func commandError(cause error, stdout, stderr string) error {
@@ -119,8 +117,28 @@ func commandError(cause error, stdout, stderr string) error {
 	if len(parts) == 0 {
 		return cause
 	}
-	return fmt.Errorf("%w: %s", cause, strings.Join(parts, " "))
+	return outputError{cause: cause, output: strings.Join(parts, " ")}
 }
+
+// classifiedError keeps the OS error in its chain for programmatic handling,
+// but never renders it because it can contain local binary or working paths.
+type classifiedError struct {
+	kind  error
+	cause error
+}
+
+func (e classifiedError) Error() string { return e.kind.Error() }
+
+func (e classifiedError) Unwrap() []error { return []error{e.kind, e.cause} }
+
+type outputError struct {
+	cause  error
+	output string
+}
+
+func (e outputError) Error() string { return e.cause.Error() + ": " + e.output }
+
+func (e outputError) Unwrap() error { return e.cause }
 
 type cappedWriter struct {
 	mu    sync.Mutex
