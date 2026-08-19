@@ -108,6 +108,13 @@ func (service *Service) SaveDraft(ctx context.Context, id string, expected uint6
 	return service.repo.saveDraft(ctx, id, expected, content)
 }
 
+func (service *Service) RecordValidation(ctx context.Context, id string, expectedDraftRevision uint64, summary ValidationSummary) (Profile, error) {
+	if service == nil || service.repo == nil {
+		return Profile{}, fmt.Errorf("profile repository is nil")
+	}
+	return service.repo.RecordValidation(ctx, id, expectedDraftRevision, summary)
+}
+
 func (service *Service) DraftStatus(ctx context.Context, id string) DraftStatus {
 	if service == nil || service.repo == nil {
 		return DraftStatus{}

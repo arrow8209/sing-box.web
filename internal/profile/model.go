@@ -13,6 +13,13 @@ type ValidationSummary struct {
 	CheckedAt time.Time `json:"checkedAt"`
 }
 
+type PublicationState struct {
+	Revision    uint64            `json:"revision"`
+	Digest      string            `json:"digest"`
+	PublishedAt time.Time         `json:"publishedAt"`
+	Validation  ValidationSummary `json:"validation"`
+}
+
 type Profile struct {
 	ID                string             `json:"id"`
 	Name              string             `json:"name"`

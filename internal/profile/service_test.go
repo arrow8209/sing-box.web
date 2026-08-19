@@ -116,6 +116,11 @@ func TestServiceDelegatesMetadataOperations(t *testing.T) {
 	if err != nil || renamed.Name != "After" {
 		t.Fatalf("Rename = %#v, %v", renamed, err)
 	}
+	validation := ValidationSummary{Revision: created.DraftRevision, Status: "invalid", Stage: "schema", Message: "1 个问题", CheckedAt: time.Now().UTC()}
+	validated, err := service.RecordValidation(context.Background(), created.ID, created.DraftRevision, validation)
+	if err != nil || validated.LastValidation == nil || *validated.LastValidation != validation {
+		t.Fatalf("RecordValidation = %#v, %v", validated, err)
+	}
 	if err := service.RemoveMetadata(context.Background(), created.ID); err != nil {
 		t.Fatal(err)
 	}

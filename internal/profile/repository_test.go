@@ -56,6 +56,61 @@ func TestRepositoryPersistsOrderAndDraftsAcrossRestart(t *testing.T) {
 	}
 }
 
+func TestRepositoryPublicationMetadataOperations(t *testing.T) {
+	repo, err := OpenRepository(t.TempDir(), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	item := Profile{ID: "01010101010101010101010101010101", Name: "One", Slug: "one", DraftRevision: 2}
+	if err := repo.Insert(context.Background(), item, Draft{ProfileID: item.ID, Revision: 2}); err != nil {
+		t.Fatal(err)
+	}
+	checked := time.Date(2026, 8, 18, 1, 2, 3, 0, time.UTC)
+	validation := ValidationSummary{Revision: 2, Status: "invalid", Stage: "schema", Message: "1 个问题", CheckedAt: checked}
+	staleValidation := validation
+	staleValidation.Revision = 1
+	if _, err := repo.RecordValidation(context.Background(), item.ID, 1, staleValidation); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("stale validation error = %v", err)
+	}
+	got, err := repo.RecordValidation(context.Background(), item.ID, 2, validation)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.LastValidation == nil || *got.LastValidation != validation || got.PublishedRevision != nil {
+		t.Fatalf("validation profile = %#v", got)
+	}
+
+	state := PublicationState{Revision: 2, Digest: "digest", PublishedAt: checked, Validation: ValidationSummary{Revision: 2, Status: "valid", Stage: "singbox", Message: "sing-box check 通过", CheckedAt: checked}}
+	staleState := state
+	staleState.Revision, staleState.Validation.Revision = 1, 1
+	if _, err := repo.RecordPublication(context.Background(), item.ID, 1, staleState); !errors.Is(err, ErrRevisionConflict) {
+		t.Fatalf("stale publication error = %v", err)
+	}
+	got, err = repo.RecordPublication(context.Background(), item.ID, 2, state)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.PublishedRevision == nil || *got.PublishedRevision != 2 || got.PublishedDigest != state.Digest || got.PublishedAt == nil || *got.PublishedAt != checked || got.LastValidation == nil || *got.LastValidation != state.Validation {
+		t.Fatalf("publication profile = %#v", got)
+	}
+
+	recovery := PublicationState{Revision: 1, Digest: "recovered", PublishedAt: checked.Add(time.Hour), Validation: ValidationSummary{Revision: 1, Status: "valid", Stage: "recovery", Message: "由磁盘发布状态恢复", CheckedAt: checked.Add(time.Hour)}}
+	got, err = repo.RepairPublication(context.Background(), item.ID, &recovery)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DraftRevision != 2 || got.PublishedRevision == nil || *got.PublishedRevision != 1 || got.LastValidation == nil || *got.LastValidation != recovery.Validation {
+		t.Fatalf("repaired profile = %#v", got)
+	}
+	got, err = repo.RepairPublication(context.Background(), item.ID, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.DraftRevision != 2 || got.PublishedRevision != nil || got.PublishedDigest != "" || got.PublishedAt != nil || got.LastValidation == nil || *got.LastValidation != recovery.Validation {
+		t.Fatalf("cleared profile = %#v", got)
+	}
+}
+
 func TestRepositoryRejectsDuplicateIDAndSlug(t *testing.T) {
 	repo, err := OpenRepository(t.TempDir(), time.Now)
 	if err != nil {

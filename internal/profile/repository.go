@@ -274,6 +274,101 @@ func (repo *Repository) Get(ctx context.Context, id string) (Profile, error) {
 	return Profile{}, fmt.Errorf("profile %q not found", id)
 }
 
+func (repo *Repository) RecordValidation(ctx context.Context, id string, expectedDraftRevision uint64, summary ValidationSummary) (Profile, error) {
+	if summary.Revision != expectedDraftRevision {
+		return Profile{}, fmt.Errorf("validation revision %d does not match expected draft revision %d", summary.Revision, expectedDraftRevision)
+	}
+	return repo.updateProfile(ctx, id, expectedDraftRevision, func(item *Profile) {
+		value := summary
+		item.LastValidation = &value
+	})
+}
+
+func (repo *Repository) RecordPublication(ctx context.Context, id string, expectedDraftRevision uint64, state PublicationState) (Profile, error) {
+	if state.Revision != expectedDraftRevision || state.Validation.Revision != expectedDraftRevision {
+		return Profile{}, fmt.Errorf("publication revision does not match expected draft revision %d", expectedDraftRevision)
+	}
+	return repo.updateProfile(ctx, id, expectedDraftRevision, func(item *Profile) {
+		revision, publishedAt, validation := state.Revision, state.PublishedAt, state.Validation
+		item.PublishedRevision = &revision
+		item.PublishedDigest = state.Digest
+		item.PublishedAt = &publishedAt
+		item.LastValidation = &validation
+	})
+}
+
+func (repo *Repository) RepairPublication(ctx context.Context, id string, state *PublicationState) (Profile, error) {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Profile{}, err
+	}
+	if repo.stateErr != nil {
+		return Profile{}, repo.stateErr
+	}
+	if err := validateID(id); err != nil {
+		return Profile{}, err
+	}
+	next := cloneProfiles(repo.profiles)
+	for index := range next {
+		if next[index].ID != id {
+			continue
+		}
+		if state == nil {
+			next[index].PublishedRevision = nil
+			next[index].PublishedDigest = ""
+			next[index].PublishedAt = nil
+		} else {
+			if state.Revision == 0 || state.Validation.Revision != state.Revision {
+				return Profile{}, fmt.Errorf("invalid recovered publication state")
+			}
+			revision, publishedAt, validation := state.Revision, state.PublishedAt, state.Validation
+			next[index].PublishedRevision = &revision
+			next[index].PublishedDigest = state.Digest
+			next[index].PublishedAt = &publishedAt
+			next[index].LastValidation = &validation
+		}
+		status, err := repo.commitIndex(next)
+		if status == indexReplaced {
+			repo.profiles = next
+			return cloneProfile(next[index]), err
+		}
+		return Profile{}, err
+	}
+	return Profile{}, fmt.Errorf("profile %q not found", id)
+}
+
+func (repo *Repository) updateProfile(ctx context.Context, id string, expectedDraftRevision uint64, update func(*Profile)) (Profile, error) {
+	repo.mu.Lock()
+	defer repo.mu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return Profile{}, err
+	}
+	if repo.stateErr != nil {
+		return Profile{}, repo.stateErr
+	}
+	if err := validateID(id); err != nil {
+		return Profile{}, err
+	}
+	next := cloneProfiles(repo.profiles)
+	for index := range next {
+		if next[index].ID != id {
+			continue
+		}
+		if next[index].DraftRevision != expectedDraftRevision {
+			return Profile{}, &RevisionConflict{Current: next[index].DraftRevision}
+		}
+		update(&next[index])
+		status, err := repo.commitIndex(next)
+		if status == indexReplaced {
+			repo.profiles = next
+			return cloneProfile(next[index]), err
+		}
+		return Profile{}, err
+	}
+	return Profile{}, fmt.Errorf("profile %q not found", id)
+}
+
 func (repo *Repository) Insert(ctx context.Context, item Profile, draft Draft) error {
 	_, err := repo.insert(ctx, item, draft)
 	return err
