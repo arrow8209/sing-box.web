@@ -24,6 +24,7 @@ type contextKey uint8
 const (
 	claimsContextKey contextKey = iota
 	clientIPContextKey
+	requestIDContextKey
 )
 
 func WithSecurityHeaders(next http.Handler) http.Handler {
@@ -55,8 +56,10 @@ func requestIDMiddleware(next http.Handler) http.Handler {
 		if _, err := io.ReadFull(rand.Reader, identifier); err != nil {
 			identifier = []byte("request-id-unavailable")
 		}
-		response.Header().Set("X-Request-ID", hex.EncodeToString(identifier))
-		next.ServeHTTP(response, request)
+		requestID := hex.EncodeToString(identifier)
+		response.Header().Set("X-Request-ID", requestID)
+		ctx := context.WithValue(request.Context(), requestIDContextKey, requestID)
+		next.ServeHTTP(response, request.WithContext(ctx))
 	})
 }
 

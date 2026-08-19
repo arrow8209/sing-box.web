@@ -2,14 +2,18 @@ package httpapi
 
 import (
 	"context"
+	"encoding/json"
 	"net"
 	"net/http"
 	"sync"
 	"time"
 
+	"singbox-web/internal/audit"
 	"singbox-web/internal/auth"
 	"singbox-web/internal/capabilities"
 	"singbox-web/internal/profile"
+	"singbox-web/internal/publication"
+	"singbox-web/internal/validation"
 )
 
 const sessionCookieName = "sb_session"
@@ -36,10 +40,27 @@ type ProfileService interface {
 	RecordValidation(context.Context, string, uint64, profile.ValidationSummary) (profile.Profile, error)
 }
 
+type PreflightService interface {
+	ValidateDraft(draft profile.Draft) validation.Result
+}
+
+type PublicationService interface {
+	Publish(context.Context, publication.Request) (publication.Receipt, error)
+	ReadPublished(context.Context, string) (json.RawMessage, error)
+	Delete(context.Context, string, string) error
+}
+
+type Auditor interface {
+	Record(audit.Event)
+}
+
 type Dependencies struct {
 	Auth         AuthService
 	Capabilities CapabilityService
 	Profiles     ProfileService
+	Preflight    PreflightService
+	Publication  PublicationService
+	Auditor      Auditor
 	ConfigRoot   string
 	PublicOrigin string
 	TrustedProxy func(net.IP) bool
@@ -68,6 +89,10 @@ func New(deps Dependencies) http.Handler {
 	mux.HandleFunc("PATCH /api/v1/profiles/{id}", service.renameProfile)
 	mux.HandleFunc("GET /api/v1/profiles/{id}/draft", service.getDraft)
 	mux.HandleFunc("PUT /api/v1/profiles/{id}/draft", service.saveDraft)
+	mux.HandleFunc("POST /api/v1/profiles/{id}/validate", service.validateProfile)
+	mux.HandleFunc("POST /api/v1/profiles/{id}/publish", service.publishProfile)
+	mux.HandleFunc("GET /api/v1/profiles/{id}/export", service.exportProfile)
+	mux.HandleFunc("DELETE /api/v1/profiles/{id}", service.deleteProfile)
 	mux.HandleFunc("/api/v1/profiles/", service.profileRouteNotFound)
 
 	var handler http.Handler = mux

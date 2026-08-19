@@ -18,6 +18,7 @@ type APIError struct {
 	CurrentRevision *uint64            `json:"currentRevision,omitempty"`
 	Key             string             `json:"key,omitempty"`
 	Bytes           *int               `json:"bytes,omitempty"`
+	Stderr          string             `json:"stderr,omitempty"`
 }
 
 func writeJSON(response http.ResponseWriter, status int, value any) {

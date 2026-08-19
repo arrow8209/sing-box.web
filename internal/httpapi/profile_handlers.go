@@ -104,9 +104,13 @@ func (service *server) profileRouteNotFound(response http.ResponseWriter, reques
 	allow := ""
 	switch {
 	case len(segments) == 1:
-		allow = "PATCH"
+		allow = "DELETE, PATCH"
 	case len(segments) == 2 && segments[1] == "draft":
 		allow = "GET, PUT"
+	case len(segments) == 2 && (segments[1] == "validate" || segments[1] == "publish"):
+		allow = "POST"
+	case len(segments) == 2 && segments[1] == "export":
+		allow = "GET"
 	default:
 		writeNotFound(response)
 		return

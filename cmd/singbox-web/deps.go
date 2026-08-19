@@ -13,6 +13,7 @@ import (
 
 	"golang.org/x/term"
 
+	"singbox-web/internal/app"
 	"singbox-web/internal/auth"
 	"singbox-web/internal/cli"
 )
@@ -23,6 +24,20 @@ func dependencies() cli.Dependencies {
 		ReadPassword: newPasswordReader(os.Stdin),
 		SetPassword: func(_ context.Context, dataDir string, password []byte) error {
 			return auth.NewFileStore(filepath.Join(dataDir, "auth.json"), time.Now, rand.Reader).SetPassword(password)
+		},
+		Serve: func(ctx context.Context, options cli.ServeOptions) error {
+			return app.Run(ctx, app.Options{
+				Listen:            options.Listen,
+				DataDir:           options.DataDir,
+				ConfigRoot:        options.ConfigRoot,
+				SingBoxPath:       options.SingBoxPath,
+				ConfigGroup:       options.ConfigGroup,
+				AllowPublicListen: options.AllowPublicListen,
+				Development:       options.Development,
+				PublicOrigin:      options.PublicOrigin,
+				Version:           version,
+				LogOutput:         os.Stderr,
+			})
 		},
 	}
 }
