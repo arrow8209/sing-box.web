@@ -4,8 +4,10 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"strings"
 	"sync"
@@ -22,6 +24,13 @@ type fakeChecker struct {
 	version string
 	result  singbox.CheckResult
 	err     error
+}
+
+type checkOnlyErrorChecker struct{ cause error }
+
+func (checker checkOnlyErrorChecker) Version(context.Context) (string, error) { return "v", nil }
+func (checker checkOnlyErrorChecker) Check(context.Context, string) (singbox.CheckResult, error) {
+	return singbox.CheckResult{}, checker.cause
 }
 
 func (checker fakeChecker) Version(context.Context) (string, error) {
@@ -139,6 +148,107 @@ func TestFailedCheckDoesNotPublish(t *testing.T) {
 	}
 }
 
+func TestCheckErrorIsClassifiableWithoutLeakingText(t *testing.T) {
+	cause := fmt.Errorf("secret-token in /absolute/private/path: %w", singbox.ErrCheckFailed)
+	fixture := newPublicationFixture(t, checkOnlyErrorChecker{cause: cause})
+	_, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1})
+	if err == nil || strings.Contains(err.Error(), "secret-token") || strings.Contains(err.Error(), "/absolute/private/path") {
+		t.Fatalf("unsafe error = %v", err)
+	}
+	if !errors.Is(err, singbox.ErrCheckFailed) || !errors.Is(err, cause) {
+		t.Fatalf("error lost classification: %v", err)
+	}
+}
+
+func TestDirectoryCreationSyncOrderAndFailure(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	var calls []string
+	fixture.service.syncDirectory = func(path string) error { calls = append(calls, path); return nil }
+	if err := fixture.service.prepareRoot(); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.service.prepareProfileRoot(fixture.item.ID); err != nil {
+		t.Fatal(err)
+	}
+	want := []string{fixture.configRoot, filepath.Join(fixture.configRoot, ".generations"), fixture.configRoot, fixture.service.profileGenerationRoot(fixture.item.ID), filepath.Join(fixture.configRoot, ".generations")}
+	if !reflect.DeepEqual(calls, want) {
+		t.Fatalf("sync calls = %#v, want %#v", calls, want)
+	}
+
+	failed := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	wantErr := errors.New("sync failed")
+	failed.service.syncDirectory = func(path string) error {
+		if strings.HasSuffix(path, ".generations") {
+			return wantErr
+		}
+		return nil
+	}
+	if err := failed.service.prepareRoot(); !errors.Is(err, wantErr) {
+		t.Fatalf("prepareRoot error = %v", err)
+	}
+}
+
+func TestDeleteRejectsManagedContentDriftWithoutTouchingState(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	stable := filepath.Join(fixture.configRoot, fixture.item.Slug)
+	target, err := os.Readlink(stable)
+	if err != nil {
+		t.Fatal(err)
+	}
+	entries, err := os.ReadDir(filepath.Join(fixture.configRoot, target))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(fixture.configRoot, target, entries[0].Name()), []byte("{}\n"), 0o640); err != nil {
+		t.Fatal(err)
+	}
+	if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, ErrExternalDrift) {
+		t.Fatalf("Delete error = %v", err)
+	}
+	if got, err := os.Readlink(stable); err != nil || got != target {
+		t.Fatalf("stable changed: %q, %v", got, err)
+	}
+	if _, err := os.Lstat(filepath.Join(fixture.configRoot, target)); err != nil {
+		t.Fatalf("generation removed: %v", err)
+	}
+	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err != nil {
+		t.Fatalf("metadata removed: %v", err)
+	}
+	if _, err := os.Lstat(fixture.repo.DraftPath(fixture.item.ID)); err != nil {
+		t.Fatalf("draft removed: %v", err)
+	}
+}
+
+func TestDeleteDetectsReplacedPathRaceAndRestoresReplacement(t *testing.T) {
+	fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+	if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+		t.Fatal(err)
+	}
+	stable := filepath.Join(fixture.configRoot, fixture.item.Slug)
+	fixture.service.failpoint = func(stage string) error {
+		if stage == "before_delete_exchange" {
+			if err := os.Remove(stable); err != nil {
+				return err
+			}
+			return os.WriteFile(stable, []byte("replacement"), 0o600)
+		}
+		return nil
+	}
+	if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, ErrExternalDrift) {
+		t.Fatalf("Delete error = %v", err)
+	}
+	content, err := os.ReadFile(stable)
+	if err != nil || string(content) != "replacement" {
+		t.Fatalf("replacement changed: %q, %v", content, err)
+	}
+	if _, err := fixture.repo.Get(context.Background(), fixture.item.ID); err != nil {
+		t.Fatalf("metadata removed: %v", err)
+	}
+}
+
 func TestPublishRejectsUnmanagedStablePaths(t *testing.T) {
 	for _, makePath := range []func(string) error{
 		func(path string) error { return os.WriteFile(path, []byte("occupied"), 0o600) },
@@ -232,6 +342,18 @@ func TestRecoverAfterPublicationFailpoints(t *testing.T) {
 	for _, stage := range []string{"after_generation_rename", "after_link_swap", "after_metadata"} {
 		t.Run(stage, func(t *testing.T) {
 			fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+			if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+				t.Fatal(err)
+			}
+			profiles := profile.NewService(fixture.repo, nil, nil)
+			draft, err := profiles.GetDraft(context.Background(), fixture.item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			draft.Content.Config = []byte(`{"log":{"level":"debug"},"dns":{"strategy":"ipv4_only"}}`)
+			if _, err := profiles.SaveDraft(context.Background(), fixture.item.ID, 1, draft.Content); err != nil {
+				t.Fatal(err)
+			}
 			injected := errors.New("interrupt")
 			fixture.service.failpoint = func(got string) error {
 				if got == stage {
@@ -239,10 +361,10 @@ func TestRecoverAfterPublicationFailpoints(t *testing.T) {
 				}
 				return nil
 			}
-			if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); !errors.Is(err, injected) {
+			if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 2}); !errors.Is(err, injected) {
 				t.Fatalf("Publish error = %v", err)
 			}
-			fixture.service.failpoint = nil
+			fixture = reopenPublicationFixture(t, fixture)
 			if err := fixture.service.Recover(context.Background()); err != nil {
 				t.Fatal(err)
 			}
@@ -250,15 +372,62 @@ func TestRecoverAfterPublicationFailpoints(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if stage == "after_generation_rename" {
-				if got.PublishedRevision != nil {
-					t.Fatalf("unexpected recovered publication = %#v", got)
-				}
-				return
-			}
 			raw, err := fixture.service.ReadPublished(context.Background(), fixture.item.ID)
-			if err != nil || !bytes.Contains(raw, []byte(`"log"`)) {
+			if err != nil {
 				t.Fatalf("recovered config = %s, %v", raw, err)
+			}
+			wantRevision := uint64(2)
+			wantLevel, wantStrategy := "debug", "ipv4_only"
+			if stage == "after_generation_rename" {
+				wantRevision, wantLevel, wantStrategy = 1, "info", "prefer_ipv4"
+			}
+			if got.PublishedRevision == nil || *got.PublishedRevision != wantRevision || !bytes.Contains(raw, []byte(`"level":"`+wantLevel+`"`)) || !bytes.Contains(raw, []byte(`"strategy":"`+wantStrategy+`"`)) {
+				t.Fatalf("mixed recovery: profile=%#v config=%s", got, raw)
+			}
+			target, err := os.Readlink(filepath.Join(fixture.configRoot, fixture.item.Slug))
+			if err != nil {
+				t.Fatal(err)
+			}
+			if _, err := os.Lstat(filepath.Join(fixture.configRoot, target)); err != nil {
+				t.Fatalf("referenced generation removed: %v", err)
+			}
+		})
+	}
+}
+
+func TestDeleteInterruptionRecoversFromAbsentStableLink(t *testing.T) {
+	for _, interruptStage := range []string{"after_delete_link", "before_delete_metadata"} {
+		t.Run(interruptStage, func(t *testing.T) {
+			fixture := newPublicationFixture(t, fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}})
+			if _, err := fixture.service.Publish(context.Background(), Request{ProfileID: fixture.item.ID, ExpectedRevision: 1}); err != nil {
+				t.Fatal(err)
+			}
+			injected := errors.New("interrupt")
+			fixture.service.failpoint = func(stage string) error {
+				if stage == interruptStage {
+					return injected
+				}
+				return nil
+			}
+			if err := fixture.service.Delete(context.Background(), fixture.item.ID, fixture.item.Name); !errors.Is(err, injected) {
+				t.Fatalf("Delete error = %v", err)
+			}
+			fixture = reopenPublicationFixture(t, fixture)
+			if err := fixture.service.Recover(context.Background()); err != nil {
+				t.Fatal(err)
+			}
+			got, err := fixture.repo.Get(context.Background(), fixture.item.ID)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if got.PublishedRevision != nil {
+				t.Fatalf("publication metadata not cleared: %#v", got)
+			}
+			if entries, err := os.ReadDir(fixture.service.profileGenerationRoot(fixture.item.ID)); err == nil && len(entries) != 0 {
+				t.Fatalf("generation entries remain: %#v", entries)
+			}
+			if _, err := os.Lstat(fixture.repo.DraftPath(fixture.item.ID)); err != nil {
+				t.Fatalf("draft removed: %v", err)
 			}
 		})
 	}
@@ -337,17 +506,20 @@ type publicationFixture struct {
 	repo       *profile.Repository
 	item       profile.Profile
 	configRoot string
+	dataDir    string
+	now        func() time.Time
 }
 
 func newPublicationFixture(t *testing.T, checker Checker) publicationFixture {
 	t.Helper()
 	now := func() time.Time { return time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC) }
-	repo, err := profile.OpenRepository(t.TempDir(), now)
+	dataDir := t.TempDir()
+	repo, err := profile.OpenRepository(dataDir, now)
 	if err != nil {
 		t.Fatal(err)
 	}
 	item := profile.Profile{ID: "01010101010101010101010101010101", Name: "Primary", Slug: "primary", DraftRevision: 1}
-	draft := profile.Draft{ProfileID: item.ID, Revision: 1, Content: profile.DraftContent{Config: []byte(`{"log":{"level":"info"}}`), EditorBuffers: map[string]profile.EditorBuffer{}}}
+	draft := profile.Draft{ProfileID: item.ID, Revision: 1, Content: profile.DraftContent{Config: []byte(`{"log":{"level":"info"},"dns":{"strategy":"prefer_ipv4"}}`), EditorBuffers: map[string]profile.EditorBuffer{}}}
 	if err := repo.Insert(context.Background(), item, draft); err != nil {
 		t.Fatal(err)
 	}
@@ -356,5 +528,20 @@ func newPublicationFixture(t *testing.T, checker Checker) publicationFixture {
 		t.Fatal(err)
 	}
 	configRoot := filepath.Join(t.TempDir(), "config")
-	return publicationFixture{repo: repo, item: item, configRoot: configRoot, service: NewService(Options{ConfigRoot: configRoot, Profiles: repo, Preflight: validation.NewService(schema, "target", now), Checker: checker, Now: now, Random: bytes.NewReader(bytes.Repeat([]byte{1}, 1024)), FileMode: 0o640, DirMode: 0o750})}
+	return publicationFixture{repo: repo, item: item, configRoot: configRoot, dataDir: dataDir, now: now, service: NewService(Options{ConfigRoot: configRoot, Profiles: repo, Preflight: validation.NewService(schema, "target", now), Checker: checker, Now: now, Random: bytes.NewReader(bytes.Repeat([]byte{1}, 1024)), FileMode: 0o640, DirMode: 0o750})}
+}
+
+func reopenPublicationFixture(t *testing.T, fixture publicationFixture) publicationFixture {
+	t.Helper()
+	repo, err := profile.OpenRepository(fixture.dataDir, fixture.now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	schema, err := validation.NewSchemaValidator([]byte(`{"type":"object"}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	fixture.repo = repo
+	fixture.service = NewService(Options{ConfigRoot: fixture.configRoot, Profiles: repo, Preflight: validation.NewService(schema, "target", fixture.now), Checker: fakeChecker{version: "v", result: singbox.CheckResult{Valid: true}}, Now: fixture.now, Random: bytes.NewReader(bytes.Repeat([]byte{2}, 1024)), FileMode: 0o640, DirMode: 0o750})
+	return fixture
 }

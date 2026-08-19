@@ -70,6 +70,7 @@ type Service struct {
 	stateMu          sync.RWMutex
 	recoveryRequired bool
 	failpoint        func(stage string) error
+	syncDirectory    func(string) error
 }
 
 func NewService(options Options) *Service {
@@ -79,8 +80,13 @@ func NewService(options Options) *Service {
 	if options.DirMode == 0 {
 		options.DirMode = 0o750
 	}
-	return &Service{options: options, locks: make(map[string]*sync.Mutex)}
+	return &Service{options: options, locks: make(map[string]*sync.Mutex), syncDirectory: syncDirectory}
 }
+
+type CheckerError struct{ cause error }
+
+func (err *CheckerError) Error() string { return "sing-box check 失败" }
+func (err *CheckerError) Unwrap() error { return err.cause }
 
 func (service *Service) Publish(ctx context.Context, request Request) (Receipt, error) {
 	service.operationMu.RLock()
@@ -185,7 +191,7 @@ func (service *Service) Publish(ctx context.Context, request Request) (Receipt, 
 			return Receipt{}, recordErr
 		}
 		if checkErr != nil {
-			return Receipt{}, checkErr
+			return Receipt{}, &CheckerError{cause: checkErr}
 		}
 		return Receipt{}, ErrValidationFailed
 	}
@@ -415,21 +421,32 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 	if confirmName == "" || confirmName != item.Name {
 		return fmt.Errorf("profile name confirmation does not match")
 	}
-	_, exists, managed, _, err := service.inspectStable(item)
+	target, exists, managed, drift, err := service.inspectStable(item)
 	if err != nil {
 		return err
 	}
 	if exists && !managed {
 		return ErrExternalDrift
 	}
+	if drift {
+		return ErrExternalDrift
+	}
 	if item.PublishedRevision != nil && !exists {
 		return ErrExternalDrift
 	}
 	if exists {
-		if err := os.Remove(filepath.Join(service.options.ConfigRoot, item.Slug)); err != nil {
+		stableInfo, err := os.Lstat(filepath.Join(service.options.ConfigRoot, item.Slug))
+		if err != nil || stableInfo.Mode()&os.ModeSymlink == 0 {
+			return ErrExternalDrift
+		}
+		stableTarget, err := os.Readlink(filepath.Join(service.options.ConfigRoot, item.Slug))
+		if err != nil || stableTarget != target {
+			return ErrExternalDrift
+		}
+		if err := service.deleteStable(item.Slug, target, stableInfo); err != nil {
 			return err
 		}
-		if err := syncDirectory(service.options.ConfigRoot); err != nil {
+		if err := service.callFailpoint("after_delete_link"); err != nil {
 			return err
 		}
 	}
@@ -441,6 +458,9 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 		if err := os.RemoveAll(profileRoot); err != nil {
 			return err
 		}
+		if err := service.callFailpoint("after_delete_generations"); err != nil {
+			return err
+		}
 	} else if !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
@@ -449,6 +469,9 @@ func (service *Service) Delete(ctx context.Context, profileID, confirmName strin
 		if err := syncDirectory(generationsRoot); err != nil {
 			return err
 		}
+	}
+	if err := service.callFailpoint("before_delete_metadata"); err != nil {
+		return err
 	}
 	return service.options.Profiles.RemoveMetadata(ctx, profileID)
 }
@@ -475,15 +498,16 @@ func (service *Service) loadDraft(ctx context.Context, item profile.Profile, exp
 }
 
 func (service *Service) prepareRoot() error {
-	if err := os.MkdirAll(service.options.ConfigRoot, service.options.DirMode); err != nil {
-		return err
-	}
-	if err := ensureDirectory(service.options.ConfigRoot, service.options.DirMode, nil); err != nil {
+	if _, err := ensureDirectory(service.options.ConfigRoot, service.options.DirMode, nil, service.syncDirectory); err != nil {
 		return err
 	}
 	generations := filepath.Join(service.options.ConfigRoot, ".generations")
-	if err := ensureDirectory(generations, service.options.DirMode, service.options.GroupID); err != nil {
+	created, err := ensureDirectory(generations, service.options.DirMode, service.options.GroupID, service.syncDirectory)
+	if err != nil {
 		return err
+	}
+	if created {
+		return service.syncDirectory(service.options.ConfigRoot)
 	}
 	return nil
 }
@@ -496,7 +520,14 @@ func (service *Service) profileGenerationRoot(id string) string {
 }
 
 func (service *Service) prepareProfileRoot(id string) error {
-	return ensureDirectory(service.profileGenerationRoot(id), service.options.DirMode, service.options.GroupID)
+	created, err := ensureDirectory(service.profileGenerationRoot(id), service.options.DirMode, service.options.GroupID, service.syncDirectory)
+	if err != nil {
+		return err
+	}
+	if created {
+		return service.syncDirectory(filepath.Join(service.options.ConfigRoot, ".generations"))
+	}
+	return nil
 }
 
 func (service *Service) inspectStable(item profile.Profile) (string, bool, bool, bool, error) {
@@ -641,6 +672,90 @@ func (service *Service) swapLink(slug, target, expectedOldTarget string, existed
 		return err
 	}
 	return syncDirectory(service.options.ConfigRoot)
+}
+
+func (service *Service) deleteStable(slug, expectedTarget string, expectedInfo fs.FileInfo) error {
+	tempName, err := service.randomName(".delete-")
+	if err != nil {
+		return err
+	}
+	temp := filepath.Join(service.options.ConfigRoot, tempName)
+	stable := filepath.Join(service.options.ConfigRoot, slug)
+	markerTarget := tempName + ".removed"
+	if err := os.Symlink(markerTarget, temp); err != nil {
+		return err
+	}
+	markerInfo, err := os.Lstat(temp)
+	if err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	if err := service.callFailpoint("before_delete_exchange"); err != nil {
+		_ = os.Remove(temp)
+		return err
+	}
+	if err := unix.Renameat2(unix.AT_FDCWD, temp, unix.AT_FDCWD, stable, unix.RENAME_EXCHANGE); err != nil {
+		_ = os.Remove(temp)
+		return ErrExternalDrift
+	}
+	swappedInfo, lstatErr := os.Lstat(temp)
+	swappedTarget, readErr := os.Readlink(temp)
+	if lstatErr != nil || swappedInfo.Mode()&os.ModeSymlink == 0 || readErr != nil || swappedTarget != expectedTarget || !os.SameFile(expectedInfo, swappedInfo) {
+		rollbackErr := unix.Renameat2(unix.AT_FDCWD, temp, unix.AT_FDCWD, stable, unix.RENAME_EXCHANGE)
+		if rollbackErr != nil {
+			service.setRecoveryRequired(true)
+			return fmt.Errorf("%w: delete path rollback failed", ErrRecoveryRequired)
+		}
+		_ = os.Remove(temp)
+		_ = service.syncDirectory(service.options.ConfigRoot)
+		return ErrExternalDrift
+	}
+	removedName, err := service.randomName(".deleted-")
+	if err != nil {
+		return err
+	}
+	removed := filepath.Join(service.options.ConfigRoot, removedName)
+	if err := unix.Renameat2(unix.AT_FDCWD, stable, unix.AT_FDCWD, removed, unix.RENAME_NOREPLACE); err != nil {
+		rollbackErr := unix.Renameat2(unix.AT_FDCWD, temp, unix.AT_FDCWD, stable, unix.RENAME_EXCHANGE)
+		_ = os.Remove(temp)
+		_ = service.syncDirectory(service.options.ConfigRoot)
+		if rollbackErr != nil {
+			service.setRecoveryRequired(true)
+			return fmt.Errorf("%w: delete removal rollback failed", ErrRecoveryRequired)
+		}
+		return err
+	}
+	removedInfo, lstatErr := os.Lstat(removed)
+	removedTarget, readErr := os.Readlink(removed)
+	if lstatErr != nil || removedInfo.Mode()&os.ModeSymlink == 0 || readErr != nil || removedTarget != markerTarget || !os.SameFile(markerInfo, removedInfo) {
+		restoreErr := unix.Renameat2(unix.AT_FDCWD, removed, unix.AT_FDCWD, stable, unix.RENAME_NOREPLACE)
+		_ = os.Remove(temp)
+		_ = service.syncDirectory(service.options.ConfigRoot)
+		if restoreErr != nil {
+			service.setRecoveryRequired(true)
+			return fmt.Errorf("%w: raced delete replacement rollback failed", ErrRecoveryRequired)
+		}
+		return ErrExternalDrift
+	}
+	if err := os.Remove(removed); err != nil {
+		restoreErr := os.Rename(removed, stable)
+		_ = service.syncDirectory(service.options.ConfigRoot)
+		if restoreErr != nil {
+			service.setRecoveryRequired(true)
+			return fmt.Errorf("%w: delete marker rollback failed", ErrRecoveryRequired)
+		}
+		return err
+	}
+	if err := os.Remove(temp); err != nil {
+		rollbackErr := os.Rename(temp, stable)
+		_ = service.syncDirectory(service.options.ConfigRoot)
+		if rollbackErr != nil {
+			service.setRecoveryRequired(true)
+			return fmt.Errorf("%w: delete tombstone cleanup rollback failed", ErrRecoveryRequired)
+		}
+		return err
+	}
+	return service.syncDirectory(service.options.ConfigRoot)
 }
 
 func (service *Service) restoreLink(slug, target, expectedCurrentTarget string, existed bool) error {

@@ -21,29 +21,32 @@ func syncDirectory(path string) error {
 	return directory.Sync()
 }
 
-func ensureDirectory(path string, mode fs.FileMode, groupID *int) error {
+func ensureDirectory(path string, mode fs.FileMode, groupID *int, syncDirectory func(string) error) (bool, error) {
 	info, err := os.Lstat(path)
 	if errors.Is(err, os.ErrNotExist) {
-		if err := os.Mkdir(path, mode); err != nil {
-			return err
+		if err := os.MkdirAll(path, mode); err != nil {
+			return false, err
 		}
 		if err := os.Chmod(path, mode); err != nil {
-			return err
+			return false, err
 		}
 		if groupID != nil {
 			if err := os.Chown(path, -1, *groupID); err != nil {
-				return err
+				return false, err
 			}
 		}
-		return nil
+		if err := syncDirectory(path); err != nil {
+			return false, err
+		}
+		return true, nil
 	}
 	if err != nil {
-		return err
+		return false, err
 	}
 	if !info.IsDir() || info.Mode()&os.ModeSymlink != 0 {
-		return fmt.Errorf("%s is not a real directory", path)
+		return false, fmt.Errorf("%s is not a real directory", path)
 	}
-	return nil
+	return false, nil
 }
 
 func writeModules(path string, files []configdoc.ModuleFile, mode fs.FileMode, groupID *int) error {
