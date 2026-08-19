@@ -204,6 +204,65 @@ func TestDraftModuleByteLimits(t *testing.T) {
 	assertAPIError(t, overBuffer, http.StatusRequestEntityTooLarge, "module_too_large")
 }
 
+func TestDraftModuleLimitCannotBeBypassedWithDuplicateKeys(t *testing.T) {
+	h := newProfileHarness(t)
+	created := h.request(http.MethodPost, "/api/v1/profiles", `{"name":"主配置","slug":"primary"}`)
+	var item ProfileResponse
+	_ = json.Unmarshal(created.Body.Bytes(), &item)
+	save := func(revision uint64, body string) *httptest.ResponseRecorder {
+		request := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/"+item.ID+"/draft", strings.NewReader(body))
+		request.Header.Set("Origin", "https://admin.example")
+		request.Header.Set("X-CSRF-Token", h.csrf)
+		request.Header.Set("If-Match", draftETag(revision))
+		request.AddCookie(h.cookie)
+		response := httptest.NewRecorder()
+		h.handler.ServeHTTP(response, request)
+		return response
+	}
+	overValue := `"` + strings.Repeat("secret", (maxModuleBytes/6)+1) + `"`
+	bypass := save(1, `{"config":{"duplicate":`+overValue+`,"duplicate":0},"editorBuffers":{}}`)
+	if bypass.Code != http.StatusRequestEntityTooLarge || strings.Contains(bypass.Body.String(), "secret") {
+		t.Fatalf("duplicate bypass status=%d bodyBytes=%d", bypass.Code, bypass.Body.Len())
+	}
+	duplicate := save(1, `{"config":{"duplicate":0,"duplicate":1},"editorBuffers":{}}`)
+	assertAPIError(t, duplicate, http.StatusUnprocessableEntity, "validation_failed")
+
+	multibyteContent := strings.Repeat("界", 333_332) + "ab"
+	if len([]byte(multibyteContent))+2 != maxModuleBytes {
+		t.Fatalf("test value bytes=%d", len([]byte(multibyteContent))+2)
+	}
+	exact := save(1, `{"config":{"多字节":"`+multibyteContent+`"},"editorBuffers":{}}`)
+	if exact.Code != http.StatusOK || exact.Header().Get("ETag") != `"draft-2"` {
+		t.Fatalf("exact multibyte status=%d etag=%q bodyBytes=%d", exact.Code, exact.Header().Get("ETag"), exact.Body.Len())
+	}
+	over := save(2, `{"config":{"多字节":"`+multibyteContent+`c"},"editorBuffers":{}}`)
+	if over.Code != http.StatusRequestEntityTooLarge || strings.Contains(over.Body.String(), "界") {
+		t.Fatalf("over multibyte status=%d body=%q", over.Code, over.Body.String())
+	}
+}
+
+func TestProfileDynamicRouteMethodMatrix(t *testing.T) {
+	h := newProfileHarness(t)
+	created := h.request(http.MethodPost, "/api/v1/profiles", `{"name":"主配置","slug":"primary"}`)
+	var item ProfileResponse
+	_ = json.Unmarshal(created.Body.Bytes(), &item)
+
+	profileDelete := h.request(http.MethodDelete, "/api/v1/profiles/"+item.ID, "")
+	assertAPIError(t, profileDelete, http.StatusMethodNotAllowed, "method_not_allowed")
+	if profileDelete.Header().Get("Allow") != "PATCH" {
+		t.Fatalf("profile Allow=%q", profileDelete.Header().Get("Allow"))
+	}
+	draftPost := h.request(http.MethodPost, "/api/v1/profiles/"+item.ID+"/draft", "")
+	assertAPIError(t, draftPost, http.StatusMethodNotAllowed, "method_not_allowed")
+	if draftPost.Header().Get("Allow") != "GET, PUT" {
+		t.Fatalf("draft Allow=%q", draftPost.Header().Get("Allow"))
+	}
+	unknownID := strings.Repeat("a", 32)
+	assertAPIError(t, h.request(http.MethodDelete, "/api/v1/profiles/"+unknownID, ""), http.StatusNotFound, "not_found")
+	assertAPIError(t, h.request(http.MethodDelete, "/api/v1/profiles/not-an-id", ""), http.StatusNotFound, "not_found")
+	assertAPIError(t, h.request(http.MethodGet, "/api/v1/profiles/"+item.ID+"/unknown", ""), http.StatusNotFound, "not_found")
+}
+
 func TestDraftCorruptIsReadOnlyAndUnchanged(t *testing.T) {
 	h := newProfileHarness(t)
 	created := h.request(http.MethodPost, "/api/v1/profiles", `{"name":"主配置","slug":"primary"}`)

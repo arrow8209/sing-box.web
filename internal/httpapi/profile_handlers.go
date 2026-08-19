@@ -1,11 +1,13 @@
 package httpapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -96,8 +98,28 @@ func (service *server) createProfile(response http.ResponseWriter, request *http
 	writeJSON(response, http.StatusCreated, result)
 }
 
-func (service *server) profileRouteNotFound(response http.ResponseWriter, _ *http.Request) {
-	writeNotFound(response)
+func (service *server) profileRouteNotFound(response http.ResponseWriter, request *http.Request) {
+	relative := strings.TrimPrefix(request.URL.Path, "/api/v1/profiles/")
+	segments := strings.Split(relative, "/")
+	allow := ""
+	switch {
+	case len(segments) == 1:
+		allow = "PATCH"
+	case len(segments) == 2 && segments[1] == "draft":
+		allow = "GET, PUT"
+	default:
+		writeNotFound(response)
+		return
+	}
+	if !validProfileID(segments[0]) || service.deps.Profiles == nil {
+		writeNotFound(response)
+		return
+	}
+	if _, ok := service.profileExists(request.Context(), segments[0]); !ok {
+		writeNotFound(response)
+		return
+	}
+	writeMethodNotAllowed(response, allow)
 }
 
 func (service *server) listProfiles(response http.ResponseWriter, request *http.Request) {
@@ -174,6 +196,10 @@ func (service *server) getDraft(response http.ResponseWriter, request *http.Requ
 	}
 	if _, ok := service.profileExists(request.Context(), id); !ok {
 		writeNotFound(response)
+		return
+	}
+	if request.Method != http.MethodGet {
+		writeMethodNotAllowed(response, "GET, PUT")
 		return
 	}
 	draft, err := service.deps.Profiles.GetDraft(request.Context(), id)
@@ -285,14 +311,40 @@ func parseDraftETag(values []string) (uint64, bool) {
 func draftETag(revision uint64) string { return fmt.Sprintf(`"draft-%d"`, revision) }
 
 func oversizedDraftPart(input draftRequest) (string, int, bool, error) {
-	var modules map[string]json.RawMessage
-	if err := json.Unmarshal(input.Config, &modules); err != nil || modules == nil {
+	decoder := json.NewDecoder(bytes.NewReader(input.Config))
+	decoder.UseNumber()
+	opening, err := decoder.Token()
+	if err != nil || opening != json.Delim('{') {
 		return "", 0, false, errors.New("config must be an object")
 	}
-	for key, value := range modules {
+	seen := make(map[string]struct{})
+	for decoder.More() {
+		token, err := decoder.Token()
+		if err != nil {
+			return "", 0, false, errors.New("invalid config member")
+		}
+		key, ok := token.(string)
+		if !ok {
+			return "", 0, false, errors.New("invalid config key")
+		}
+		var value json.RawMessage
+		if err := decoder.Decode(&value); err != nil {
+			return "", 0, false, errors.New("invalid config value")
+		}
 		if len(value) > maxModuleBytes {
 			return safeErrorKey(key), len(value), true, nil
 		}
+		if _, exists := seen[key]; exists {
+			return "", 0, false, errors.New("duplicate config key")
+		}
+		seen[key] = struct{}{}
+	}
+	closing, err := decoder.Token()
+	if err != nil || closing != json.Delim('}') {
+		return "", 0, false, errors.New("invalid config object")
+	}
+	if err := decoder.Decode(&struct{}{}); !errors.Is(err, io.EOF) {
+		return "", 0, false, errors.New("config contains trailing value")
 	}
 	for key, value := range input.EditorBuffers {
 		if len([]byte(value.Text)) > maxModuleBytes {
@@ -320,6 +372,11 @@ func isValidationError(err error) bool {
 
 func writeNotFound(response http.ResponseWriter) {
 	writeAPIError(response, http.StatusNotFound, "not_found", "资源不存在")
+}
+
+func writeMethodNotAllowed(response http.ResponseWriter, allow string) {
+	response.Header().Set("Allow", allow)
+	writeAPIError(response, http.StatusMethodNotAllowed, "method_not_allowed", "请求方法不受支持")
 }
 
 func writeInternalError(response http.ResponseWriter) {
