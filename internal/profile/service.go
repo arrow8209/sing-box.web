@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"sync"
@@ -71,6 +72,9 @@ func (service *Service) Create(ctx context.Context, input CreateInput) (Profile,
 	}
 	draft, err = service.repo.insert(ctx, item, draft)
 	if err != nil {
+		if errors.Is(err, ErrIndexDurabilityUncertain) {
+			return cloneProfile(item), cloneDraft(draft), err
+		}
 		return Profile{}, Draft{}, err
 	}
 	return cloneProfile(item), cloneDraft(draft), nil

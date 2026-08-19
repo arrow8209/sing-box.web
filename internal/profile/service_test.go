@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"singbox-web/internal/assets"
+	"singbox-web/internal/atomicfile"
 	"singbox-web/internal/configdoc"
 )
 
@@ -159,6 +160,91 @@ func TestServiceConcurrentCreateIsRaceSafe(t *testing.T) {
 	}
 }
 
+func TestServiceCreateReturnsCreatedValuesWithDurabilityError(t *testing.T) {
+	dir := t.TempDir()
+	repo, err := OpenRepository(dir, time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	wantErr := errors.New("directory sync failed")
+	repo.writeIndexFile = func(path string, disk indexFile) error {
+		if err := atomicfile.WriteJSON(path, 0o600, disk); err != nil {
+			return err
+		}
+		return wantErr
+	}
+	template, err := configdoc.LoadTemplate(assets.DefaultConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(repo, template, bytes.NewReader(bytes.Repeat([]byte{7}, 256)))
+	item, draft, err := service.Create(context.Background(), CreateInput{Name: "Primary", Slug: "primary"})
+	if !errors.Is(err, ErrIndexDurabilityUncertain) || !errors.Is(err, wantErr) {
+		t.Fatalf("Create error = %v", err)
+	}
+	if item.ID == "" || draft.ProfileID != item.ID || draft.Revision != 1 {
+		t.Fatalf("Create values = %#v, %#v", item, draft)
+	}
+	items, listErr := service.List(context.Background())
+	if listErr != nil || len(items) != 1 || items[0].ID != item.ID {
+		t.Fatalf("List = %#v, %v", items, listErr)
+	}
+	got, getErr := service.Get(context.Background(), item.ID)
+	if getErr != nil || got.ID != item.ID {
+		t.Fatalf("Get = %#v, %v", got, getErr)
+	}
+	reopened, openErr := OpenRepository(dir, time.Now)
+	if openErr != nil {
+		t.Fatal(openErr)
+	}
+	got, getErr = reopened.Get(context.Background(), item.ID)
+	if getErr != nil || got.ID != item.ID {
+		t.Fatalf("reopened Get = %#v, %v", got, getErr)
+	}
+}
+
+func TestServiceCreateReturnsZeroValuesWhenIndexWasNotCommitted(t *testing.T) {
+	service, repo := newServiceWithRepository(t)
+	wantErr := errors.New("rename failed")
+	repo.writeIndexFile = func(string, indexFile) error { return wantErr }
+	item, draft, err := service.Create(context.Background(), CreateInput{Name: "Primary", Slug: "primary"})
+	if !errors.Is(err, wantErr) || errors.Is(err, ErrIndexDurabilityUncertain) {
+		t.Fatalf("Create error = %v", err)
+	}
+	if item != (Profile{}) || draft.ProfileID != "" {
+		t.Fatalf("Create values = %#v, %#v", item, draft)
+	}
+	items, err := repo.List(context.Background())
+	if err != nil || len(items) != 0 {
+		t.Fatalf("List = %#v, %v", items, err)
+	}
+}
+
+func TestServiceCreateReturnsZeroValuesAndFreezesWhenIndexStateIsUncertain(t *testing.T) {
+	service, repo := newServiceWithRepository(t)
+	wantErr := errors.New("uncertain write failure")
+	backupPath := repo.indexPath + ".backup"
+	repo.writeIndexFile = func(path string, _ indexFile) error {
+		if err := os.Rename(path, backupPath); err != nil {
+			return err
+		}
+		if err := os.Mkdir(path, 0o700); err != nil {
+			return err
+		}
+		return wantErr
+	}
+	item, draft, err := service.Create(context.Background(), CreateInput{Name: "Primary", Slug: "primary"})
+	if !errors.Is(err, wantErr) || errors.Is(err, ErrIndexDurabilityUncertain) {
+		t.Fatalf("Create error = %v", err)
+	}
+	if item != (Profile{}) || draft.ProfileID != "" {
+		t.Fatalf("Create values = %#v, %#v", item, draft)
+	}
+	if _, err := repo.List(context.Background()); err == nil {
+		t.Fatal("List succeeded while repository requires recovery")
+	}
+}
+
 type failingReader struct{}
 
 func (failingReader) Read([]byte) (int, error) { return 0, io.ErrUnexpectedEOF }
@@ -174,4 +260,18 @@ func newTestService(t *testing.T, random io.Reader) *Service {
 		t.Fatal(err)
 	}
 	return NewService(repo, template, random)
+}
+
+func newServiceWithRepository(t *testing.T) (*Service, *Repository) {
+	t.Helper()
+	repo, err := OpenRepository(t.TempDir(), time.Now)
+	if err != nil {
+		t.Fatal(err)
+	}
+	template, err := configdoc.LoadTemplate(assets.DefaultConfig)
+	if err != nil {
+		t.Fatal(err)
+	}
+	service := NewService(repo, template, bytes.NewReader(bytes.Repeat([]byte{8}, 256)))
+	return service, repo
 }

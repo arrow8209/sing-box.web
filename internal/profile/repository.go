@@ -22,6 +22,10 @@ const indexVersion = 1
 
 var slugPattern = regexp.MustCompile(`^[a-z0-9][a-z0-9-]{0,62}$`)
 
+// ErrIndexDurabilityUncertain means the new index is visible, but its durability
+// could not be confirmed. The operation's returned profile values are valid.
+var ErrIndexDurabilityUncertain = errors.New("profile index durability is uncertain")
+
 type indexFile struct {
 	Version  int       `json:"version"`
 	Profiles []Profile `json:"profiles"`
@@ -275,7 +279,7 @@ func (repo *Repository) commitIndex(profiles []Profile) (indexCommitStatus, erro
 		return indexUncertain, repo.stateErr
 	}
 	if current.Version == indexVersion && profilesEqual(current.Profiles, profiles) {
-		return indexReplaced, fmt.Errorf("profile index was replaced but durability confirmation failed: %w", writeErr)
+		return indexReplaced, fmt.Errorf("%w: profile index was replaced but persistence confirmation failed: %w", ErrIndexDurabilityUncertain, writeErr)
 	}
 	if current.Version == indexVersion && profilesEqual(current.Profiles, repo.profiles) {
 		return indexNotReplaced, fmt.Errorf("write profile index: %w", writeErr)
