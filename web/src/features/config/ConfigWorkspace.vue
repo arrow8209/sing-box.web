@@ -8,6 +8,10 @@ import RawModuleEditor from "./components/RawModuleEditor.vue";
 import GeneralEditor from "./editors/GeneralEditor.vue";
 import DNSEditor from "./editors/DNSEditor.vue";
 import AdvancedEditor from "./editors/AdvancedEditor.vue";
+import InboundsEditor from "./editors/InboundsEditor.vue";
+import OutboundsEditor from "./editors/OutboundsEditor.vue";
+import RouteEditor from "./editors/RouteEditor.vue";
+import CollectionJSONEditor from "./editors/CollectionJSONEditor.vue";
 
 const route = useRoute();
 const draft = useDraftStore();
@@ -50,6 +54,17 @@ const structuredAvailable = computed(() => {
 function rawEditorAccessibleName(): string {
   return `${activeDescriptor.value.shortLabel} JSON`;
 }
+
+const collectionRows = computed(() => {
+  const topKey = topLevelKey(activeModule.value);
+  const value = draft.draft?.content.config[topKey];
+  return Array.isArray(value) ? value : [];
+});
+
+function replaceCollection(rows: unknown[]): void {
+  // 集合编辑器已在 draft store 内提交 canonical 变更，这里只保留视图同步。
+  void rows;
+}
 </script>
 
 <template>
@@ -80,9 +95,18 @@ function rawEditorAccessibleName(): string {
       <section v-else-if="structuredAvailable" class="structured-pane">
         <GeneralEditor v-if="activeModule === 'general'" />
         <DNSEditor v-else-if="activeModule === 'dns'" />
+        <InboundsEditor v-else-if="activeModule === 'inbounds'" />
+        <OutboundsEditor v-else-if="activeModule === 'outbounds'" />
+        <RouteEditor v-else-if="activeModule === 'routing'" />
         <AdvancedEditor v-else-if="activeModule === 'advanced'" />
+        <CollectionJSONEditor
+          v-else-if="activeModule === 'endpoints' || activeModule === 'services'"
+          :module="topLevelKey(activeModule)"
+          :model-value="collectionRows"
+          @update:model-value="replaceCollection"
+        />
         <p v-else class="workspace-note">
-          {{ activeDescriptor.label }} 模块将在后续任务中提供结构化编辑，当前可使用右上角的 JSON 编辑。
+          {{ activeDescriptor.label }} 模块可使用右上角的 JSON 编辑。
         </p>
       </section>
       <p v-else class="workspace-note">

@@ -65,7 +65,7 @@ export const useDraftStore = defineStore("draft", {
         throw error;
       }
     },
-    replaceConfig(config: Record<string, unknown>): void {
+    replaceConfig(config: Record<string, unknown>, bufferRemap?: Record<string, string>): void {
       if (this.status === "error") {
         // 损坏草稿拒绝本地变更：绝不能从浏览器状态修复服务器文件。
         return;
@@ -81,14 +81,46 @@ export const useDraftStore = defineStore("draft", {
           buffers[module] = { ...buffer, text: this.formatModule(module, config) };
         }
       }
+      // 集合行重排/删除时同步迁移索引缓冲区键（module/0、module/1 …）。
+      if (bufferRemap !== undefined) {
+        for (const [from, to] of Object.entries(bufferRemap)) {
+          const buffer = buffers[from];
+          if (buffer !== undefined) {
+            buffers[to] = buffer;
+          }
+          delete buffers[from];
+        }
+      }
       next.content = { ...next.content, config, editorBuffers: buffers };
       this.draft = next;
       this.status = "dirty";
       this.scheduleSave();
     },
     formatModule(module: string, config: Record<string, unknown>): string {
-      // 缓冲区键与后端一致，使用顶层模块键（如 log、dns、experimental）。
+      // 缓冲区键与后端一致，使用顶层模块键（如 log、dns、experimental）；
+      // 索引键（如 outbounds/0）按集合行格式化。
+      const slash = module.indexOf("/");
+      if (slash !== -1) {
+        const collection = config[module.slice(0, slash)];
+        const index = Number(module.slice(slash + 1));
+        const row = Array.isArray(collection) ? collection[index] : undefined;
+        return JSON.stringify(row ?? null, null, 2);
+      }
       return JSON.stringify(config[module] ?? null, null, 2);
+    },
+    /** 单次变更同时更新规范配置与缓冲区（集合行编辑/重排/删除用，避免中间状态分叉）。 */
+    updateConfigWithBuffers(
+      config: Record<string, unknown>,
+      buffers: Record<string, { text: string; valid: boolean; applied: boolean }>,
+    ): void {
+      if (this.status === "error" || this.draft === null) {
+        return;
+      }
+      const next = cloneDraft(this.draft);
+      next.content = { config, editorBuffers: { ...next.content.editorBuffers, ...buffers } };
+      this.draft = next;
+      this.status = "dirty";
+      this.scheduleSave();
     },
     /** 用户选择放弃未应用 JSON：以规范配置重新生成缓冲区文本并标记有效已应用。 */
     discardUnappliedBuffer(module: string): void {
