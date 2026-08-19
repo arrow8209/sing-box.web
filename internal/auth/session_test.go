@@ -54,6 +54,29 @@ func TestPasswordChangeInvalidatesExistingSession(t *testing.T) {
 	}
 }
 
+func TestSessionManagerChangePasswordDelegatesAndInvalidatesSession(t *testing.T) {
+	current := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
+	random := bytes.NewReader(bytes.Repeat([]byte{31}, 4096))
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), func() time.Time { return current }, random)
+	if err := store.SetPassword([]byte("first-password")); err != nil {
+		t.Fatal(err)
+	}
+	manager := NewSessionManager(store, func() time.Time { return current }, random)
+	session, err := manager.Login(Username, []byte("first-password"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.ChangePassword([]byte("second-password")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.Validate(session.Token); !errors.Is(err, ErrInvalidSession) {
+		t.Fatalf("old session error = %v", err)
+	}
+	if _, err := manager.Login(Username, []byte("second-password")); err != nil {
+		t.Fatalf("new password login: %v", err)
+	}
+}
+
 func TestSessionRefreshIsThrottledAndSlidesIdleExpiry(t *testing.T) {
 	current := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
 	random := bytes.NewReader(bytes.Repeat([]byte{11}, 4096))

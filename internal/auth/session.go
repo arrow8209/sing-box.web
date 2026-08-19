@@ -100,6 +100,11 @@ func (manager *SessionManager) Refresh(token string) (Session, bool, error) {
 	return session, true, nil
 }
 
+// ChangePassword stores a new password and rotates the session key and epoch.
+func (manager *SessionManager) ChangePassword(password []byte) error {
+	return manager.store.SetPassword(password)
+}
+
 func (manager *SessionManager) validate(token string) (Claims, error) {
 	payloadText, signatureText, ok := strings.Cut(token, ".")
 	if !ok || payloadText == "" || signatureText == "" || strings.Contains(signatureText, ".") {
