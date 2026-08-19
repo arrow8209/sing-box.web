@@ -5,6 +5,7 @@ import { useProfilesStore } from "./stores/profiles";
 import LoginView from "./features/auth/LoginView.vue";
 import AppShell from "./features/shell/AppShell.vue";
 import CapabilityUnavailable from "./features/placeholders/CapabilityUnavailable.vue";
+import ConfigWorkspace from "./features/config/ConfigWorkspace.vue";
 
 export const routes = [
   { path: "/login", name: "login", component: LoginView, meta: { public: true } },
@@ -22,8 +23,7 @@ export const routes = [
       {
         path: "config/:profileId?/:module?",
         name: "config",
-        component: CapabilityUnavailable,
-        props: { title: "配置工作区", description: "请先创建或选择配置档案。" },
+        component: ConfigWorkspace,
         beforeEnter: async (to: import("vue-router").RouteLocationNormalized) => {
           const profiles = useProfilesStore();
           if (profiles.items.length === 0) {

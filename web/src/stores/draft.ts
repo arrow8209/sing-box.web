@@ -74,7 +74,35 @@ export const useDraftStore = defineStore("draft", {
         return;
       }
       const next = cloneDraft(this.draft);
-      next.content = { ...next.content, config };
+      const buffers = { ...next.content.editorBuffers };
+      // 结构化变更同步再生所有已应用缓冲区的格式化文本，避免 canonical/buffer 分叉。
+      for (const [module, buffer] of Object.entries(buffers)) {
+        if (buffer.valid && buffer.applied) {
+          buffers[module] = { ...buffer, text: this.formatModule(module, config) };
+        }
+      }
+      next.content = { ...next.content, config, editorBuffers: buffers };
+      this.draft = next;
+      this.status = "dirty";
+      this.scheduleSave();
+    },
+    formatModule(module: string, config: Record<string, unknown>): string {
+      // 缓冲区键与后端一致，使用顶层模块键（如 log、dns、experimental）。
+      return JSON.stringify(config[module] ?? null, null, 2);
+    },
+    /** 用户选择放弃未应用 JSON：以规范配置重新生成缓冲区文本并标记有效已应用。 */
+    discardUnappliedBuffer(module: string): void {
+      if (this.draft === null || this.status === "error") {
+        return;
+      }
+      const next = cloneDraft(this.draft);
+      const buffers = { ...next.content.editorBuffers };
+      buffers[module] = {
+        text: this.formatModule(module, next.content.config),
+        valid: true,
+        applied: true,
+      };
+      next.content = { ...next.content, editorBuffers: buffers };
       this.draft = next;
       this.status = "dirty";
       this.scheduleSave();
@@ -90,6 +118,22 @@ export const useDraftStore = defineStore("draft", {
         text,
         valid: false,
         applied: previous?.applied ?? false,
+      };
+      next.content = { ...next.content, editorBuffers: buffers };
+      this.draft = next;
+      this.status = "dirty";
+      this.scheduleSave();
+    },
+    applyEditorBuffer(module: string, text: string): void {
+      if (this.status === "error" || this.draft === null) {
+        return;
+      }
+      const next = cloneDraft(this.draft);
+      const buffers = { ...next.content.editorBuffers };
+      buffers[module] = {
+        text,
+        valid: true,
+        applied: true,
       };
       next.content = { ...next.content, editorBuffers: buffers };
       this.draft = next;
