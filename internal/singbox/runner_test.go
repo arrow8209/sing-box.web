@@ -142,9 +142,25 @@ func TestRunnerVersionUsesOnlyVersionAndFirstNonemptyLine(t *testing.T) {
 }
 
 func TestRunnerUnavailable(t *testing.T) {
-	_, err := NewRunner(filepath.Join(t.TempDir(), "missing"), time.Second, 64).Version(context.Background())
+	binary := filepath.Join(t.TempDir(), "missing")
+	_, err := NewRunner(binary, time.Second, 64).Version(context.Background())
 	if !errors.Is(err, ErrUnavailable) || !errors.Is(err, fs.ErrNotExist) {
 		t.Fatalf("err=%v, want ErrUnavailable", err)
+	}
+	if strings.Contains(err.Error(), binary) {
+		t.Fatal("error exposed binary path")
+	}
+}
+
+func TestRunnerMissingCheckDirectoryIsNotUnavailable(t *testing.T) {
+	binary, _ := writeFakeSingBox(t, "success")
+	dir := filepath.Join(t.TempDir(), "missing-config-dir")
+	_, err := NewRunner(binary, time.Second, 64).Check(context.Background(), dir)
+	if !errors.Is(err, ErrCheckFailed) || errors.Is(err, ErrUnavailable) || !errors.Is(err, fs.ErrNotExist) {
+		t.Fatal("missing configuration directory was misclassified")
+	}
+	if strings.Contains(err.Error(), binary) || strings.Contains(err.Error(), dir) {
+		t.Fatal("error exposed a local path")
 	}
 }
 

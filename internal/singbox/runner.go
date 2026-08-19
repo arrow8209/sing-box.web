@@ -96,14 +96,19 @@ func (r *Runner) run(ctx context.Context, dir string, args ...string) (string, s
 	if errors.Is(childCtx.Err(), context.DeadlineExceeded) {
 		return out, errOut, classifiedError{kind: ErrTimeout, cause: childCtx.Err()}
 	}
-	if isUnavailable(err) {
+	if isUnavailable(err, r.path) {
 		return out, errOut, classifiedError{kind: ErrUnavailable, cause: err}
 	}
 	return out, errOut, classifiedError{kind: ErrCheckFailed, cause: err}
 }
 
-func isUnavailable(err error) bool {
-	return errors.Is(err, exec.ErrNotFound) || errors.Is(err, fs.ErrNotExist)
+func isUnavailable(err error, executable string) bool {
+	var execErr *exec.Error
+	if errors.As(err, &execErr) {
+		return execErr.Name == executable && (errors.Is(execErr.Err, exec.ErrNotFound) || errors.Is(execErr.Err, fs.ErrNotExist))
+	}
+	var pathErr *fs.PathError
+	return errors.As(err, &pathErr) && pathErr.Path == executable && errors.Is(pathErr.Err, fs.ErrNotExist)
 }
 
 func commandError(cause error, stdout, stderr string) error {
