@@ -1,9 +1,11 @@
 <script setup lang="ts">
 import { ref } from "vue";
+import { useRouter } from "vue-router";
 import { useProfilesStore } from "../../stores/profiles";
 
 const emit = defineEmits<{ close: [] }>();
 const profiles = useProfilesStore();
+const router = useRouter();
 
 const name = ref("");
 const slug = ref("");
@@ -12,7 +14,7 @@ const errorMessage = ref("");
 async function submit(): Promise<void> {
   errorMessage.value = "";
   try {
-    await profiles.create({ name: name.value, slug: slug.value });
+    await profiles.create({ name: name.value, slug: slug.value }, router);
     name.value = "";
     slug.value = "";
     emit("close");
