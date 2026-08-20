@@ -31,6 +31,7 @@ describe("useDraftStore", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+    vi.unstubAllGlobals();
     apiClient.clearCSRFToken();
   });
 
@@ -126,7 +127,7 @@ describe("useDraftStore", () => {
     }
   });
 
-  it("reloadAfterConflict discards local changes only after user confirmation", async () => {
+  it("reloadAfterConflict immediately discards local changes and loads the server draft", async () => {
     vi.spyOn(apiClient, "request").mockResolvedValueOnce({ data: draftBody, etag: '"draft-3"' });
     const draft = useDraftStore();
     await draft.load(profile.id);
@@ -138,13 +139,8 @@ describe("useDraftStore", () => {
     };
     draft.status = "conflict";
 
-    const confirm = vi.spyOn(window, "confirm").mockReturnValue(false);
-    await draft.reloadAfterConflict();
-    expect(confirm).toHaveBeenCalledTimes(1);
-    // Declined: local content is preserved.
-    expect(draft.draft?.content.config).toEqual({ log: { level: "error" } });
-
-    confirm.mockReturnValue(true);
+    const confirm = vi.fn().mockReturnValue(false);
+    vi.stubGlobal("window", { confirm });
     const serverDraft: Draft = { ...draftBody, revision: 5 };
     const request = vi.spyOn(apiClient, "request").mockResolvedValue({
       data: serverDraft,
@@ -152,6 +148,7 @@ describe("useDraftStore", () => {
     });
     await draft.reloadAfterConflict();
 
+    expect(confirm).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalledWith(`/profiles/${profile.id}/draft`);
     expect(draft.draft?.revision).toBe(5);
     expect(draft.conflict).toBeNull();

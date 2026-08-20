@@ -223,9 +223,6 @@ export const useDraftStore = defineStore("draft", {
       if (this.conflict === null || this.draft === null) {
         return;
       }
-      if (!window.confirm("放弃本地更改并重新载入服务器版本？")) {
-        return;
-      }
       const profileId = this.draft.profileId;
       this.conflict = null;
       await this.load(profileId);
