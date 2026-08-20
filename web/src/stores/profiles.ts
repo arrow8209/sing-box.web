@@ -71,12 +71,16 @@ export const useProfilesStore = defineStore("profiles", {
     },
     async select(id: string): Promise<void> {
       const draft = useDraftStore();
-      if (this.activeId === id && draft.draft?.profileId === id) {
-        return;
-      }
-
+      const alreadyActive = this.activeId === id && draft.draft?.profileId === id;
       const selectionVersion = this.selectionVersion + 1;
       this.selectionVersion = selectionVersion;
+      if (alreadyActive) {
+        // Returning to the still-active profile cancels any pending load for another profile.
+        if (draft.status === "loading") {
+          draft.status = "saved";
+        }
+        return;
+      }
       const currentId = this.activeId;
       await flushActiveDraft(currentId);
       if (this.selectionVersion !== selectionVersion) {

@@ -88,7 +88,7 @@ router.beforeEach(async (to) => {
         await profiles.load();
       }
       const profileId = to.params.profileId;
-      if (typeof profileId === "string" && profiles.activeId !== profileId) {
+      if (typeof profileId === "string") {
         await profiles.select(profileId);
       }
     } catch {

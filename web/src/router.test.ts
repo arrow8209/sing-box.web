@@ -156,4 +156,91 @@ describe("config profile routing", () => {
     expect(profiles.activeId).toBe(profileC.id);
     expect(draft.draft).toEqual(draftC);
   });
+
+  it("cancels a pending profile load when navigation returns to the active profile", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profileA, profileB];
+    profiles.activeId = profileA.id;
+    const draft = useDraftStore();
+    const draftA: Draft = {
+      profileId: profileA.id,
+      revision: 3,
+      content: { config: { log: { level: "info" } }, editorBuffers: {} },
+      savedAt: "2026-08-20T00:00:00Z",
+    };
+    draft.draft = draftA;
+    draft.etag = '"draft-3"';
+    draft.status = "saved";
+    await router.push(`/config/${profileA.id}/general`);
+
+    const draftB: Draft = {
+      profileId: profileB.id,
+      revision: 1,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+      savedAt: "2026-08-20T00:01:00Z",
+    };
+    let resolveB!: (value: { data: Draft; etag: string }) => void;
+    const pendingB = new Promise<{ data: Draft; etag: string }>((resolve) => {
+      resolveB = resolve;
+    });
+    const request = vi.spyOn(apiClient, "request").mockImplementationOnce(() => pendingB);
+
+    const navigationB = router.push(`/config/${profileB.id}/general`);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await router.push(`/config/${profileA.id}/dns`);
+    resolveB({ data: draftB, etag: '"draft-1"' });
+    await navigationB;
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(router.currentRoute.value.fullPath).toBe(`/config/${profileA.id}/dns`);
+    expect(profiles.activeId).toBe(profileA.id);
+    expect(draft.draft).toEqual(draftA);
+    expect(draft.status).toBe("saved");
+  });
+
+  it("cancels a pending profile switch even while its initial flush is saving", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profileA, profileB];
+    profiles.activeId = profileA.id;
+    const draft = useDraftStore();
+    const dirtyA: Draft = {
+      profileId: profileA.id,
+      revision: 3,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+      savedAt: "2026-08-20T00:00:00Z",
+    };
+    draft.draft = dirtyA;
+    draft.etag = '"draft-3"';
+    draft.status = "dirty";
+    draft.mutationVersion = 1;
+    await router.push(`/config/${profileA.id}/general`);
+
+    const savedA: Draft = { ...dirtyA, revision: 4 };
+    const draftB: Draft = {
+      profileId: profileB.id,
+      revision: 1,
+      content: { config: { log: { level: "debug" } }, editorBuffers: {} },
+      savedAt: "2026-08-20T00:01:00Z",
+    };
+    let resolveSave!: (value: { data: Draft; etag: string }) => void;
+    const pendingSave = new Promise<{ data: Draft; etag: string }>((resolve) => {
+      resolveSave = resolve;
+    });
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockImplementationOnce(() => pendingSave)
+      .mockResolvedValueOnce({ data: draftB, etag: '"draft-1"' });
+
+    const navigationB = router.push(`/config/${profileB.id}/general`);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    await router.push(`/config/${profileA.id}/dns`);
+    resolveSave({ data: savedA, etag: '"draft-4"' });
+    await navigationB;
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(router.currentRoute.value.fullPath).toBe(`/config/${profileA.id}/dns`);
+    expect(profiles.activeId).toBe(profileA.id);
+    expect(draft.draft).toEqual(savedA);
+    expect(draft.status).toBe("saved");
+  });
 });
