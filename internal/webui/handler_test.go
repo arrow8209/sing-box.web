@@ -3,6 +3,7 @@ package webui
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"testing/fstest"
 
@@ -21,13 +22,14 @@ func TestNewHandlerServingAndFallback(t *testing.T) {
 	handler := httpapi.WithSecurityHeaders(NewHandler(files))
 
 	tests := []struct {
-		name       string
-		path       string
-		wantStatus int
-		wantBody   string
-		cache      string
+		name        string
+		path        string
+		wantStatus  int
+		wantBody    string
+		cache       string
+		contentType string
 	}{
-		{name: "asset", path: "/assets/app.js", wantStatus: http.StatusOK, wantBody: "console.log('app')", cache: assetCacheControlHint},
+		{name: "asset", path: "/assets/app.js", wantStatus: http.StatusOK, wantBody: "console.log('app')", cache: assetCacheControlHint, contentType: "text/javascript"},
 		{name: "spa fallback", path: "/config/id/general", wantStatus: http.StatusOK, wantBody: "<html><body>index</body></html>", cache: indexCacheControl},
 		{name: "missing asset", path: "/assets/missing.js", wantStatus: http.StatusNotFound},
 		{name: "placeholder", path: "/placeholder.txt", wantStatus: http.StatusNotFound},
@@ -42,6 +44,9 @@ func TestNewHandlerServingAndFallback(t *testing.T) {
 			}
 			if tt.cache != "" && record.Header().Get("Cache-Control") != tt.cache {
 				t.Fatalf("cache=%q want=%q", record.Header().Get("Cache-Control"), tt.cache)
+			}
+			if tt.contentType != "" && !strings.HasPrefix(record.Header().Get("Content-Type"), tt.contentType) {
+				t.Fatalf("content-type=%q want prefix=%q", record.Header().Get("Content-Type"), tt.contentType)
 			}
 			if record.Header().Get("Content-Security-Policy") != exactCSP {
 				t.Fatalf("missing CSP")

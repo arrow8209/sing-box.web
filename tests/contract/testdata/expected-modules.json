@@ -1,0 +1,8 @@
+[
+  "10-log.json",
+  "20-dns.json",
+  "60-inbounds.json",
+  "70-outbounds.json",
+  "80-route.json",
+  "99-experimental.json"
+]

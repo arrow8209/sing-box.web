@@ -2,9 +2,11 @@ package webui
 
 import (
 	"io/fs"
+	"mime"
 	"net/http"
 	"net/url"
 	"path"
+	"path/filepath"
 	"strings"
 )
 
@@ -72,6 +74,9 @@ func serveAsset(response http.ResponseWriter, files fs.FS, filePath string) {
 	if err != nil {
 		response.WriteHeader(http.StatusNotFound)
 		return
+	}
+	if contentType := mime.TypeByExtension(filepath.Ext(filePath)); contentType != "" {
+		response.Header().Set("Content-Type", contentType)
 	}
 	response.WriteHeader(http.StatusOK)
 	_, _ = response.Write(data)

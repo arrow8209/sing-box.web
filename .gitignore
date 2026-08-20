@@ -4,6 +4,8 @@ node_modules/
 .DS_Store
 web/node_modules/
 web/dist/
+web/test-results/
 dist/
+.singbox-web/
 internal/webui/dist/*
 !internal/webui/dist/placeholder.txt
