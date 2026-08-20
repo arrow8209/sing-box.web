@@ -20,10 +20,41 @@ interface DraftState {
 
 const SAVE_DEBOUNCE_MS = 600;
 
+const UNSAFE_BUFFER_PATH_SEGMENTS = new Set(["", ".", "..", "__proto__", "prototype", "constructor"]);
+
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 
 function cloneDraft(draft: Draft): Draft {
   return JSON.parse(JSON.stringify(draft)) as Draft;
+}
+
+function configPathValue(
+  config: Record<string, unknown>,
+  bufferKey: string,
+): { exists: boolean; value?: unknown } {
+  const segments = bufferKey.split("/");
+  if (segments.some((segment) => UNSAFE_BUFFER_PATH_SEGMENTS.has(segment))) {
+    return { exists: false };
+  }
+  let current: unknown = config;
+  for (const segment of segments) {
+    if (Array.isArray(current)) {
+      if (!/^(0|[1-9]\d*)$/.test(segment)) {
+        return { exists: false };
+      }
+      const index = Number(segment);
+      if (!Number.isSafeInteger(index) || index >= current.length) {
+        return { exists: false };
+      }
+      current = current[index];
+      continue;
+    }
+    if (current === null || typeof current !== "object" || !Object.hasOwn(current, segment)) {
+      return { exists: false };
+    }
+    current = (current as Record<string, unknown>)[segment];
+  }
+  return { exists: current !== undefined, value: current };
 }
 
 export const useDraftStore = defineStore("draft", {
@@ -78,7 +109,12 @@ export const useDraftStore = defineStore("draft", {
       // 结构化变更同步再生所有已应用缓冲区的格式化文本，避免 canonical/buffer 分叉。
       for (const [module, buffer] of Object.entries(buffers)) {
         if (buffer.valid && buffer.applied) {
-          buffers[module] = { ...buffer, text: this.formatModule(module, config) };
+          const text = this.formatModule(module, config);
+          if (text === undefined) {
+            delete buffers[module];
+          } else {
+            buffers[module] = { ...buffer, text };
+          }
         }
       }
       // 集合行重排/删除时同步迁移索引缓冲区键（module/0、module/1 …）。
@@ -96,17 +132,18 @@ export const useDraftStore = defineStore("draft", {
       this.status = "dirty";
       this.scheduleSave();
     },
-    formatModule(module: string, config: Record<string, unknown>): string {
+    formatModule(module: string, config: Record<string, unknown>): string | undefined {
       // 缓冲区键与后端一致，使用顶层模块键（如 log、dns、experimental）；
       // 索引键（如 outbounds/0）按集合行格式化。
-      const slash = module.indexOf("/");
-      if (slash !== -1) {
-        const collection = config[module.slice(0, slash)];
-        const index = Number(module.slice(slash + 1));
-        const row = Array.isArray(collection) ? collection[index] : undefined;
-        return JSON.stringify(row ?? null, null, 2);
+      const segments = module.split("/");
+      const canonical = configPathValue(config, module);
+      if (!canonical.exists) {
+        return undefined;
       }
-      return JSON.stringify({ [module]: config[module] ?? null }, null, 2);
+      if (segments.length === 1) {
+        return JSON.stringify({ [module]: canonical.value }, null, 2);
+      }
+      return JSON.stringify(canonical.value, null, 2);
     },
     /** 单次变更同时更新规范配置与缓冲区（集合行编辑/重排/删除用，避免中间状态分叉）。 */
     updateConfigWithBuffers(
@@ -129,11 +166,12 @@ export const useDraftStore = defineStore("draft", {
       }
       const next = cloneDraft(this.draft);
       const buffers = { ...next.content.editorBuffers };
-      buffers[module] = {
-        text: this.formatModule(module, next.content.config),
-        valid: true,
-        applied: true,
-      };
+      const text = this.formatModule(module, next.content.config);
+      if (text === undefined) {
+        delete buffers[module];
+      } else {
+        buffers[module] = { text, valid: true, applied: true };
+      }
       next.content = { ...next.content, editorBuffers: buffers };
       this.draft = next;
       this.status = "dirty";

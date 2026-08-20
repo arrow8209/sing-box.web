@@ -291,4 +291,104 @@ describe("useDraftStore", () => {
       JSON.stringify({ type: "block", tag: "blocked" }, null, 2),
     );
   });
+
+  it("regenerates nested collection-path buffers from their full canonical path", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { route: { rules: [{ action: "route", outbound: "old" }] } },
+        editorBuffers: {
+          "route/rules/0": { text: '{"action":"route"}', valid: true, applied: true },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.replaceConfig({ route: { rules: [{ action: "route", outbound: "new" }] } });
+
+    expect(draft.draft?.content.editorBuffers["route/rules/0"]?.text).toBe(
+      JSON.stringify({ action: "route", outbound: "new" }, null, 2),
+    );
+  });
+
+  it("restores nested collection-path buffers from their full canonical path", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { route: { rules: [{ action: "route", outbound: "direct" }] } },
+        editorBuffers: {
+          "route/rules/0": { text: "{", valid: false, applied: false },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.discardUnappliedBuffer("route/rules/0");
+
+    expect(draft.draft?.content.editorBuffers["route/rules/0"]).toEqual({
+      text: JSON.stringify({ action: "route", outbound: "direct" }, null, 2),
+      valid: true,
+      applied: true,
+    });
+  });
+
+  it("removes buffers whose top-level canonical key no longer exists", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { log: { level: "info" } },
+        editorBuffers: {
+          dns: { text: '{"dns":{"servers":[]}}', valid: true, applied: true },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.replaceConfig({ log: { level: "warn" } });
+
+    expect(draft.draft?.content.editorBuffers.dns).toBeUndefined();
+  });
+
+  it("removes an unapplied buffer whose canonical path no longer exists", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { log: { level: "info" } },
+        editorBuffers: {
+          dns: { text: "{", valid: false, applied: false },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.discardUnappliedBuffer("dns");
+
+    expect(draft.draft?.content.editorBuffers.dns).toBeUndefined();
+  });
+
+  it("keeps an explicitly null top-level canonical value as an applied buffer", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { log: { level: "info" } },
+        editorBuffers: {
+          log: { text: '{"log":{"level":"info"}}', valid: true, applied: true },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.replaceConfig({ log: null });
+
+    expect(draft.draft?.content.editorBuffers.log).toEqual({
+      text: JSON.stringify({ log: null }, null, 2),
+      valid: true,
+      applied: true,
+    });
+  });
 });
