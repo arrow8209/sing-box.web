@@ -187,6 +187,65 @@ describe("useProfilesStore", () => {
     expect(draftStore.draft).toEqual(draftB);
   });
 
+  it("commits only the latest profile selection when draft loads finish out of order", async () => {
+    const profileC: Profile = {
+      ...profileB,
+      id: "c".repeat(32),
+      name: "备用",
+      slug: "backup",
+      directoryHint: "/etc/sing-box/backup",
+      checkCommand: "sing-box check -C /etc/sing-box/backup",
+    };
+    const profiles = useProfilesStore();
+    profiles.items = [profileA, profileB, profileC];
+    profiles.activeId = profileA.id;
+    const draftStore = useDraftStore();
+    draftStore.draft = draftBody;
+    draftStore.etag = '"draft-3"';
+    draftStore.status = "saved";
+
+    const draftB: Draft = {
+      profileId: profileB.id,
+      revision: 1,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+      savedAt: "2026-08-18T10:01:00Z",
+    };
+    const draftC: Draft = {
+      profileId: profileC.id,
+      revision: 1,
+      content: { config: { log: { level: "debug" } }, editorBuffers: {} },
+      savedAt: "2026-08-18T10:02:00Z",
+    };
+    let resolveB!: (value: { data: Draft; etag: string }) => void;
+    let resolveC!: (value: { data: Draft; etag: string }) => void;
+    const pendingB = new Promise<{ data: Draft; etag: string }>((resolve) => {
+      resolveB = resolve;
+    });
+    const pendingC = new Promise<{ data: Draft; etag: string }>((resolve) => {
+      resolveC = resolve;
+    });
+    vi.spyOn(apiClient, "request")
+      .mockImplementationOnce(() => pendingB)
+      .mockImplementationOnce(() => pendingC);
+
+    const selectB = profiles.select(profileB.id).then(
+      () => null,
+      (error: unknown) => error,
+    );
+    await Promise.resolve();
+    const selectC = profiles.select(profileC.id);
+    await Promise.resolve();
+
+    resolveC({ data: draftC, etag: '"draft-1"' });
+    await selectC;
+    resolveB({ data: draftB, etag: '"draft-1"' });
+    const staleResult = await selectB;
+
+    expect(staleResult).toBeInstanceOf(Error);
+    expect(profiles.activeId).toBe(profileC.id);
+    expect(draftStore.draft).toEqual(draftC);
+  });
+
   it("keeps the current profile selected when its dirty draft cannot be saved", async () => {
     const profiles = useProfilesStore();
     profiles.items = [profileA, profileB];

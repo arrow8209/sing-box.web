@@ -93,4 +93,67 @@ describe("config profile routing", () => {
     expect(draft.draft).toEqual(draftB);
     expect(router.currentRoute.value.params.profileId).toBe(profileB.id);
   });
+
+  it("keeps the URL and active draft on the latest rapid profile navigation", async () => {
+    const profileC: Profile = {
+      ...profileB,
+      id: "c".repeat(32),
+      name: "备用",
+      slug: "backup",
+      directoryHint: "/etc/sing-box/backup",
+      checkCommand: "sing-box check -C /etc/sing-box/backup",
+    };
+    const profiles = useProfilesStore();
+    profiles.items = [profileA, profileB, profileC];
+    profiles.activeId = profileA.id;
+    const draft = useDraftStore();
+    draft.draft = {
+      profileId: profileA.id,
+      revision: 3,
+      content: { config: { log: { level: "info" } }, editorBuffers: {} },
+      savedAt: "2026-08-20T00:00:00Z",
+    };
+    draft.etag = '"draft-3"';
+    draft.status = "saved";
+    await router.push(`/config/${profileA.id}/general`);
+
+    const draftB: Draft = {
+      profileId: profileB.id,
+      revision: 1,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+      savedAt: "2026-08-20T00:01:00Z",
+    };
+    const draftC: Draft = {
+      profileId: profileC.id,
+      revision: 1,
+      content: { config: { log: { level: "debug" } }, editorBuffers: {} },
+      savedAt: "2026-08-20T00:02:00Z",
+    };
+    let resolveB!: (value: { data: Draft; etag: string }) => void;
+    let resolveC!: (value: { data: Draft; etag: string }) => void;
+    const pendingB = new Promise<{ data: Draft; etag: string }>((resolve) => {
+      resolveB = resolve;
+    });
+    const pendingC = new Promise<{ data: Draft; etag: string }>((resolve) => {
+      resolveC = resolve;
+    });
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockImplementationOnce(() => pendingB)
+      .mockImplementationOnce(() => pendingC);
+
+    const navigationB = router.push(`/config/${profileB.id}/general`);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(1));
+    const navigationC = router.push(`/config/${profileC.id}/general`);
+    await vi.waitFor(() => expect(request).toHaveBeenCalledTimes(2));
+
+    resolveC({ data: draftC, etag: '"draft-1"' });
+    await navigationC;
+    resolveB({ data: draftB, etag: '"draft-1"' });
+    await navigationB;
+
+    expect(router.currentRoute.value.params.profileId).toBe(profileC.id);
+    expect(profiles.activeId).toBe(profileC.id);
+    expect(draft.draft).toEqual(draftC);
+  });
 });

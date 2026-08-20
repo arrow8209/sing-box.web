@@ -183,4 +183,18 @@ describe("ConfigWorkspace", () => {
     // 编辑控件不渲染，避免浏览器侧误改损坏草稿。
     expect(wrapper.find("textarea").exists()).toBe(false);
   });
+
+  it("locks editors and publication actions while another profile is loading", async () => {
+    const draft = useDraftStore();
+    draft.draft = draftBody;
+    draft.etag = '"draft-1"';
+    draft.status = "loading";
+
+    const { wrapper } = await mountWorkspace();
+
+    expect(wrapper.get('[role="status"]').text()).toBe("草稿载入中");
+    expect(wrapper.find('select[aria-label="日志级别"]').exists()).toBe(false);
+    expect(wrapper.find('button[name="仅校验"]').exists()).toBe(false);
+    expect(wrapper.get('button[name="编辑配置概览 JSON"]').attributes("disabled")).toBeDefined();
+  });
 });

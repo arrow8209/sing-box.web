@@ -89,10 +89,13 @@ export const useDraftStore = defineStore("draft", {
     mutationVersion: 0,
   }),
   actions: {
-    async load(profileId: string): Promise<void> {
+    async load(profileId: string, isCurrent: () => boolean = () => true): Promise<boolean> {
       const profiles = useProfilesStore();
       const profile = profiles.items.find((item) => item.id === profileId);
       if (profile?.draftReadOnly) {
+        if (!isCurrent()) {
+          return false;
+        }
         this.draft = null;
         this.etag = null;
         this.status = "error";
@@ -100,18 +103,25 @@ export const useDraftStore = defineStore("draft", {
           code: "draft_read_only",
           message: profile.draftError || "草稿只读，需要管理员在服务器修复",
         };
-        return;
+        return true;
       }
       this.status = "loading";
       try {
         const { data, etag } = await apiClient.request<Draft>(`/profiles/${profileId}/draft`);
+        if (!isCurrent()) {
+          return false;
+        }
         this.draft = data;
         this.etag = etag;
         this.status = "saved";
         this.lastError = null;
         this.conflict = null;
         this.mutationVersion = 0;
+        return true;
       } catch (error) {
+        if (!isCurrent()) {
+          return false;
+        }
         this.status = "error";
         this.lastError =
           error instanceof APIClientError
@@ -121,7 +131,7 @@ export const useDraftStore = defineStore("draft", {
       }
     },
     replaceConfig(config: Record<string, unknown>, bufferRemap?: Record<string, string>): void {
-      if (this.status === "error") {
+      if (this.status === "error" || this.status === "loading") {
         // 损坏草稿拒绝本地变更：绝不能从浏览器状态修复服务器文件。
         return;
       }
@@ -175,7 +185,7 @@ export const useDraftStore = defineStore("draft", {
       config: Record<string, unknown>,
       buffers: Record<string, { text: string; valid: boolean; applied: boolean }>,
     ): void {
-      if (this.status === "error" || this.draft === null) {
+      if (this.status === "error" || this.status === "loading" || this.draft === null) {
         return;
       }
       const next = cloneDraft(this.draft);
@@ -187,7 +197,7 @@ export const useDraftStore = defineStore("draft", {
     },
     /** 用户选择放弃未应用 JSON：以规范配置重新生成缓冲区文本并标记有效已应用。 */
     discardUnappliedBuffer(module: string): void {
-      if (this.draft === null || this.status === "error") {
+      if (this.draft === null || this.status === "error" || this.status === "loading") {
         return;
       }
       const next = cloneDraft(this.draft);
@@ -205,7 +215,7 @@ export const useDraftStore = defineStore("draft", {
       this.scheduleSave();
     },
     setEditorBuffer(module: string, text: string): void {
-      if (this.status === "error" || this.draft === null) {
+      if (this.status === "error" || this.status === "loading" || this.draft === null) {
         return;
       }
       const next = cloneDraft(this.draft);
@@ -223,7 +233,7 @@ export const useDraftStore = defineStore("draft", {
       this.scheduleSave();
     },
     applyEditorBuffer(module: string, text: string): void {
-      if (this.status === "error" || this.draft === null) {
+      if (this.status === "error" || this.status === "loading" || this.draft === null) {
         return;
       }
       const next = cloneDraft(this.draft);
@@ -248,7 +258,7 @@ export const useDraftStore = defineStore("draft", {
       if (this.draft === null || this.etag === null) {
         return false;
       }
-      if (this.status === "conflict" || this.status === "error") {
+      if (this.status === "conflict" || this.status === "error" || this.status === "loading") {
         return false;
       }
       if (this.status === "saved") {

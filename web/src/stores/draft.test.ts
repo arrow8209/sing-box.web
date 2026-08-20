@@ -50,6 +50,35 @@ describe("useDraftStore", () => {
     expect(draft.status).toBe("saved");
   });
 
+  it("does not mutate the old draft while another profile is loading", async () => {
+    const draft = useDraftStore();
+    draft.draft = draftBody;
+    draft.etag = '"draft-3"';
+    draft.status = "saved";
+    const nextDraft: Draft = {
+      profileId: "b".repeat(32),
+      revision: 1,
+      content: { config: { log: { level: "debug" } }, editorBuffers: {} },
+      savedAt: "2026-08-18T10:01:00Z",
+    };
+    let resolveLoad!: (value: { data: Draft; etag: string }) => void;
+    const pendingLoad = new Promise<{ data: Draft; etag: string }>((resolve) => {
+      resolveLoad = resolve;
+    });
+    vi.spyOn(apiClient, "request").mockImplementationOnce(() => pendingLoad);
+
+    const loading = draft.load(nextDraft.profileId);
+    expect(draft.status).toBe("loading");
+    draft.replaceConfig({ log: { level: "warn" } });
+
+    expect(draft.draft?.content.config).toEqual({ log: { level: "info" } });
+    expect(draft.status).toBe("loading");
+
+    resolveLoad({ data: nextDraft, etag: '"draft-1"' });
+    await loading;
+    expect(draft.draft).toEqual(nextDraft);
+  });
+
   it("debounces mutations for 600 ms and coalesces them into one PUT", async () => {
     vi.useFakeTimers();
     try {

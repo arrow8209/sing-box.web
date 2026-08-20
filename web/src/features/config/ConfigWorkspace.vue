@@ -46,7 +46,7 @@ const draftError = computed(() => {
 });
 
 const structuredAvailable = computed(() => {
-  if (draft.status === "error" || draft.draft === null) {
+  if (draft.status === "error" || draft.status === "loading" || draft.draft === null) {
     return false;
   }
   const topKey = topLevelKey(activeModule.value);
@@ -92,6 +92,7 @@ async function goToValidationField(path: string): Promise<void> {
         class="btn"
         :name="`编辑${activeDescriptor.label} JSON`"
         type="button"
+        :disabled="draft.status === 'loading' || draft.status === 'error'"
         @click="rawMode = !rawMode"
       >
         {{ rawMode ? "返回表单" : `编辑${activeDescriptor.label} JSON` }}
@@ -100,11 +101,17 @@ async function goToValidationField(path: string): Promise<void> {
 
     <ModuleTabs :profile-id="profileId" />
 
-    <PublicationBar v-if="draft.status !== 'error'" @go-to-field="goToValidationField" />
+    <PublicationBar
+      v-if="draft.status !== 'error' && draft.status !== 'loading'"
+      @go-to-field="goToValidationField"
+    />
 
     <p v-if="draftError" class="workspace-error" role="alert">{{ draftError }}</p>
 
-    <template v-if="draft.status === 'error'">
+    <template v-if="draft.status === 'loading'">
+      <p class="workspace-note" role="status">草稿载入中</p>
+    </template>
+    <template v-else-if="draft.status === 'error'">
       <p class="workspace-note">草稿只读，编辑已禁用。</p>
     </template>
     <template v-else>

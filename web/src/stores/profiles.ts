@@ -7,6 +7,7 @@ interface ProfilesState {
   items: Profile[];
   activeId: string | null;
   loading: boolean;
+  selectionVersion: number;
 }
 
 const UNSAVED_DRAFT_STATUSES = new Set(["dirty", "saving", "offline", "conflict"]);
@@ -27,6 +28,7 @@ export const useProfilesStore = defineStore("profiles", {
     items: [],
     activeId: null,
     loading: false,
+    selectionVersion: 0,
   }),
   getters: {
     active(state): Profile | null {
@@ -73,19 +75,29 @@ export const useProfilesStore = defineStore("profiles", {
         return;
       }
 
+      const selectionVersion = this.selectionVersion + 1;
+      this.selectionVersion = selectionVersion;
       const currentId = this.activeId;
       await flushActiveDraft(currentId);
+      if (this.selectionVersion !== selectionVersion) {
+        throw new Error("档案选择已被后续操作替代");
+      }
 
-      const previousStatus = draft.status;
+      const previousStatus = draft.status === "loading" && draft.draft !== null ? "saved" : draft.status;
       const previousError = draft.lastError;
       const previousConflict = draft.conflict;
       try {
-        await draft.load(id);
+        const loaded = await draft.load(id, () => this.selectionVersion === selectionVersion);
+        if (!loaded || this.selectionVersion !== selectionVersion) {
+          throw new Error("档案选择已被后续操作替代");
+        }
         this.activeId = id;
       } catch (error) {
-        draft.status = previousStatus;
-        draft.lastError = previousError;
-        draft.conflict = previousConflict;
+        if (this.selectionVersion === selectionVersion) {
+          draft.status = previousStatus;
+          draft.lastError = previousError;
+          draft.conflict = previousConflict;
+        }
         throw error;
       }
     },
