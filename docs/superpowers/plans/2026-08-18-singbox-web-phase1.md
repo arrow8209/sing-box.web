@@ -589,7 +589,7 @@ func TestSetPasswordStoresHashAndRotatesSessions(t *testing.T) {
 }
 ```
 
-Add password tests that accept the correct password, reject a wrong password, reject passwords shorter than 12 Unicode code points, and parse the stored PHC string after reopening the file.
+Add password tests that accept the correct password, reject a wrong password, reject passwords shorter than 6 Unicode code points, and parse the stored PHC string after reopening the file.
 
 - [ ] **Step 2: 运行测试确认失败**
 
@@ -619,7 +619,7 @@ Use Argon2id parameters `memory=65536 KiB`、`iterations=3`、`parallelism=2`、
 
 ```go
 func (store *FileStore) SetPassword(password []byte) error {
-    if utf8.RuneCount(password) < 12 {
+    if utf8.RuneCount(password) < 6 {
         return ErrWeakPassword
     }
     previous, err := store.Load()

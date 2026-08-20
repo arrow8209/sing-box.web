@@ -20,7 +20,7 @@ const (
 	argon2KeyLength          = 32
 )
 
-var ErrWeakPassword = errors.New("password must contain at least 12 Unicode code points")
+var ErrWeakPassword = errors.New("password must contain at least 6 Unicode code points")
 
 type phcHash struct {
 	memory      uint32

@@ -45,7 +45,7 @@ sudo install -d -o singbox-web -g sing-box -m 0750 /etc/sing-box/web-profiles
 sudo install -d -o root -g sing-box -m 0750 /etc/sing-box
 ```
 
-完成下节的二进制安装后，首次设置管理员密码必须在终端交互输入（至少 12 个字符，不要把密码写进 shell 历史或脚本）：
+完成下节的二进制安装后，首次设置管理员密码必须在终端交互输入（至少 6 个字符，不要把密码写进 shell 历史或脚本）：
 
 ```bash
 sudo -u singbox-web /usr/local/bin/singbox-web admin set-password \

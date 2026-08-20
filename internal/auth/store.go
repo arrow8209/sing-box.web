@@ -33,7 +33,7 @@ func (store *FileStore) SetPassword(password []byte) error {
 	if !utf8.Valid(password) {
 		return ErrWeakPassword
 	}
-	if utf8.RuneCount(password) < 12 {
+	if utf8.RuneCount(password) < 6 {
 		return ErrWeakPassword
 	}
 	previous, err := store.Load()

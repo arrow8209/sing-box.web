@@ -59,8 +59,15 @@ func TestAuthenticateRejectsWrongPassword(t *testing.T) {
 
 func TestSetPasswordRejectsShortUnicodePassword(t *testing.T) {
 	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), time.Now, bytes.NewReader(nil))
-	if err := store.SetPassword([]byte(strings.Repeat("密", 11))); !errors.Is(err, ErrWeakPassword) {
+	if err := store.SetPassword([]byte(strings.Repeat("密", 5))); !errors.Is(err, ErrWeakPassword) {
 		t.Fatalf("SetPassword() error = %v, want ErrWeakPassword", err)
+	}
+}
+
+func TestSetPasswordAcceptsMinimumUnicodePasswordLength(t *testing.T) {
+	store := NewFileStore(filepath.Join(t.TempDir(), "auth.json"), time.Now, bytes.NewReader(bytes.Repeat([]byte{1}, 48)))
+	if err := store.SetPassword([]byte(strings.Repeat("密", 6))); err != nil {
+		t.Fatalf("SetPassword() error = %v, want nil", err)
 	}
 }
 

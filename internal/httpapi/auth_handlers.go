@@ -98,7 +98,7 @@ func (service *server) changePassword(response http.ResponseWriter, request *htt
 	if err := service.deps.Auth.ChangePassword(password); err != nil {
 		if errors.Is(err, auth.ErrWeakPassword) {
 			result = "weak_password"
-			writeAPIError(response, http.StatusBadRequest, "weak_password", "密码至少需要 12 个字符")
+			writeAPIError(response, http.StatusBadRequest, "weak_password", "密码至少需要 6 个字符")
 			return
 		}
 		writeAPIError(response, http.StatusInternalServerError, "internal_error", "服务器内部错误")

@@ -37,7 +37,7 @@ async function changePassword(): Promise<void> {
     auth.session = null;
     await router.replace("/login");
   } catch {
-    passwordError.value = "密码修改失败，请确认新密码至少 12 个字符";
+    passwordError.value = "密码修改失败，请确认新密码至少 6 个字符";
   } finally {
     changing.value = false;
   }
