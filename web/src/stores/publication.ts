@@ -41,6 +41,22 @@ export const usePublicationStore = defineStore("publication", {
       this.validating = true;
       this.lastError = null;
       try {
+        const draft = useDraftStore();
+        const saved = await draft.save();
+        if (
+          !saved ||
+          draft.status !== "saved" ||
+          draft.draft?.profileId !== profile.id ||
+          draft.etag === null ||
+          profiles.activeId !== profile.id
+        ) {
+          const detail = draft.lastError ?? {
+            code: "draft_not_saved",
+            message: "草稿尚未保存，无法校验",
+          };
+          this.lastError = detail;
+          throw new Error(detail.message);
+        }
         const { data } = await apiClient.request<ValidationResult>(
           `/profiles/${profile.id}/validate`,
           { method: "POST", body: JSON.stringify({}) },
@@ -48,10 +64,12 @@ export const usePublicationStore = defineStore("publication", {
         this.lastValidation = data;
         return data;
       } catch (error) {
-        this.lastError =
-          error instanceof APIClientError
-            ? error.detail
-            : { code: "network_error", message: "校验请求失败" };
+        if (this.lastError === null) {
+          this.lastError =
+            error instanceof APIClientError
+              ? error.detail
+              : { code: "network_error", message: "校验请求失败" };
+        }
         throw error;
       } finally {
         this.validating = false;
@@ -67,13 +85,24 @@ export const usePublicationStore = defineStore("publication", {
         throw new Error(this.publishBlockedReason || "配置发布已禁用");
       }
       const draft = useDraftStore();
-      await draft.save();
-      if (draft.etag === null) {
-        throw new Error("草稿尚未载入，无法发布");
-      }
       this.publishing = true;
       this.lastError = null;
       try {
+        const saved = await draft.save();
+        if (
+          !saved ||
+          draft.status !== "saved" ||
+          draft.draft?.profileId !== profile.id ||
+          draft.etag === null ||
+          profiles.activeId !== profile.id
+        ) {
+          const detail = draft.lastError ?? {
+            code: "draft_not_saved",
+            message: "草稿尚未保存，无法发布",
+          };
+          this.lastError = detail;
+          throw new Error(detail.message);
+        }
         const { data } = await apiClient.request<PublicationReceipt>(
           `/profiles/${profile.id}/publish`,
           {
@@ -83,6 +112,7 @@ export const usePublicationStore = defineStore("publication", {
           },
         );
         this.lastReceipt = data;
+        this.lastValidation = data.validation;
         // 同步档案发布状态。
         const index = profiles.items.findIndex((item) => item.id === profile.id);
         if (index !== -1) {
@@ -95,10 +125,12 @@ export const usePublicationStore = defineStore("publication", {
         }
         return data;
       } catch (error) {
-        this.lastError =
-          error instanceof APIClientError
-            ? error.detail
-            : { code: "network_error", message: "发布请求失败" };
+        if (this.lastError === null) {
+          this.lastError =
+            error instanceof APIClientError
+              ? error.detail
+              : { code: "network_error", message: "发布请求失败" };
+        }
         // 失败时绝不自动重试；草稿保持不变。
         throw error;
       } finally {

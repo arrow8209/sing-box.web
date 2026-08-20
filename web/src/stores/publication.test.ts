@@ -86,6 +86,38 @@ describe("usePublicationStore", () => {
     expect(publication.lastValidation).toEqual(validationResult);
   });
 
+  it("flushes dirty content before validating the server draft", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profile];
+    profiles.activeId = profile.id;
+    const draft = useDraftStore();
+    draft.draft = {
+      profileId: profile.id,
+      revision: 3,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+      savedAt: "",
+    };
+    draft.etag = '"draft-3"';
+    draft.status = "dirty";
+    draft.mutationVersion = 1;
+    const savedDraft = { ...draft.draft, revision: 4 };
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockResolvedValueOnce({ data: savedDraft, etag: '"draft-4"' })
+      .mockResolvedValueOnce({ data: validationResult, etag: null });
+    const publication = usePublicationStore();
+
+    const result = await publication.validate();
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[0][0]).toBe(`/profiles/${profile.id}/draft`);
+    expect(request.mock.calls[0][1]).toEqual(expect.objectContaining({ method: "PUT" }));
+    expect(request.mock.calls[1][0]).toBe(`/profiles/${profile.id}/validate`);
+    expect(result).toEqual(validationResult);
+    expect(draft.status).toBe("saved");
+    expect(draft.etag).toBe('"draft-4"');
+  });
+
   it("publish flushes autosave, requires ETag, never retries and updates the profile", async () => {
     const profiles = useProfilesStore();
     profiles.items = [profile];
@@ -108,7 +140,7 @@ describe("usePublicationStore", () => {
       publishedAt: "2026-08-18T10:00:00Z",
       validation: validationResult,
     };
-    const save = vi.spyOn(draft, "save").mockResolvedValue(undefined);
+    const save = vi.spyOn(draft, "save").mockResolvedValue(true);
     const request = vi.spyOn(apiClient, "request").mockResolvedValue({ data: receipt, etag: null });
     const publication = usePublicationStore();
 
@@ -126,6 +158,7 @@ describe("usePublicationStore", () => {
     );
     expect(profiles.items[0].publishedRevision).toBe(3);
     expect(profiles.items[0].publishedDigest).toBe("digest-1");
+    expect(publication.lastValidation).toEqual(validationResult);
   });
 
   it("publish without an ETag fails without issuing a request", async () => {
@@ -143,6 +176,31 @@ describe("usePublicationStore", () => {
     expect(request).not.toHaveBeenCalled();
   });
 
+  it("does not publish when flushing the current draft fails", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profile];
+    profiles.activeId = profile.id;
+    const draft = useDraftStore();
+    draft.draft = {
+      profileId: profile.id,
+      revision: 3,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+      savedAt: "",
+    };
+    draft.etag = '"draft-3"';
+    draft.status = "dirty";
+    draft.mutationVersion = 1;
+    const request = vi.spyOn(apiClient, "request").mockRejectedValue(new TypeError("offline"));
+    const publication = usePublicationStore();
+
+    await expect(publication.publish()).rejects.toThrow("草稿保存失败");
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][0]).toBe(`/profiles/${profile.id}/draft`);
+    expect(publication.lastError).toEqual({ code: "network_error", message: "草稿保存失败" });
+    expect(draft.status).toBe("offline");
+  });
+
   it("a failed check preserves the draft and surfaces the sanitized server message", async () => {
     const profiles = useProfilesStore();
     profiles.items = [profile];
@@ -153,7 +211,7 @@ describe("usePublicationStore", () => {
     draft.etag = '"draft-3"';
     draft.status = "saved";
 
-    vi.spyOn(draft, "save").mockResolvedValue(undefined);
+    vi.spyOn(draft, "save").mockResolvedValue(true);
     vi.spyOn(apiClient, "request").mockRejectedValue(
       new APIClientError(422, {
         code: "singbox_check_failed",

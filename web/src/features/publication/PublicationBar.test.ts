@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { apiClient, APIClientError } from "../../api/client";
 import PublicationBar from "./PublicationBar.vue";
 import { useDraftStore } from "../../stores/draft";
 import { useProfilesStore } from "../../stores/profiles";
@@ -144,6 +145,91 @@ describe("PublicationBar", () => {
     await wrapper.get('button[name="校验并写入"]').trigger("click");
 
     expect(wrapper.get('[role="status"]').text()).toBe("正式配置已写入");
+  });
+
+  it("retries an external drift conflict only after explicit confirmation", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profile];
+    profiles.activeId = profile.id;
+    const draft = useDraftStore();
+    draft.draft = {
+      profileId: profile.id,
+      revision: 3,
+      content: { config: { log: { level: "info" } }, editorBuffers: {} },
+      savedAt: "",
+    };
+    draft.etag = '"draft-3"';
+    draft.status = "saved";
+    const receipt = {
+      profileId: profile.id,
+      revision: 3,
+      digest: "digest-1",
+      directory: "/etc/sing-box/home-gateway",
+      publishedAt: "2026-08-20T00:00:00Z",
+      validation: {
+        valid: true,
+        issues: [],
+        targetVersion: "1.12.0",
+        installedVersion: "1.12.0",
+        checkedAt: "",
+      },
+    };
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockRejectedValueOnce(
+        new APIClientError(409, {
+          code: "external_drift",
+          message: "正式配置已被外部修改，需要确认后覆盖",
+        }),
+      )
+      .mockResolvedValueOnce({ data: receipt, etag: null });
+    const confirm = vi.spyOn(window, "confirm").mockReturnValue(true);
+    const wrapper = mount(PublicationBar);
+
+    await wrapper.get('button[name="校验并写入"]').trigger("click");
+    await flushPromises();
+
+    expect(confirm).toHaveBeenCalledWith(expect.stringMatching(/外部修改.*确认覆盖/));
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(JSON.parse(request.mock.calls[0][1]?.body as string)).toEqual({
+      confirmExternalOverwrite: false,
+    });
+    expect(JSON.parse(request.mock.calls[1][1]?.body as string)).toEqual({
+      confirmExternalOverwrite: true,
+    });
+    expect(wrapper.get('[role="status"]').text()).toBe("正式配置已写入");
+  });
+
+  it("renders the sanitized publication error returned by the server", () => {
+    const publication = usePublicationStore();
+    publication.lastError = {
+      code: "singbox_check_failed",
+      message: "sing-box check 失败",
+      stderr: "sing-box check 失败: secret=***REDACTED***",
+    } as never;
+
+    const wrapper = mount(PublicationBar);
+
+    expect(wrapper.get('[role="alert"]').text()).toBe(
+      "sing-box check 失败: secret=***REDACTED***",
+    );
+  });
+
+  it("renders field issues returned by a failed publication", () => {
+    const publication = usePublicationStore();
+    publication.lastError = {
+      code: "validation_failed",
+      message: "配置校验失败",
+      fieldIssues: [
+        { stage: "schema", path: "/log/level", code: "enum", message: "日志级别无效" },
+      ],
+    };
+
+    const wrapper = mount(PublicationBar);
+
+    expect(wrapper.get('[role="link"][aria-label="转到字段 /log/level"]').text()).toContain(
+      "日志级别无效",
+    );
   });
 
   it("full download requires the exact confirmation prompt", async () => {

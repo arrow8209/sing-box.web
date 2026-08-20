@@ -112,6 +112,27 @@ func TestPublishErrorClassificationIsSafe(t *testing.T) {
 	}
 }
 
+func TestPublishReturnsStableExternalDriftConflict(t *testing.T) {
+	id := strings.Repeat("d", 32)
+	now := time.Now()
+	profiles := &configProfileStub{item: profile.Profile{ID: id}}
+	publicationService := &publicationStub{err: publication.ErrExternalDrift}
+	service := server{deps: Dependencies{Profiles: profiles, Publication: publicationService, Now: func() time.Time { return now }}}
+	request := configRequest(http.MethodPost, "/api/v1/profiles/"+id+"/publish", `{}`, id)
+	request.Header.Set("If-Match", `"draft-1"`)
+	response := httptest.NewRecorder()
+
+	service.publishProfile(response, request)
+
+	var body ErrorBody
+	if err := json.Unmarshal(response.Body.Bytes(), &body); err != nil {
+		t.Fatal(err)
+	}
+	if response.Code != http.StatusConflict || body.Error.Code != "external_drift" || body.Error.Message != "正式配置已被外部修改，需要确认后覆盖" || publicationService.publishCalls != 1 {
+		t.Fatalf("status=%d body=%#v calls=%d", response.Code, body, publicationService.publishCalls)
+	}
+}
+
 func TestPublishReturnsOnlyStructuredSanitizedCheckerOutput(t *testing.T) {
 	harness := newProfileHarness(t)
 	item, _, err := harness.service.Create(context.Background(), profile.CreateInput{Name: "安全输出", Slug: "safe-output"})

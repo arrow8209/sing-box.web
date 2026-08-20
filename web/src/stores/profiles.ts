@@ -9,6 +9,19 @@ interface ProfilesState {
   loading: boolean;
 }
 
+const UNSAVED_DRAFT_STATUSES = new Set(["dirty", "saving", "offline", "conflict"]);
+
+async function flushActiveDraft(activeId: string | null): Promise<void> {
+  const draft = useDraftStore();
+  const needsFlush =
+    activeId !== null &&
+    draft.draft?.profileId === activeId &&
+    UNSAVED_DRAFT_STATUSES.has(draft.status);
+  if (needsFlush && !(await draft.save())) {
+    throw new Error(draft.lastError?.message || "草稿尚未保存，无法切换档案");
+  }
+}
+
 export const useProfilesStore = defineStore("profiles", {
   state: (): ProfilesState => ({
     items: [],
@@ -34,6 +47,7 @@ export const useProfilesStore = defineStore("profiles", {
       input: { name: string; slug: string },
       router?: { push: (path: string) => unknown },
     ): Promise<Profile> {
+      await flushActiveDraft(this.activeId);
       const { data } = await apiClient.request<Profile>("/profiles", {
         method: "POST",
         body: JSON.stringify(input),
@@ -54,9 +68,26 @@ export const useProfilesStore = defineStore("profiles", {
       }
     },
     async select(id: string): Promise<void> {
-      this.activeId = id;
       const draft = useDraftStore();
-      await draft.load(id);
+      if (this.activeId === id && draft.draft?.profileId === id) {
+        return;
+      }
+
+      const currentId = this.activeId;
+      await flushActiveDraft(currentId);
+
+      const previousStatus = draft.status;
+      const previousError = draft.lastError;
+      const previousConflict = draft.conflict;
+      try {
+        await draft.load(id);
+        this.activeId = id;
+      } catch (error) {
+        draft.status = previousStatus;
+        draft.lastError = previousError;
+        draft.conflict = previousConflict;
+        throw error;
+      }
     },
     async remove(id: string): Promise<void> {
       this.items = this.items.filter((item) => item.id !== id);

@@ -93,6 +93,54 @@ describe("useDraftStore", () => {
     }
   });
 
+  it("preserves edits made while an earlier save request is in flight", async () => {
+    vi.useFakeTimers();
+    try {
+      vi.spyOn(apiClient, "request").mockResolvedValueOnce({
+        data: draftBody,
+        etag: '"draft-3"',
+      });
+      const draft = useDraftStore();
+      await draft.load(profile.id);
+
+      let resolveFirstSave!: (value: { data: Draft; etag: string }) => void;
+      const firstSave = new Promise<{ data: Draft; etag: string }>((resolve) => {
+        resolveFirstSave = resolve;
+      });
+      const firstResponse: Draft = {
+        ...draftBody,
+        revision: 4,
+        content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+      };
+      const secondResponse: Draft = {
+        ...draftBody,
+        revision: 5,
+        content: { config: { log: { level: "debug" } }, editorBuffers: {} },
+      };
+      const request = vi
+        .spyOn(apiClient, "request")
+        .mockImplementationOnce(() => firstSave)
+        .mockResolvedValueOnce({ data: secondResponse, etag: '"draft-5"' });
+
+      draft.replaceConfig({ log: { level: "warn" } });
+      await vi.advanceTimersByTimeAsync(600);
+      expect(request).toHaveBeenCalledTimes(1);
+
+      draft.replaceConfig({ log: { level: "debug" } });
+      resolveFirstSave({ data: firstResponse, etag: '"draft-4"' });
+      await vi.advanceTimersByTimeAsync(600);
+
+      expect(request).toHaveBeenCalledTimes(2);
+      const secondBody = JSON.parse(request.mock.calls[1][1]?.body as string);
+      expect(secondBody.config).toEqual({ log: { level: "debug" } });
+      expect(draft.draft?.content.config).toEqual({ log: { level: "debug" } });
+      expect(draft.etag).toBe('"draft-5"');
+      expect(draft.status).toBe("saved");
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it("on 409 enters the conflict state without retrying", async () => {
     vi.useFakeTimers();
     try {

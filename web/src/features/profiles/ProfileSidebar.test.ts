@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import ProfileSidebar from "./ProfileSidebar.vue";
@@ -52,6 +52,29 @@ describe("ProfileSidebar", () => {
     expect(wrapper.text()).toContain("home-gateway");
     expect(wrapper.text()).toContain("草稿 r3");
     expect(wrapper.text()).toContain("已发布 r2");
+  });
+
+  it("changes the config route when another profile is selected", async () => {
+    const profileB: Profile = {
+      ...profileA,
+      id: "b".repeat(32),
+      name: "办公室",
+      slug: "office",
+      directoryHint: "/etc/sing-box/office",
+      checkCommand: "sing-box check -C /etc/sing-box/office",
+    };
+    const profiles = useProfilesStore();
+    profiles.items = [profileA, profileB];
+    profiles.activeId = profileA.id;
+    vi.spyOn(profiles, "select").mockResolvedValue(undefined);
+    const wrapper = mountProfileSidebar();
+    const router = (wrapper.vm as unknown as { $router: ReturnType<typeof createRouter> }).$router;
+    await flushPromises();
+
+    await wrapper.findAll("button.profile-entry")[1].trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.fullPath).toBe(`/config/${profileB.id}/general`);
   });
 
   it("exposes 新建档案 opening a dialog named 创建配置档案", async () => {

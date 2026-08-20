@@ -27,17 +27,6 @@ export const routes = [
         path: "config/:profileId?/:module?",
         name: "config",
         component: ConfigWorkspace,
-        beforeEnter: async (to: import("vue-router").RouteLocationNormalized) => {
-          const profiles = useProfilesStore();
-          if (profiles.items.length === 0) {
-            await profiles.load().catch(() => undefined);
-          }
-          const profileId = to.params.profileId;
-          if (typeof profileId === "string" && profiles.activeId !== profileId) {
-            await profiles.select(profileId).catch(() => undefined);
-          }
-          return true;
-        },
       },
       {
         path: "runtime",
@@ -90,6 +79,20 @@ router.beforeEach(async (to) => {
     const capabilities = useCapabilitiesStore();
     if (capabilities.snapshot === null) {
       await capabilities.load().catch(() => undefined);
+    }
+  }
+  if (auth.session !== null && to.name === "config") {
+    const profiles = useProfilesStore();
+    try {
+      if (profiles.items.length === 0) {
+        await profiles.load();
+      }
+      const profileId = to.params.profileId;
+      if (typeof profileId === "string" && profiles.activeId !== profileId) {
+        await profiles.select(profileId);
+      }
+    } catch {
+      return false;
     }
   }
   return true;

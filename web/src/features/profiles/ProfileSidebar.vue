@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { useRouter } from "vue-router";
 import { useProfilesStore } from "../../stores/profiles";
 import { useDraftStore } from "../../stores/draft";
 import CreateProfileDialog from "./CreateProfileDialog.vue";
@@ -8,6 +9,7 @@ import DeleteProfileDialog from "./DeleteProfileDialog.vue";
 
 const profiles = useProfilesStore();
 const draft = useDraftStore();
+const router = useRouter();
 
 const showCreateDialog = ref(false);
 const showRenameDialog = ref(false);
@@ -29,7 +31,7 @@ const saveStatusText = computed(() => {
 });
 
 async function selectProfile(id: string): Promise<void> {
-  await profiles.select(id);
+  await router.push(`/config/${id}/general`);
 }
 
 async function copyText(text: string): Promise<void> {

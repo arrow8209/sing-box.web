@@ -30,7 +30,7 @@ describe("useDraftAutosave", () => {
   it("retries once on the online event using the current ETag", async () => {
     const addEventListener = vi.spyOn(window, "addEventListener");
     const draft = useDraftStore();
-    const save = vi.spyOn(draft, "save").mockResolvedValue(undefined);
+    const save = vi.spyOn(draft, "save").mockResolvedValue(true);
     useDraftAutosave();
 
     draft.status = "offline";

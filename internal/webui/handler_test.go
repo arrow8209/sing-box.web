@@ -16,6 +16,7 @@ func TestNewHandlerServingAndFallback(t *testing.T) {
 	files := fstest.MapFS{
 		"index.html":      &fstest.MapFile{Data: []byte("<html><body>index</body></html>")},
 		"assets/app.js":   &fstest.MapFile{Data: []byte("console.log('app')")},
+		"assets/app.css":  &fstest.MapFile{Data: []byte("body { color: black; }")},
 		"placeholder.txt": &fstest.MapFile{Data: []byte("singbox-web embedded UI build sentinel\n")},
 	}
 
@@ -30,6 +31,7 @@ func TestNewHandlerServingAndFallback(t *testing.T) {
 		contentType string
 	}{
 		{name: "asset", path: "/assets/app.js", wantStatus: http.StatusOK, wantBody: "console.log('app')", cache: assetCacheControlHint, contentType: "text/javascript"},
+		{name: "stylesheet", path: "/assets/app.css", wantStatus: http.StatusOK, wantBody: "body { color: black; }", cache: assetCacheControlHint, contentType: "text/css"},
 		{name: "spa fallback", path: "/config/id/general", wantStatus: http.StatusOK, wantBody: "<html><body>index</body></html>", cache: indexCacheControl},
 		{name: "missing asset", path: "/assets/missing.js", wantStatus: http.StatusNotFound},
 		{name: "placeholder", path: "/placeholder.txt", wantStatus: http.StatusNotFound},

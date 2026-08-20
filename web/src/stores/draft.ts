@@ -16,13 +16,35 @@ interface DraftState {
   status: DraftStatus;
   lastError: APIError | null;
   conflict: DraftConflictState | null;
+  mutationVersion: number;
 }
 
 const SAVE_DEBOUNCE_MS = 600;
 
 const UNSAFE_BUFFER_PATH_SEGMENTS = new Set(["", ".", "..", "__proto__", "prototype", "constructor"]);
 
-let saveTimer: ReturnType<typeof setTimeout> | null = null;
+interface SaveRuntime {
+  timer: ReturnType<typeof setTimeout> | null;
+  inFlight: Promise<boolean> | null;
+}
+
+const saveRuntimes = new WeakMap<object, SaveRuntime>();
+
+function saveRuntime(store: object): SaveRuntime {
+  let runtime = saveRuntimes.get(store);
+  if (runtime === undefined) {
+    runtime = { timer: null, inFlight: null };
+    saveRuntimes.set(store, runtime);
+  }
+  return runtime;
+}
+
+function clearSaveTimer(runtime: SaveRuntime): void {
+  if (runtime.timer !== null) {
+    clearTimeout(runtime.timer);
+    runtime.timer = null;
+  }
+}
 
 function cloneDraft(draft: Draft): Draft {
   return JSON.parse(JSON.stringify(draft)) as Draft;
@@ -64,6 +86,7 @@ export const useDraftStore = defineStore("draft", {
     status: "idle",
     lastError: null,
     conflict: null,
+    mutationVersion: 0,
   }),
   actions: {
     async load(profileId: string): Promise<void> {
@@ -87,6 +110,7 @@ export const useDraftStore = defineStore("draft", {
         this.status = "saved";
         this.lastError = null;
         this.conflict = null;
+        this.mutationVersion = 0;
       } catch (error) {
         this.status = "error";
         this.lastError =
@@ -129,6 +153,7 @@ export const useDraftStore = defineStore("draft", {
       }
       next.content = { ...next.content, config, editorBuffers: buffers };
       this.draft = next;
+      this.mutationVersion += 1;
       this.status = "dirty";
       this.scheduleSave();
     },
@@ -156,6 +181,7 @@ export const useDraftStore = defineStore("draft", {
       const next = cloneDraft(this.draft);
       next.content = { config, editorBuffers: { ...next.content.editorBuffers, ...buffers } };
       this.draft = next;
+      this.mutationVersion += 1;
       this.status = "dirty";
       this.scheduleSave();
     },
@@ -174,6 +200,7 @@ export const useDraftStore = defineStore("draft", {
       }
       next.content = { ...next.content, editorBuffers: buffers };
       this.draft = next;
+      this.mutationVersion += 1;
       this.status = "dirty";
       this.scheduleSave();
     },
@@ -191,6 +218,7 @@ export const useDraftStore = defineStore("draft", {
       };
       next.content = { ...next.content, editorBuffers: buffers };
       this.draft = next;
+      this.mutationVersion += 1;
       this.status = "dirty";
       this.scheduleSave();
     },
@@ -207,15 +235,24 @@ export const useDraftStore = defineStore("draft", {
       };
       next.content = { ...next.content, editorBuffers: buffers };
       this.draft = next;
+      this.mutationVersion += 1;
       this.status = "dirty";
       this.scheduleSave();
     },
-    async save(): Promise<void> {
+    async save(): Promise<boolean> {
+      const runtime = saveRuntime(this);
+      clearSaveTimer(runtime);
+      if (runtime.inFlight !== null) {
+        return runtime.inFlight;
+      }
       if (this.draft === null || this.etag === null) {
-        return;
+        return false;
       }
       if (this.status === "conflict" || this.status === "error") {
-        return;
+        return false;
+      }
+      if (this.status === "saved") {
+        return true;
       }
       const profiles = useProfilesStore();
       const profile = profiles.active;
@@ -225,36 +262,71 @@ export const useDraftStore = defineStore("draft", {
           code: "draft_read_only",
           message: profile.draftError || "草稿只读，需要管理员在服务器修复",
         };
-        return;
+        return false;
       }
-      const profileId = this.draft.profileId;
-      const content = cloneDraft(this.draft).content;
-      this.status = "saving";
-      try {
-        const { data, etag } = await apiClient.request<Draft>(`/profiles/${profileId}/draft`, {
-          method: "PUT",
-          headers: { "If-Match": this.etag },
-          body: JSON.stringify(content),
-        });
-        this.draft = data;
-        this.etag = etag;
-        this.status = "saved";
-        this.lastError = null;
-      } catch (error) {
-        if (error instanceof APIClientError && error.status === 409) {
-          this.status = "conflict";
-          this.conflict = {
-            localContent: content,
-            serverRevision: error.detail.currentRevision ?? 0,
-          };
-          this.lastError = error.detail;
-          return;
+
+      const task = (async (): Promise<boolean> => {
+        const profileId = this.draft!.profileId;
+        while (this.draft !== null && this.draft.profileId === profileId && this.etag !== null) {
+          clearSaveTimer(runtime);
+          const startedVersion = this.mutationVersion;
+          const content = cloneDraft(this.draft).content;
+          const requestETag = this.etag;
+          this.status = "saving";
+          try {
+            const { data, etag } = await apiClient.request<Draft>(`/profiles/${profileId}/draft`, {
+              method: "PUT",
+              headers: { "If-Match": requestETag },
+              body: JSON.stringify(content),
+            });
+            if (this.draft === null || this.draft.profileId !== profileId) {
+              return false;
+            }
+            if (etag === null) {
+              this.status = "error";
+              this.lastError = { code: "invalid_response", message: "草稿保存响应缺少修订号" };
+              return false;
+            }
+            this.etag = etag;
+            this.lastError = null;
+            if (this.mutationVersion === startedVersion) {
+              this.draft = data;
+              this.status = "saved";
+              return true;
+            }
+
+            const latest = cloneDraft(this.draft);
+            latest.revision = data.revision;
+            latest.savedAt = data.savedAt;
+            this.draft = latest;
+            this.status = "dirty";
+          } catch (error) {
+            if (error instanceof APIClientError && error.status === 409) {
+              this.status = "conflict";
+              this.conflict = {
+                localContent: cloneDraft(this.draft).content,
+                serverRevision: error.detail.currentRevision ?? 0,
+              };
+              this.lastError = error.detail;
+              return false;
+            }
+            this.status = "offline";
+            this.lastError =
+              error instanceof APIClientError
+                ? error.detail
+                : { code: "network_error", message: "草稿保存失败" };
+            return false;
+          }
         }
-        this.status = "offline";
-        this.lastError =
-          error instanceof APIClientError
-            ? error.detail
-            : { code: "network_error", message: "草稿保存失败" };
+        return false;
+      })();
+      runtime.inFlight = task;
+      try {
+        return await task;
+      } finally {
+        if (runtime.inFlight === task) {
+          runtime.inFlight = null;
+        }
       }
     },
     async reloadAfterConflict(): Promise<void> {
@@ -287,13 +359,13 @@ export const useDraftStore = defineStore("draft", {
       this.status = "saved";
       this.conflict = null;
       this.lastError = null;
+      this.mutationVersion = 0;
     },
     scheduleSave(): void {
-      if (saveTimer !== null) {
-        clearTimeout(saveTimer);
-      }
-      saveTimer = setTimeout(() => {
-        saveTimer = null;
+      const runtime = saveRuntime(this);
+      clearSaveTimer(runtime);
+      runtime.timer = setTimeout(() => {
+        runtime.timer = null;
         void this.save();
       }, SAVE_DEBOUNCE_MS);
     },

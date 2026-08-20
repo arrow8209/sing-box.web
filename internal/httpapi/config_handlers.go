@@ -114,6 +114,9 @@ func (service *server) publishProfile(response http.ResponseWriter, request *htt
 		resultCode = "draft_conflict"
 		current := conflict.Current
 		writeJSON(response, http.StatusConflict, ErrorBody{Error: APIError{Code: resultCode, Message: "草稿已被其他页面更新", CurrentRevision: &current}})
+	case errors.Is(err, publication.ErrExternalDrift):
+		resultCode = "external_drift"
+		writeAPIError(response, http.StatusConflict, resultCode, "正式配置已被外部修改，需要确认后覆盖")
 	case errors.Is(err, singbox.ErrUnavailable):
 		resultCode = "singbox_unavailable"
 		writeCheckerError(response, http.StatusServiceUnavailable, resultCode, "sing-box 不可用", err)

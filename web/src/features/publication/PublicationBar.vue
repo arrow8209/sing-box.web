@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
+import { APIClientError } from "../../api/client";
 import { useDraftStore } from "../../stores/draft";
 import { usePublicationStore } from "../../stores/publication";
 import { useProfilesStore } from "../../stores/profiles";
@@ -35,6 +36,17 @@ const pendingChanges = computed(() => {
   return profile !== null && draft.draft !== null && draft.draft.revision !== profile.publishedRevision;
 });
 
+const errorMessage = computed(
+  () => publication.lastError?.stderr || publication.lastError?.message || "",
+);
+
+const validationIssues = computed(() => {
+  if (publication.lastError?.fieldIssues !== undefined) {
+    return publication.lastError.fieldIssues;
+  }
+  return publication.lastValidation?.valid === false ? publication.lastValidation.issues : [];
+});
+
 const publishedConfig = ref<Record<string, unknown> | null>(null);
 
 async function validate(): Promise<void> {
@@ -57,8 +69,20 @@ async function publish(): Promise<void> {
     await publication.publish();
     announcement.value = "正式配置已写入";
     publishedConfig.value = null;
-  } catch {
-    announcement.value = "";
+  } catch (error) {
+    if (
+      error instanceof APIClientError &&
+      error.detail.code === "external_drift" &&
+      window.confirm("检测到正式配置已被外部修改。确认覆盖受管发布目录中的外部改动？")
+    ) {
+      try {
+        await publication.publish(true);
+        announcement.value = "正式配置已写入";
+        publishedConfig.value = null;
+      } catch {
+        announcement.value = "";
+      }
+    }
   }
 }
 
@@ -117,9 +141,11 @@ async function downloadFull(): Promise<void> {
       <button class="btn" name="显示模块差异" type="button" @click="showDiff">显示模块差异</button>
     </div>
 
+    <p v-if="errorMessage" class="publication-error" role="alert">{{ errorMessage }}</p>
+
     <ValidationIssueList
-      v-if="publication.lastValidation?.valid === false"
-      :issues="publication.lastValidation.issues"
+      v-if="validationIssues.length > 0"
+      :issues="validationIssues"
       @go-to-field="emit('goToField', $event)"
     />
 
@@ -160,5 +186,11 @@ async function downloadFull(): Promise<void> {
   display: flex;
   flex-wrap: wrap;
   gap: 8px;
+}
+
+.publication-error {
+  margin: 0;
+  color: var(--red);
+  font-size: 13px;
 }
 </style>

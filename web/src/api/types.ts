@@ -10,6 +10,7 @@ export interface APIError {
   message: string;
   fieldIssues?: ValidationIssue[];
   currentRevision?: number;
+  stderr?: string;
 }
 
 export interface SessionResponse {

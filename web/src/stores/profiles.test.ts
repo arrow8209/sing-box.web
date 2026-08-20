@@ -93,6 +93,31 @@ describe("useProfilesStore", () => {
     expect(router.push).toHaveBeenCalledWith(`/config/${profileA.id}/general`);
   });
 
+  it("does not create a profile until the current dirty draft is saved", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profileA];
+    profiles.activeId = profileA.id;
+    const draftStore = useDraftStore();
+    draftStore.draft = {
+      ...draftBody,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+    };
+    draftStore.etag = '"draft-3"';
+    draftStore.status = "dirty";
+    draftStore.mutationVersion = 1;
+    const request = vi.spyOn(apiClient, "request").mockRejectedValue(new TypeError("offline"));
+
+    await expect(
+      profiles.create({ name: "办公室", slug: "office" }),
+    ).rejects.toThrow("草稿保存失败");
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][0]).toBe(`/profiles/${profileA.id}/draft`);
+    expect(request.mock.calls[0][1]).toEqual(expect.objectContaining({ method: "PUT" }));
+    expect(profiles.items).toEqual([profileA]);
+    expect(profiles.activeId).toBe(profileA.id);
+  });
+
   it("rename changes the name only", async () => {
     vi.spyOn(apiClient, "request").mockResolvedValue({ data: [profileA], etag: null });
     const profiles = useProfilesStore();
@@ -127,6 +152,65 @@ describe("useProfilesStore", () => {
     expect(draftStore.draft).toEqual(draftBody);
   });
 
+  it("saves dirty content before loading another profile", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profileA, profileB];
+    profiles.activeId = profileA.id;
+    const draftStore = useDraftStore();
+    draftStore.draft = {
+      ...draftBody,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+    };
+    draftStore.etag = '"draft-3"';
+    draftStore.status = "dirty";
+    draftStore.mutationVersion = 1;
+
+    const savedA: Draft = { ...draftStore.draft, revision: 4 };
+    const draftB: Draft = {
+      profileId: profileB.id,
+      revision: 1,
+      content: { config: { log: { level: "debug" } }, editorBuffers: {} },
+      savedAt: "2026-08-18T10:01:00Z",
+    };
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockResolvedValueOnce({ data: savedA, etag: '"draft-4"' })
+      .mockResolvedValueOnce({ data: draftB, etag: '"draft-1"' });
+
+    await profiles.select(profileB.id);
+
+    expect(request).toHaveBeenCalledTimes(2);
+    expect(request.mock.calls[0][0]).toBe(`/profiles/${profileA.id}/draft`);
+    expect(request.mock.calls[0][1]).toEqual(expect.objectContaining({ method: "PUT" }));
+    expect(request).toHaveBeenNthCalledWith(2, `/profiles/${profileB.id}/draft`);
+    expect(profiles.activeId).toBe(profileB.id);
+    expect(draftStore.draft).toEqual(draftB);
+  });
+
+  it("keeps the current profile selected when its dirty draft cannot be saved", async () => {
+    const profiles = useProfilesStore();
+    profiles.items = [profileA, profileB];
+    profiles.activeId = profileA.id;
+    const draftStore = useDraftStore();
+    draftStore.draft = {
+      ...draftBody,
+      content: { config: { log: { level: "warn" } }, editorBuffers: {} },
+    };
+    draftStore.etag = '"draft-3"';
+    draftStore.status = "dirty";
+    draftStore.mutationVersion = 1;
+    const request = vi.spyOn(apiClient, "request").mockRejectedValue(new TypeError("offline"));
+
+    await expect(profiles.select(profileB.id)).rejects.toThrow("草稿保存失败");
+
+    expect(request).toHaveBeenCalledTimes(1);
+    expect(request.mock.calls[0][0]).toBe(`/profiles/${profileA.id}/draft`);
+    expect(profiles.activeId).toBe(profileA.id);
+    expect(draftStore.draft?.profileId).toBe(profileA.id);
+    expect(draftStore.draft?.content.config).toEqual({ log: { level: "warn" } });
+    expect(draftStore.status).toBe("offline");
+  });
+
   it("a read-only draft shows the safe repair message and never issues a draft PUT", async () => {
     const readOnlyProfile: Profile = {
       ...profileA,
@@ -138,7 +222,7 @@ describe("useProfilesStore", () => {
     await profiles.load();
 
     const draftStore = useDraftStore();
-    const save = vi.spyOn(draftStore, "save").mockResolvedValue(undefined);
+    const save = vi.spyOn(draftStore, "save").mockResolvedValue(false);
     const request = vi.spyOn(apiClient, "request");
     await profiles.select(readOnlyProfile.id);
 
