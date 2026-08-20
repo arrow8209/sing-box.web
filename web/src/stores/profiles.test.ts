@@ -62,13 +62,23 @@ describe("useProfilesStore", () => {
     expect(profiles.items.map((p) => p.slug)).toEqual(["home-gateway", "office"]);
   });
 
-  it("create appends the returned profile and routes to its general module", async () => {
+  it("create selects and loads the new profile draft before routing to its general module", async () => {
     vi.spyOn(apiClient, "request").mockResolvedValue({ data: [profileB], etag: null });
-    const router = { push: vi.fn() };
     const profiles = useProfilesStore();
     await profiles.load();
 
-    const request = vi.spyOn(apiClient, "request").mockResolvedValue({ data: profileA, etag: null });
+    const request = vi
+      .spyOn(apiClient, "request")
+      .mockResolvedValueOnce({ data: profileA, etag: null })
+      .mockResolvedValueOnce({ data: draftBody, etag: '"draft-3"' });
+    const draftStore = useDraftStore();
+    const router = {
+      push: vi.fn(() => {
+        expect(profiles.activeId).toBe(profileA.id);
+        expect(draftStore.draft).toEqual(draftBody);
+        expect(draftStore.etag).toBe('"draft-3"');
+      }),
+    };
     const created = await profiles.create({ name: "家庭网关", slug: "home-gateway" }, router as never);
 
     expect(request).toHaveBeenCalledWith(
@@ -77,6 +87,9 @@ describe("useProfilesStore", () => {
     );
     expect(created).toEqual(profileA);
     expect(profiles.items.map((p) => p.slug)).toEqual(["office", "home-gateway"]);
+    expect(request).toHaveBeenNthCalledWith(2, `/profiles/${profileA.id}/draft`);
+    expect(profiles.activeId).toBe(profileA.id);
+    expect(draftStore.etag).toBe('"draft-3"');
     expect(router.push).toHaveBeenCalledWith(`/config/${profileA.id}/general`);
   });
 

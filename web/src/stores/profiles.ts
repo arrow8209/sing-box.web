@@ -39,6 +39,7 @@ export const useProfilesStore = defineStore("profiles", {
         body: JSON.stringify(input),
       });
       this.items = [...this.items, data];
+      await this.select(data.id);
       await router?.push(`/config/${data.id}/general`);
       return data;
     },
