@@ -111,6 +111,30 @@ describe("ConfigWorkspace", () => {
     expect(document.activeElement).toBe(wrapper.get('select[aria-label="日志级别"]').element);
   });
 
+  it("focuses the current structured module container when a known path has no exact control", async () => {
+    const draft = useDraftStore();
+    draft.draft = draftBody;
+    draft.etag = '"draft-1"';
+    draft.status = "saved";
+    const publication = usePublicationStore();
+    publication.lastValidation = {
+      valid: false,
+      issues: [{ stage: "schema", path: "/log", code: "invalid", message: "日志配置无效" }],
+      targetVersion: "1.12.0",
+      installedVersion: "1.12.0",
+      checkedAt: "",
+    };
+
+    const { wrapper } = await mountWorkspace();
+    await wrapper.get('button[name="编辑配置概览 JSON"]').trigger("click");
+    await wrapper.get('[role="link"][aria-label="转到字段 /log"]').trigger("click");
+    await flushPromises();
+
+    const pane = wrapper.get('[data-structured-module="general"]');
+    expect(pane.attributes("tabindex")).toBe("-1");
+    expect(document.activeElement).toBe(pane.element);
+  });
+
   it("keeps the current view for a validation issue whose path has no module mapping", async () => {
     const draft = useDraftStore();
     draft.draft = draftBody;

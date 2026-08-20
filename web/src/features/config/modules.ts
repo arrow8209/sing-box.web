@@ -71,7 +71,7 @@ export function jsonPointerToModule(pointer: string): string | null {
   if (match === null) {
     return null;
   }
-  const segment = decodeURIComponent(match[1].replace(/~1/g, "/").replace(/~0/g, "~"));
+  const segment = match[1].replace(/~1/g, "/").replace(/~0/g, "~");
   for (const descriptor of modules) {
     if (topLevelKey(descriptor.key) === segment) {
       return descriptor.key;

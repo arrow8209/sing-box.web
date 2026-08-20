@@ -19,6 +19,7 @@ const router = useRouter();
 const draft = useDraftStore();
 
 const rawMode = ref(false);
+const structuredPane = ref<HTMLElement | null>(null);
 
 const profileId = computed(() => {
   const value = route.params.profileId;
@@ -79,7 +80,7 @@ async function goToValidationField(path: string): Promise<void> {
   const target = Array.from(document.querySelectorAll<HTMLElement>("[data-json-path]")).find(
     (element) => element.dataset.jsonPath === path,
   );
-  target?.focus();
+  (target ?? structuredPane.value)?.focus();
 }
 </script>
 
@@ -110,7 +111,13 @@ async function goToValidationField(path: string): Promise<void> {
       <section v-if="rawMode" :aria-label="rawEditorAccessibleName()">
         <RawModuleEditor :module="activeModule" :label="activeDescriptor.label" />
       </section>
-      <section v-else-if="structuredAvailable" class="structured-pane">
+      <section
+        v-else-if="structuredAvailable"
+        ref="structuredPane"
+        class="structured-pane"
+        :data-structured-module="activeModule"
+        tabindex="-1"
+      >
         <GeneralEditor v-if="activeModule === 'general'" />
         <DNSEditor v-else-if="activeModule === 'dns'" />
         <InboundsEditor v-else-if="activeModule === 'inbounds'" />
