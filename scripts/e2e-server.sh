@@ -98,7 +98,7 @@ config_group=$(id -gn)
 backend_pid=$!
 
 attempt=0
-until curl --noproxy '*' -fsS http://127.0.0.1:18080/healthz >/dev/null; do
+until curl --noproxy '*' -fsS http://127.0.0.1:18080/healthz >/dev/null 2>/dev/null; do
     if ! kill -0 "$backend_pid" 2>/dev/null; then
         sed -n '1,160p' "$backend_log" >&2
         exit 1
@@ -106,6 +106,7 @@ until curl --noproxy '*' -fsS http://127.0.0.1:18080/healthz >/dev/null; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 100 ]; then
         echo 'backend health timeout' >&2
+        sed -n '1,160p' "$backend_log" >&2
         exit 1
     fi
     sleep 0.1
@@ -136,7 +137,7 @@ XDG_DATA_HOME="$caddy_data" XDG_CONFIG_HOME="$caddy_config" \
 caddy_pid=$!
 
 attempt=0
-until curl --noproxy '*' -kfsS https://127.0.0.1:18443/healthz >/dev/null; do
+until curl --noproxy '*' -kfsS https://127.0.0.1:18443/healthz >/dev/null 2>/dev/null; do
     if ! kill -0 "$caddy_pid" 2>/dev/null; then
         sed -n '1,160p' "$caddy_log" >&2
         exit 1
@@ -144,6 +145,7 @@ until curl --noproxy '*' -kfsS https://127.0.0.1:18443/healthz >/dev/null; do
     attempt=$((attempt + 1))
     if [ "$attempt" -ge 100 ]; then
         echo 'Caddy health timeout' >&2
+        sed -n '1,160p' "$caddy_log" >&2
         exit 1
     fi
     sleep 0.1

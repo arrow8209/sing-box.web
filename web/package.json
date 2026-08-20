@@ -8,7 +8,7 @@
     "build": "vue-tsc -b && vite build",
     "test": "vitest run src",
     "test:watch": "vitest",
-    "test:e2e": "env http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= all_proxy= NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1 playwright test",
+    "test:e2e": "env -u NO_COLOR http_proxy= https_proxy= HTTP_PROXY= HTTPS_PROXY= ALL_PROXY= all_proxy= NO_PROXY=127.0.0.1,localhost,::1 no_proxy=127.0.0.1,localhost,::1 playwright test",
     "typecheck": "vue-tsc -b --pretty false"
   },
   "dependencies": {
