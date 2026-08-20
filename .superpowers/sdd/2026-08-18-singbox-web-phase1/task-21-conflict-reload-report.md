@@ -9,3 +9,9 @@
 - RED：`npm --prefix web exec -- vitest run src/stores/draft.test.ts` 中，新测试检测到 `window.confirm` 被调用 1 次。
 - GREEN：同一命令通过，7 个测试全部通过。
 - 类型检查：`npm --prefix web run typecheck` 通过。
+
+## Fix round 1：ETag 回归覆盖
+
+- 在 `reloadAfterConflict` 成功路径断言 `draft.etag === '"draft-5"'`，覆盖载入服务器草稿时同步更新 ETag。
+- `npm --prefix web exec -- vitest run src/stores/draft.test.ts` 通过（7/7）。
+- `npm --prefix web run typecheck` 通过。

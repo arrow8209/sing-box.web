@@ -151,6 +151,7 @@ describe("useDraftStore", () => {
     expect(confirm).not.toHaveBeenCalled();
     expect(request).toHaveBeenCalledWith(`/profiles/${profile.id}/draft`);
     expect(draft.draft?.revision).toBe(5);
+    expect(draft.etag).toBe('"draft-5"');
     expect(draft.conflict).toBeNull();
     expect(draft.status).toBe("saved");
   });
