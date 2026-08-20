@@ -391,4 +391,48 @@ describe("useDraftStore", () => {
       applied: true,
     });
   });
+
+  it("treats a sparse array index with a polluted prototype as a missing path", () => {
+    const draft = useDraftStore();
+    const rules: unknown[] = [];
+    rules.length = 1;
+    Object.defineProperty(Array.prototype, "0", {
+      configurable: true,
+      value: { action: "route", outbound: "inherited" },
+      writable: true,
+    });
+    try {
+      expect(draft.formatModule("route/rules/0", { route: { rules } })).toBeUndefined();
+    } finally {
+      delete (Array.prototype as unknown as Record<string, unknown>)["0"];
+    }
+  });
+
+  it("removes regenerated buffers for sparse array indexes with polluted prototypes", () => {
+    const draft = useDraftStore();
+    const rules: unknown[] = [];
+    rules.length = 1;
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { route: { rules: [] } },
+        editorBuffers: {
+          "route/rules/0": { text: '{"action":"route"}', valid: true, applied: true },
+        },
+      },
+    };
+    draft.status = "saved";
+    Object.defineProperty(Array.prototype, "0", {
+      configurable: true,
+      value: { action: "route", outbound: "inherited" },
+      writable: true,
+    });
+    try {
+      draft.replaceConfig({ route: { rules } });
+
+      expect(draft.draft?.content.editorBuffers["route/rules/0"]).toBeUndefined();
+    } finally {
+      delete (Array.prototype as unknown as Record<string, unknown>)["0"];
+    }
+  });
 });

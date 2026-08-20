@@ -43,7 +43,7 @@ function configPathValue(
         return { exists: false };
       }
       const index = Number(segment);
-      if (!Number.isSafeInteger(index) || index >= current.length) {
+      if (!Number.isSafeInteger(index) || index >= current.length || !Object.hasOwn(current, segment)) {
         return { exists: false };
       }
       current = current[index];
