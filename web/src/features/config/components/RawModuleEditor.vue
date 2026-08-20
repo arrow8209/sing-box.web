@@ -92,7 +92,7 @@ function showText(): string {
 </script>
 
 <template>
-  <section class="raw-editor" :aria-label="`${props.module} JSON`">
+  <section class="raw-editor" :aria-label="editorName">
     <div v-if="sensitive && !revealed" class="redacted-preview">
       <code class="redacted-text">{{ showText() }}</code>
       <button class="btn" name="显示完整 JSON 并编辑" type="button" @click="reveal">

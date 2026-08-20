@@ -32,3 +32,11 @@ npm --prefix web run typecheck
 ## 提交
 
 提交：`修复原始 JSON 编辑器模块完整标签`（中文提交）
+
+## P1 fix round 1
+
+RED：新增非 general `dns` 模块、完整 label `DNS` 的直接组件断言；失败原因是 `.raw-editor` 仍暴露 `dns JSON`。
+
+GREEN：`.raw-editor` 容器改用与 textarea 相同的 `editorName`；测试同时断言容器和 textarea 均为 `DNS JSON`。
+
+验证：聚焦组件测试（实际 vitest 配置同时执行 29 个文件）29 files / 122 tests passed；`npm --prefix web run typecheck` 通过。

@@ -36,6 +36,15 @@ describe("RawModuleEditor", () => {
     vi.restoreAllMocks();
   });
 
+  it("uses the complete descriptor label for the editor container", () => {
+    const wrapper = mount(RawModuleEditor, {
+      props: { module: "dns", label: "DNS" },
+    });
+
+    expect(wrapper.get(".raw-editor").attributes("aria-label")).toBe("DNS JSON");
+    expect(wrapper.get("textarea").attributes("aria-label")).toBe("DNS JSON");
+  });
+
   it("invalid text emits an unapplied buffer without touching the canonical config", async () => {
     const draft = useDraftStore();
     draft.draft = draftWithLog;
