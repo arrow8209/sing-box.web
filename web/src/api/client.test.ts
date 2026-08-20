@@ -29,6 +29,17 @@ afterEach(() => {
 });
 
 describe("APIClient", () => {
+  it("adds the API v1 prefix while preserving query strings and existing API paths", async () => {
+    const client = new APIClient();
+    const fetchMock = stubFetchEach(() => jsonResponse(200, {}));
+
+    await client.request("/auth/session?refresh=true");
+    await client.request("/api/v1/profiles");
+
+    expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/auth/session?refresh=true");
+    expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/profiles");
+  });
+
   it("sets credentials same-origin and never sets Origin on login", async () => {
     const client = new APIClient();
     const fetchMock = stubFetch(jsonResponse(200, { username: "admin", csrfToken: "t", expiresAt: "2030-01-01T00:00:00Z" }));

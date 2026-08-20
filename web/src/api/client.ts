@@ -20,6 +20,13 @@ interface ErrorEnvelope {
   error: APIError;
 }
 
+function apiPath(path: string): string {
+  if (path === "/api/v1" || path.startsWith("/api/v1/")) {
+    return path;
+  }
+  return `/api/v1/${path.replace(/^\/+/, "")}`;
+}
+
 export class APIClient {
   private csrfToken: string | null = null;
   private listeners = new Set<UnauthorizedListener>();
@@ -53,7 +60,7 @@ export class APIClient {
       headers.set("X-CSRF-Token", this.csrfToken);
     }
 
-    const response = await fetch(path, {
+    const response = await fetch(apiPath(path), {
       ...init,
       method,
       headers,
