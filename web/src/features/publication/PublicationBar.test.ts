@@ -85,7 +85,7 @@ describe("PublicationBar", () => {
     profiles.items = [profile];
     profiles.activeId = profile.id;
     const publication = usePublicationStore();
-    vi.spyOn(publication, "validate").mockResolvedValue({
+    const validation = {
       valid: false,
       issues: [
         { stage: "schema", path: "/dns", code: "required", message: "m1" },
@@ -95,12 +95,20 @@ describe("PublicationBar", () => {
       targetVersion: "1.12.0",
       installedVersion: "1.12.0",
       checkedAt: "",
+    };
+    vi.spyOn(publication, "validate").mockImplementation(async () => {
+      publication.lastValidation = validation;
+      return validation;
     });
 
     const wrapper = mount(PublicationBar);
     await wrapper.get('button[name="仅校验"]').trigger("click");
 
     expect(wrapper.get('[role="status"]').text()).toBe("校验失败，共 3 项");
+    expect(wrapper.findAll('[role="link"]')).toHaveLength(3);
+    expect(wrapper.get('[role="link"][aria-label="转到字段 /dns"]').isVisible()).toBe(true);
+    expect(wrapper.get('[role="link"][aria-label="转到字段 /log"]').isVisible()).toBe(true);
+    expect(wrapper.get('[role="link"][aria-label="转到字段 /route"]').isVisible()).toBe(true);
   });
 
   it("announces 正式配置已写入 after a successful publication", async () => {

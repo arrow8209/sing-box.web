@@ -1,9 +1,10 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
 import ConfigWorkspace from "./ConfigWorkspace.vue";
 import { useDraftStore } from "../../stores/draft";
+import { usePublicationStore } from "../../stores/publication";
 import type { Draft } from "../../api/types";
 
 const profileId = "a".repeat(32);
@@ -35,6 +36,7 @@ async function mountWorkspace(module = "general") {
   router.push(`/config/${profileId}/${module}`);
   await router.isReady();
   const wrapper = mount(ConfigWorkspace, {
+    attachTo: document.body,
     global: { plugins: [router] },
   });
   return { wrapper, router };
@@ -44,6 +46,10 @@ describe("ConfigWorkspace", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
     vi.restoreAllMocks();
+  });
+
+  afterEach(() => {
+    document.body.replaceChildren();
   });
 
   it("renders a tablist with the module short labels", async () => {
@@ -76,6 +82,56 @@ describe("ConfigWorkspace", () => {
     const raw = wrapper.get('section[aria-label="配置概览 JSON"]');
     expect(raw.get("textarea").isVisible()).toBe(true);
     expect(raw.get("textarea").attributes("aria-label")).toBe("配置概览 JSON");
+  });
+
+  it("leaves raw JSON mode, navigates and focuses the matching field from a validation issue", async () => {
+    const draft = useDraftStore();
+    draft.draft = draftBody;
+    draft.etag = '"draft-1"';
+    draft.status = "saved";
+    const publication = usePublicationStore();
+    publication.lastValidation = {
+      valid: false,
+      issues: [{ stage: "schema", path: "/log/level", code: "invalid", message: "日志级别无效" }],
+      targetVersion: "1.12.0",
+      installedVersion: "1.12.0",
+      checkedAt: "",
+    };
+
+    const { wrapper, router } = await mountWorkspace();
+    await wrapper.get('button[name="编辑配置概览 JSON"]').trigger("click");
+    expect(wrapper.find('section[aria-label="配置概览 JSON"]').exists()).toBe(true);
+
+    const link = wrapper.get('[role="link"][aria-label="转到字段 /log/level"]');
+    await link.trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.params.module).toBe("general");
+    expect(wrapper.find('section[aria-label="配置概览 JSON"]').exists()).toBe(false);
+    expect(document.activeElement).toBe(wrapper.get('select[aria-label="日志级别"]').element);
+  });
+
+  it("keeps the current view for a validation issue whose path has no module mapping", async () => {
+    const draft = useDraftStore();
+    draft.draft = draftBody;
+    draft.etag = '"draft-1"';
+    draft.status = "saved";
+    const publication = usePublicationStore();
+    publication.lastValidation = {
+      valid: false,
+      issues: [{ stage: "schema", path: "/unknown/value", code: "invalid", message: "未知字段" }],
+      targetVersion: "1.12.0",
+      installedVersion: "1.12.0",
+      checkedAt: "",
+    };
+
+    const { wrapper, router } = await mountWorkspace();
+    await wrapper.get('button[name="编辑配置概览 JSON"]').trigger("click");
+    await wrapper.get('[role="link"][aria-label="转到字段 /unknown/value"]').trigger("click");
+    await flushPromises();
+
+    expect(router.currentRoute.value.params.module).toBe("general");
+    expect(wrapper.find('section[aria-label="配置概览 JSON"]').exists()).toBe(true);
   });
 
   it("navigates between module tabs through the router", async () => {

@@ -48,6 +48,7 @@ void ensureBase;
       <span class="form-label">禁用日志</span>
       <input
         aria-label="禁用日志"
+        data-json-path="/log/disabled"
         type="checkbox"
         :checked="disabled"
         @change="onDisabled"
@@ -55,7 +56,7 @@ void ensureBase;
     </label>
     <label class="form-row">
       <span class="form-label">日志级别</span>
-      <select aria-label="日志级别" :value="level" @change="onLevel">
+      <select aria-label="日志级别" data-json-path="/log/level" :value="level" @change="onLevel">
         <option value="trace">trace</option>
         <option value="debug">debug</option>
         <option value="info">info</option>
@@ -69,6 +70,7 @@ void ensureBase;
       <span class="form-label">日志输出路径</span>
       <input
         aria-label="日志输出路径"
+        data-json-path="/log/output"
         type="text"
         :value="output"
         placeholder="留空使用标准输出"
@@ -79,6 +81,7 @@ void ensureBase;
       <span class="form-label">日志时间戳</span>
       <input
         aria-label="日志时间戳"
+        data-json-path="/log/timestamp"
         type="checkbox"
         :checked="timestamp"
         @change="onTimestamp"

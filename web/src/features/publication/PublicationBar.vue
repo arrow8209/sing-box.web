@@ -4,12 +4,16 @@ import { useDraftStore } from "../../stores/draft";
 import { usePublicationStore } from "../../stores/publication";
 import { useProfilesStore } from "../../stores/profiles";
 import ModuleDiff from "./ModuleDiff.vue";
+import ValidationIssueList from "../config/components/ValidationIssueList.vue";
 
 const draft = useDraftStore();
 const publication = usePublicationStore();
 const profiles = useProfilesStore();
 
 const announcement = ref("");
+const emit = defineEmits<{
+  goToField: [path: string];
+}>();
 
 const stateLabel = computed(() => {
   switch (draft.status) {
@@ -112,6 +116,12 @@ async function downloadFull(): Promise<void> {
       <button class="btn" name="下载完整配置" type="button" @click="downloadFull">下载完整配置</button>
       <button class="btn" name="显示模块差异" type="button" @click="showDiff">显示模块差异</button>
     </div>
+
+    <ValidationIssueList
+      v-if="publication.lastValidation?.valid === false"
+      :issues="publication.lastValidation.issues"
+      @go-to-field="emit('goToField', $event)"
+    />
 
     <ModuleDiff
       v-if="publishedConfig !== null && draft.draft !== null"

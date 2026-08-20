@@ -76,4 +76,16 @@ describe("GeneralEditor", () => {
     const nextConfig = replaceConfig.mock.calls.at(-1)?.[0] as Record<string, unknown>;
     expect(nextConfig.log).toEqual({ level: "info" });
   });
+
+  it("marks each structured log control with its JSON Pointer", () => {
+    const draft = useDraftStore();
+    draft.draft = makeDraft({ level: "info" });
+    draft.status = "saved";
+
+    const wrapper = mount(GeneralEditor);
+    expect(wrapper.get('input[aria-label="禁用日志"]').attributes("data-json-path")).toBe("/log/disabled");
+    expect(wrapper.get('select[aria-label="日志级别"]').attributes("data-json-path")).toBe("/log/level");
+    expect(wrapper.get('input[aria-label="日志输出路径"]').attributes("data-json-path")).toBe("/log/output");
+    expect(wrapper.get('input[aria-label="日志时间戳"]').attributes("data-json-path")).toBe("/log/timestamp");
+  });
 });

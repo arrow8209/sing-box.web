@@ -1,37 +1,28 @@
 <script setup lang="ts">
-import { useRouter } from "vue-router";
-import { jsonPointerToModule } from "../modules";
 import type { ValidationIssue } from "../../../api/types";
 
-const props = defineProps<{
+defineProps<{
   issues: ValidationIssue[];
-  profileId: string;
 }>();
 
-const router = useRouter();
-
-async function goToField(issue: ValidationIssue): Promise<void> {
-  const module = jsonPointerToModule(issue.path);
-  if (module === null) {
-    return;
-  }
-  await router.push(`/config/${props.profileId}/${module}`);
-  // 聚焦最近的 data-json-path 元素。
-  await new Promise((resolve) => setTimeout(resolve, 0));
-  const target = document.querySelector<HTMLElement>(
-    `[data-json-path="${CSS.escape(issue.path)}"]`,
-  );
-  target?.focus();
-}
+const emit = defineEmits<{
+  goToField: [path: string];
+}>();
 </script>
 
 <template>
   <ul class="issue-list" aria-label="校验问题">
     <li v-for="(issue, index) in issues" :key="index" class="issue-item">
       <span class="issue-stage">{{ issue.stage }}</span>
-      <button class="issue-link" type="button" :name="`转到字段 ${issue.path}`" @click="goToField(issue)">
+      <a
+        class="issue-link"
+        href="#"
+        role="link"
+        :aria-label="`转到字段 ${issue.path}`"
+        @click.prevent="emit('goToField', issue.path)"
+      >
         {{ issue.message }}
-      </button>
+      </a>
       <code class="issue-path">{{ issue.path }}</code>
     </li>
   </ul>

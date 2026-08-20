@@ -1,8 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
-import { useRoute } from "vue-router";
+import { computed, nextTick, ref } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import { useDraftStore } from "../../stores/draft";
-import { modules, topLevelKey } from "./modules";
+import { jsonPointerToModule, modules, topLevelKey } from "./modules";
 import ModuleTabs from "./components/ModuleTabs.vue";
 import RawModuleEditor from "./components/RawModuleEditor.vue";
 import PublicationBar from "../publication/PublicationBar.vue";
@@ -15,6 +15,7 @@ import RouteEditor from "./editors/RouteEditor.vue";
 import CollectionJSONEditor from "./editors/CollectionJSONEditor.vue";
 
 const route = useRoute();
+const router = useRouter();
 const draft = useDraftStore();
 
 const rawMode = ref(false);
@@ -66,6 +67,20 @@ function replaceCollection(rows: unknown[]): void {
   // 集合编辑器已在 draft store 内提交 canonical 变更，这里只保留视图同步。
   void rows;
 }
+
+async function goToValidationField(path: string): Promise<void> {
+  const module = jsonPointerToModule(path);
+  if (module === null) {
+    return;
+  }
+  rawMode.value = false;
+  await router.push(`/config/${profileId.value}/${module}`);
+  await nextTick();
+  const target = Array.from(document.querySelectorAll<HTMLElement>("[data-json-path]")).find(
+    (element) => element.dataset.jsonPath === path,
+  );
+  target?.focus();
+}
 </script>
 
 <template>
@@ -84,7 +99,7 @@ function replaceCollection(rows: unknown[]): void {
 
     <ModuleTabs :profile-id="profileId" />
 
-    <PublicationBar v-if="draft.status !== 'error'" />
+    <PublicationBar v-if="draft.status !== 'error'" @go-to-field="goToValidationField" />
 
     <p v-if="draftError" class="workspace-error" role="alert">{{ draftError }}</p>
 
