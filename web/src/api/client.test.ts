@@ -35,9 +35,11 @@ describe("APIClient", () => {
 
     await client.request("/auth/session?refresh=true");
     await client.request("/api/v1/profiles");
+    await client.request("/api/v1?include=archived");
 
     expect(fetchMock.mock.calls[0][0]).toBe("/api/v1/auth/session?refresh=true");
     expect(fetchMock.mock.calls[1][0]).toBe("/api/v1/profiles");
+    expect(fetchMock.mock.calls[2][0]).toBe("/api/v1?include=archived");
   });
 
   it("sets credentials same-origin and never sets Origin on login", async () => {

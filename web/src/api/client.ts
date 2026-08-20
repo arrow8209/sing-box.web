@@ -21,7 +21,8 @@ interface ErrorEnvelope {
 }
 
 function apiPath(path: string): string {
-  if (path === "/api/v1" || path.startsWith("/api/v1/")) {
+  const pathname = path.split(/[?#]/, 1)[0];
+  if (pathname === "/api/v1" || pathname.startsWith("/api/v1/")) {
     return path;
   }
   return `/api/v1/${path.replace(/^\/+/, "")}`;

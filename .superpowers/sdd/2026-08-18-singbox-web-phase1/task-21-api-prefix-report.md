@@ -48,3 +48,40 @@ Tests       7 passed (7)
 - 已有 `/api/v1/...` 路径不会重复加前缀。
 - 原有错误解析、401 清理/事件、ETag、CSRF、凭据设置逻辑未改动，且聚焦测试全数通过。
 - 已运行 `git diff --check`，无空白错误。
+
+## Fix round 1：`/api/v1` 根路径带查询参数
+
+### RED
+
+命令：
+
+```bash
+npm --prefix web exec -- vitest run src/api/client.test.ts
+```
+
+结果：退出码 `1`。新增 `/api/v1?include=archived` 回归断言失败：
+
+```text
+Expected: "/api/v1?include=archived"
+Received: "/api/v1/api/v1?include=archived"
+```
+
+测试汇总：`1` 个失败、`6` 个通过。
+
+### GREEN
+
+命令：
+
+```bash
+npm --prefix web exec -- vitest run src/api/client.test.ts
+```
+
+输出：
+
+```text
+✓ web/src/api/client.test.ts (7 tests)
+Test Files  1 passed (1)
+Tests       7 passed (7)
+```
+
+退出码 `0`。实现仅以 `?` 或 `#` 之前的路径部分判断是否已有 `/api/v1` 前缀，原始查询字符串保持不变；`git diff --check` 也通过。
