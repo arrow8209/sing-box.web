@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { ref } from "vue";
 import { useRouter } from "vue-router";
+import { APIClientError } from "../../api/client";
 import { useProfilesStore } from "../../stores/profiles";
 
 const emit = defineEmits<{ close: [] }>();
@@ -18,8 +19,9 @@ async function submit(): Promise<void> {
     name.value = "";
     slug.value = "";
     emit("close");
-  } catch {
-    errorMessage.value = "创建失败，请检查名称与 slug";
+  } catch (error) {
+    errorMessage.value =
+      error instanceof APIClientError ? error.detail.message : "创建失败，请检查名称与 slug";
   }
 }
 </script>

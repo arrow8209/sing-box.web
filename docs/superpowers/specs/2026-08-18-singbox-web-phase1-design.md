@@ -139,7 +139,7 @@ singbox-web admin set-password --data-dir <目录>
 
 ### 7.2 会话安全
 
-- 会话使用 HMAC 签名的 `Secure`、`HttpOnly`、`SameSite=Strict` Cookie。
+- 生产会话使用 HMAC 签名的 `Secure`、`HttpOnly`、`SameSite=Strict` Cookie；显式开发模式可省略 `Secure` 以支持 HTTP 测试。
 - 默认在 24 小时无操作后过期，并在有效请求期间按节流策略续期。
 - 修改密码时同时轮换会话签名密钥和失效代次，使所有既有会话立即失效。
 - 退出登录清除浏览器 Cookie。

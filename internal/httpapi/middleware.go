@@ -163,7 +163,7 @@ func (service *server) authenticationMiddleware(next http.Handler) http.Handler 
 			return
 		}
 		if renewed {
-			setSessionCookie(response, refreshed)
+			service.setSessionCookie(response, refreshed)
 			claims.CSRFToken = refreshed.CSRFToken
 			claims.ExpiresAt = refreshed.ExpiresAt.UnixNano()
 		}

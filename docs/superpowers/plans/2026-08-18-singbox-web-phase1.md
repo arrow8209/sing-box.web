@@ -1923,7 +1923,7 @@ Expected: PASS。
 Create `httptest` cases asserting:
 
 - `GET /healthz` is unauthenticated and returns `{"status":"ok"}`.
-- successful `POST /api/v1/auth/login` for `admin` sets cookie `sb_session` with `Path=/`、no Domain、`Secure`、`HttpOnly`、`SameSite=Strict` and returns `csrfToken` plus `expiresAt`;
+- successful `POST /api/v1/auth/login` for `admin` sets cookie `sb_session` with `Path=/`、no Domain、`HttpOnly`、`SameSite=Strict` and returns `csrfToken` plus `expiresAt`; production defaults to `Secure`, while explicit development mode may omit it for HTTP testing;
 - an authenticated request made 14 minutes after issue does not rewrite the Cookie；a request after 16 minutes sets a refreshed Cookie whose expiry is 24 hours from that request and whose CSRF Token is unchanged;
 - `POST /api/v1/auth/logout` returns an expired `sb_session` Cookie with the same security attributes;
 - `PUT /api/v1/auth/password` rotates the key/epoch, returns an expired session Cookie, and the old token immediately fails `GET /api/v1/auth/session`;
@@ -1976,10 +1976,11 @@ type CapabilityService interface {
 }
 
 type Dependencies struct {
-    Auth         AuthService
-    Capabilities CapabilityService
-    TrustedProxy func(net.IP) bool
-    Now          func() time.Time
+    Auth                 AuthService
+    Capabilities         CapabilityService
+    AllowInsecureCookies bool
+    TrustedProxy         func(net.IP) bool
+    Now                  func() time.Time
 }
 ```
 
@@ -2224,6 +2225,7 @@ type Options struct {
     SingBoxPath       string
     ConfigGroup       string
     AllowPublicListen bool
+    Development       bool
     Version           string
     LogOutput         io.Writer
 }
@@ -2241,7 +2243,7 @@ func Run(ctx context.Context, options Options) error
 4. load embedded template, Schema and schema metadata;
 5. open profile repository;
 6. create runner、capabilities and publication service with the resolved `GroupID`, call `capabilities.Refresh` once, then call publication `Recover`;
-7. default nil `LogOutput` to `io.Discard`, create the constrained audit logger, and build `httpapi.New` with all dependencies;
+7. default nil `LogOutput` to `io.Discard`, create the constrained audit logger, and build `httpapi.New` with all dependencies; map explicit development mode to `AllowInsecureCookies=true`, leaving production cookies secure by default;
 8. create `http.Server` with `ReadHeaderTimeout=5s`、`ReadTimeout=15s`、`WriteTimeout=60s`、`IdleTimeout=60s`;
 9. serve until context cancellation, then call `Shutdown` with 10-second timeout;
 10. release the app lock last.

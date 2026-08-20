@@ -203,6 +203,24 @@ func TestRunRefreshRecoverHandlerBeforeListen(t *testing.T) {
 	}
 }
 
+func TestDevelopmentEnablesInsecureCookies(t *testing.T) {
+	options := validOptions(t)
+	options.Development = true
+	withAppHooks(t)
+	var allowInsecureCookies bool
+	newHTTPHandler = func(deps httpapi.Dependencies) http.Handler {
+		allowInsecureCookies = deps.AllowInsecureCookies
+		return http.NotFoundHandler()
+	}
+	listenTCP = func(string, string) (net.Listener, error) { return nil, errors.New("finite stop") }
+	if err := Run(context.Background(), options); err == nil {
+		t.Fatal("Run() unexpectedly succeeded")
+	}
+	if !allowInsecureCookies {
+		t.Fatal("development did not enable insecure cookies")
+	}
+}
+
 func TestUnavailableRunnerStillBuildsHandlerWithPublishDisabled(t *testing.T) {
 	options := validOptions(t)
 	withAppHooks(t)

@@ -55,15 +55,16 @@ type Auditor interface {
 }
 
 type Dependencies struct {
-	Auth         AuthService
-	Capabilities CapabilityService
-	Profiles     ProfileService
-	Preflight    PreflightService
-	Publication  PublicationService
-	Auditor      Auditor
-	ConfigRoot   string
-	TrustedProxy func(net.IP) bool
-	Now          func() time.Time
+	Auth                 AuthService
+	Capabilities         CapabilityService
+	Profiles             ProfileService
+	Preflight            PreflightService
+	Publication          PublicationService
+	Auditor              Auditor
+	ConfigRoot           string
+	AllowInsecureCookies bool
+	TrustedProxy         func(net.IP) bool
+	Now                  func() time.Time
 }
 
 type server struct {

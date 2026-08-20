@@ -39,6 +39,10 @@ type authHarness struct {
 }
 
 func newAuthHarness(t *testing.T) authHarness {
+	return newAuthHarnessWithInsecureCookies(t, false)
+}
+
+func newAuthHarnessWithInsecureCookies(t *testing.T, allowInsecureCookies bool) authHarness {
 	t.Helper()
 	current := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
 	random := bytes.NewReader(bytes.Repeat([]byte{41}, 16384))
@@ -48,7 +52,7 @@ func newAuthHarness(t *testing.T) authHarness {
 	}
 	manager := auth.NewSessionManager(store, func() time.Time { return current }, random)
 	return authHarness{
-		handler: New(Dependencies{Auth: manager, Now: func() time.Time { return current }}),
+		handler: New(Dependencies{Auth: manager, AllowInsecureCookies: allowInsecureCookies, Now: func() time.Time { return current }}),
 		now:     &current,
 	}
 }
@@ -96,6 +100,26 @@ func TestLoginDoesNotRequireOrigin(t *testing.T) {
 	harness.handler.ServeHTTP(response, request)
 	if response.Code != http.StatusOK {
 		t.Fatalf("login without Origin status=%d body=%q", response.Code, response.Body.String())
+	}
+}
+
+func TestDevelopmentCookiesCanBeUsedOverHTTP(t *testing.T) {
+	harness := newAuthHarnessWithInsecureCookies(t, true)
+	response := performJSON(harness.handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"a-strong-password"}`, nil, "")
+	if response.Code != http.StatusOK {
+		t.Fatalf("login status=%d body=%q", response.Code, response.Body.String())
+	}
+	var session sessionResponse
+	if err := json.Unmarshal(response.Body.Bytes(), &session); err != nil {
+		t.Fatal(err)
+	}
+	cookies := response.Result().Cookies()
+	if len(cookies) != 1 || cookies[0].Secure {
+		t.Fatalf("development login cookies=%#v", cookies)
+	}
+	logout := performJSON(harness.handler, http.MethodPost, "/api/v1/auth/logout", "", cookies[0], session.CSRFToken)
+	if logout.Code != http.StatusNoContent || len(logout.Result().Cookies()) != 1 || logout.Result().Cookies()[0].Secure {
+		t.Fatalf("development logout status=%d cookies=%#v", logout.Code, logout.Result().Cookies())
 	}
 }
 

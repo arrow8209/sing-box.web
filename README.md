@@ -153,4 +153,4 @@ SINGBOX_WEB_CONFIG_ROOT=$PWD/.singbox-web/config \
 ./scripts/start-dev.sh
 ```
 
-开发服务首次运行会提示设置管理员密码。生产环境请始终使用 Caddy HTTPS、专用用户和上面的权限约束。
+开发服务首次运行会提示设置管理员密码；开发模式允许通过 HTTP 使用会话 Cookie。生产模式的会话 Cookie 始终保留 `Secure`，并应使用专用用户和上面的权限约束。

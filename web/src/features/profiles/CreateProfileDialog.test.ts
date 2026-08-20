@@ -3,6 +3,7 @@ import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createMemoryHistory, createRouter } from "vue-router";
 import CreateProfileDialog from "./CreateProfileDialog.vue";
+import { APIClientError } from "../../api/client";
 import { useProfilesStore } from "../../stores/profiles";
 
 function mountCreateProfileDialog() {
@@ -51,5 +52,17 @@ describe("CreateProfileDialog", () => {
 
     expect(wrapper.emitted("close")).toBeUndefined();
     expect(wrapper.get('[role="alert"]').text()).toBe("创建失败，请检查名称与 slug");
+  });
+
+  it("shows the API error message when the server rejects creation", async () => {
+    const profiles = useProfilesStore();
+    vi.spyOn(profiles, "create").mockRejectedValue(
+      new APIClientError(401, { code: "unauthorized", message: "未认证" }),
+    );
+    const { wrapper } = mountCreateProfileDialog();
+
+    await wrapper.get('button[name="创建"]').trigger("click");
+
+    expect(wrapper.get('[role="alert"]').text()).toBe("未认证");
   });
 });

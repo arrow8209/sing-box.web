@@ -39,6 +39,7 @@ type Options struct {
 	SingBoxPath       string
 	ConfigGroup       string
 	AllowPublicListen bool
+	Development       bool
 	Version           string
 	LogOutput         io.Writer
 }
@@ -153,14 +154,15 @@ func Run(ctx context.Context, options Options) error {
 	auditor := audit.New(options.LogOutput, now)
 	authService := auth.NewSessionManager(store, now, rand.Reader)
 	handler := newHTTPHandler(httpapi.Dependencies{
-		Auth:         authService,
-		Capabilities: capabilityService,
-		Profiles:     profiles,
-		Preflight:    preflight,
-		Publication:  publicationService,
-		Auditor:      auditor,
-		ConfigRoot:   options.ConfigRoot,
-		Now:          now,
+		Auth:                 authService,
+		Capabilities:         capabilityService,
+		Profiles:             profiles,
+		Preflight:            preflight,
+		Publication:          publicationService,
+		Auditor:              auditor,
+		ConfigRoot:           options.ConfigRoot,
+		AllowInsecureCookies: options.Development,
+		Now:                  now,
 	})
 	mux := &http.ServeMux{}
 	mux.Handle("/healthz", handler)

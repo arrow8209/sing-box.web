@@ -56,13 +56,13 @@ func (service *server) login(response http.ResponseWriter, request *http.Request
 	}
 	service.limiter.clear(key)
 	result = "ok"
-	setSessionCookie(response, session)
+	service.setSessionCookie(response, session)
 	writeJSON(response, http.StatusOK, sessionResponse{Username: auth.Username, CSRFToken: session.CSRFToken, ExpiresAt: session.ExpiresAt})
 }
 
 func (service *server) logout(response http.ResponseWriter, request *http.Request) {
 	service.recordAudit(request.Context(), audit.Event{Operation: "auth.logout", Result: "ok"})
-	expireSessionCookie(response)
+	service.expireSessionCookie(response)
 	response.WriteHeader(http.StatusNoContent)
 }
 
@@ -105,7 +105,7 @@ func (service *server) changePassword(response http.ResponseWriter, request *htt
 		return
 	}
 	result = "ok"
-	expireSessionCookie(response)
+	service.expireSessionCookie(response)
 	response.WriteHeader(http.StatusNoContent)
 }
 
@@ -121,19 +121,19 @@ func decodeRequest(request *http.Request, destination any) error {
 	return nil
 }
 
-func setSessionCookie(response http.ResponseWriter, session auth.Session) {
+func (service *server) setSessionCookie(response http.ResponseWriter, session auth.Session) {
 	http.SetCookie(response, &http.Cookie{
 		Name:     sessionCookieName,
 		Value:    session.Token,
 		Path:     "/",
 		Expires:  session.ExpiresAt,
-		Secure:   true,
+		Secure:   !service.deps.AllowInsecureCookies,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
 }
 
-func expireSessionCookie(response http.ResponseWriter) {
+func (service *server) expireSessionCookie(response http.ResponseWriter) {
 	response.Header().Del("Set-Cookie")
 	http.SetCookie(response, &http.Cookie{
 		Name:     sessionCookieName,
@@ -141,7 +141,7 @@ func expireSessionCookie(response http.ResponseWriter) {
 		Path:     "/",
 		Expires:  time.Unix(1, 0).UTC(),
 		MaxAge:   -1,
-		Secure:   true,
+		Secure:   !service.deps.AllowInsecureCookies,
 		HttpOnly: true,
 		SameSite: http.SameSiteStrictMode,
 	})
