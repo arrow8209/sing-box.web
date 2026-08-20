@@ -28,4 +28,18 @@ describe("CreateProfileDialog", () => {
 
     expect(create).toHaveBeenCalledWith({ name: "家庭网关", slug: "home-gateway" }, router);
   });
+
+  it("keeps the dialog open and shows an error when creation fails", async () => {
+    const profiles = useProfilesStore();
+    vi.spyOn(profiles, "create").mockRejectedValue(new Error("create failed"));
+    const wrapper = mount(CreateProfileDialog);
+
+    const inputs = wrapper.findAll('input[type="text"]');
+    await inputs[0].setValue("家庭网关");
+    await inputs[1].setValue("home-gateway");
+    await wrapper.get('button[name="创建"]').trigger("click");
+
+    expect(wrapper.emitted("close")).toBeUndefined();
+    expect(wrapper.get('[role="alert"]').text()).toBe("创建失败，请检查名称与 slug");
+  });
 });
