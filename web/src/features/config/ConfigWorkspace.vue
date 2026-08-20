@@ -53,7 +53,7 @@ const structuredAvailable = computed(() => {
 });
 
 function rawEditorAccessibleName(): string {
-  return `${activeDescriptor.value.shortLabel} JSON`;
+  return `${activeDescriptor.value.label} JSON`;
 }
 
 const collectionRows = computed(() => {
@@ -74,11 +74,11 @@ function replaceCollection(rows: unknown[]): void {
       <h2 class="workspace-title">{{ activeDescriptor.label }}</h2>
       <button
         class="btn"
-        :name="`编辑${activeDescriptor.shortLabel} JSON`"
+        :name="`编辑${activeDescriptor.label} JSON`"
         type="button"
         @click="rawMode = !rawMode"
       >
-        {{ rawMode ? "返回表单" : `编辑${activeDescriptor.shortLabel} JSON` }}
+        {{ rawMode ? "返回表单" : `编辑${activeDescriptor.label} JSON` }}
       </button>
     </header>
 
@@ -93,7 +93,7 @@ function replaceCollection(rows: unknown[]): void {
     </template>
     <template v-else>
       <section v-if="rawMode" :aria-label="rawEditorAccessibleName()">
-        <RawModuleEditor :module="activeModule" />
+        <RawModuleEditor :module="activeModule" :label="activeDescriptor.label" />
       </section>
       <section v-else-if="structuredAvailable" class="structured-pane">
         <GeneralEditor v-if="activeModule === 'general'" />

@@ -4,7 +4,9 @@ import { useDraftStore } from "../../../stores/draft";
 import { isSensitiveModule, topLevelKey } from "../modules";
 import type { Draft } from "../../../api/types";
 
-const props = defineProps<{ module: string }>();
+const props = defineProps<{ module: string; label?: string }>();
+
+const editorName = computed(() => `${props.label ?? props.module} JSON`);
 
 const draft = useDraftStore();
 const revealed = ref(false);
@@ -100,6 +102,7 @@ function showText(): string {
     <div v-else class="editor-pane">
       <textarea
         class="raw-textarea"
+        :aria-label="editorName"
         :value="showText()"
         :disabled="isReadOnly"
         spellcheck="false"

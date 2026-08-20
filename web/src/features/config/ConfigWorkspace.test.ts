@@ -71,10 +71,11 @@ describe("ConfigWorkspace", () => {
     draft.status = "saved";
 
     const { wrapper } = await mountWorkspace();
-    await wrapper.get('button[name="编辑概览 JSON"]').trigger("click");
+    await wrapper.get('button[name="编辑配置概览 JSON"]').trigger("click");
 
-    const raw = wrapper.get('section[aria-label="概览 JSON"]');
+    const raw = wrapper.get('section[aria-label="配置概览 JSON"]');
     expect(raw.get("textarea").isVisible()).toBe(true);
+    expect(raw.get("textarea").attributes("aria-label")).toBe("配置概览 JSON");
   });
 
   it("navigates between module tabs through the router", async () => {
