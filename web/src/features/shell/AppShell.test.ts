@@ -10,7 +10,7 @@ function makeRouter() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: "/", component: AppShell },
+      { path: "/:pathMatch(.*)*", component: AppShell },
     ],
   });
   return router;

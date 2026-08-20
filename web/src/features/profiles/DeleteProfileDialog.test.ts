@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { createMemoryHistory, createRouter } from "vue-router";
 import DeleteProfileDialog from "./DeleteProfileDialog.vue";
 import { apiClient } from "../../api/client";
 import { useProfilesStore } from "../../stores/profiles";
@@ -21,6 +22,17 @@ const profile: Profile = {
   draftError: "",
 };
 
+function mountDeleteProfileDialog() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+  });
+  return mount(DeleteProfileDialog, {
+    props: { profileId: profile.id },
+    global: { plugins: [router] },
+  });
+}
+
 describe("DeleteProfileDialog", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -32,7 +44,7 @@ describe("DeleteProfileDialog", () => {
     profiles.items = [profile];
     profiles.activeId = profile.id;
 
-    const wrapper = mount(DeleteProfileDialog, { props: { profileId: profile.id } });
+    const wrapper = mountDeleteProfileDialog();
     const input = wrapper.get('input[aria-label="档案名称确认"]');
     const button = wrapper.get('button[name="确认删除档案"]');
 
@@ -53,7 +65,7 @@ describe("DeleteProfileDialog", () => {
     profiles.items = [profile];
     profiles.activeId = profile.id;
 
-    const wrapper = mount(DeleteProfileDialog, { props: { profileId: profile.id } });
+    const wrapper = mountDeleteProfileDialog();
     expect(wrapper.text()).toContain("无法判断外部核心是否正在使用该配置路径");
   });
 
@@ -67,7 +79,7 @@ describe("DeleteProfileDialog", () => {
       etag: null,
     });
 
-    const wrapper = mount(DeleteProfileDialog, { props: { profileId: profile.id } });
+    const wrapper = mountDeleteProfileDialog();
     await wrapper.get('input[aria-label="档案名称确认"]').setValue("家庭网关");
     await wrapper.get('button[name="确认删除档案"]').trigger("click");
 

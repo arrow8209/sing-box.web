@@ -1,6 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { createMemoryHistory, createRouter } from "vue-router";
 import ProfileSidebar from "./ProfileSidebar.vue";
 import { useProfilesStore } from "../../stores/profiles";
 import { useDraftStore } from "../../stores/draft";
@@ -21,6 +22,14 @@ const profileA: Profile = {
   draftError: "",
 };
 
+function mountProfileSidebar() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+  });
+  return mount(ProfileSidebar, { global: { plugins: [router] } });
+}
+
 describe("ProfileSidebar", () => {
   beforeEach(() => {
     setActivePinia(createPinia());
@@ -32,7 +41,7 @@ describe("ProfileSidebar", () => {
     profiles.items = [profileA];
     profiles.activeId = profileA.id;
 
-    const wrapper = mount(ProfileSidebar);
+    const wrapper = mountProfileSidebar();
 
     expect(wrapper.text()).toContain("家庭网关");
     expect(wrapper.text()).toContain("home-gateway");
@@ -41,7 +50,7 @@ describe("ProfileSidebar", () => {
   });
 
   it("exposes 新建档案 opening a dialog named 创建配置档案", async () => {
-    const wrapper = mount(ProfileSidebar);
+    const wrapper = mountProfileSidebar();
 
     await wrapper.get('button[name="新建档案"]').trigger("click");
 
@@ -56,7 +65,7 @@ describe("ProfileSidebar", () => {
     profiles.items = [profileA];
     profiles.activeId = profileA.id;
 
-    const wrapper = mount(ProfileSidebar);
+    const wrapper = mountProfileSidebar();
     await wrapper.get('button[name="重命名档案"]').trigger("click");
 
     const dialog = wrapper.get('[role="dialog"][aria-label="重命名档案"]');
@@ -79,7 +88,7 @@ describe("ProfileSidebar", () => {
     };
     draft.status = "conflict";
 
-    const wrapper = mount(ProfileSidebar);
+    const wrapper = mountProfileSidebar();
 
     const dialog = wrapper.get('[role="dialog"][aria-label="草稿冲突"]');
     expect(dialog.get('button[name="重新载入服务器版本"]').isVisible()).toBe(true);
@@ -94,7 +103,7 @@ describe("ProfileSidebar", () => {
     const writeText = vi.fn().mockResolvedValue(undefined);
     vi.stubGlobal("navigator", { clipboard: { writeText } });
 
-    const wrapper = mount(ProfileSidebar);
+    const wrapper = mountProfileSidebar();
     const buttons = wrapper.findAll('button[name="复制"]');
     await buttons[0].trigger("click");
     await buttons[1].trigger("click");
@@ -107,7 +116,7 @@ describe("ProfileSidebar", () => {
     const draft = useDraftStore();
     draft.status = "dirty";
 
-    const wrapper = mount(ProfileSidebar);
+    const wrapper = mountProfileSidebar();
     const status = wrapper.get('[role="status"]');
 
     expect(status.text()).toBe("草稿保存中");
@@ -123,7 +132,7 @@ describe("ProfileSidebar", () => {
     profiles.items = [readOnlyProfile];
     profiles.activeId = readOnlyProfile.id;
 
-    const wrapper = mount(ProfileSidebar);
+    const wrapper = mountProfileSidebar();
 
     expect(wrapper.text()).toContain("草稿 JSON 损坏，需要管理员在服务器修复");
   });

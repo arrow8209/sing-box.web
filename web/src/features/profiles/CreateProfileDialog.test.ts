@@ -1,14 +1,20 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import { mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { createMemoryHistory, createRouter } from "vue-router";
 import CreateProfileDialog from "./CreateProfileDialog.vue";
 import { useProfilesStore } from "../../stores/profiles";
 
-const router = vi.hoisted(() => ({ push: vi.fn() }));
-
-vi.mock("vue-router", () => ({
-  useRouter: () => router,
-}));
+function mountCreateProfileDialog() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+  });
+  return {
+    router,
+    wrapper: mount(CreateProfileDialog, { global: { plugins: [router] } }),
+  };
+}
 
 describe("CreateProfileDialog", () => {
   beforeEach(() => {
@@ -19,7 +25,7 @@ describe("CreateProfileDialog", () => {
   it("passes the router to create so a successful creation opens its general module", async () => {
     const profiles = useProfilesStore();
     const create = vi.spyOn(profiles, "create").mockResolvedValue({ id: "a" } as never);
-    const wrapper = mount(CreateProfileDialog);
+    const { router, wrapper } = mountCreateProfileDialog();
 
     const inputs = wrapper.findAll('input[type="text"]');
     await inputs[0].setValue("家庭网关");
@@ -32,7 +38,7 @@ describe("CreateProfileDialog", () => {
   it("keeps the dialog open and shows an error when creation fails", async () => {
     const profiles = useProfilesStore();
     vi.spyOn(profiles, "create").mockRejectedValue(new Error("create failed"));
-    const wrapper = mount(CreateProfileDialog);
+    const { wrapper } = mountCreateProfileDialog();
 
     const inputs = wrapper.findAll('input[type="text"]');
     await inputs[0].setValue("家庭网关");

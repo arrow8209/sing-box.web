@@ -1,8 +1,17 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
+import { createMemoryHistory, createRouter } from "vue-router";
 import LoginView from "./LoginView.vue";
 import { useAuthStore } from "../../stores/auth";
+
+function mountLoginView() {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+  });
+  return mount(LoginView, { global: { plugins: [router] } });
+}
 
 describe("LoginView", () => {
   beforeEach(() => {
@@ -11,7 +20,7 @@ describe("LoginView", () => {
   });
 
   it("renders a read-only admin username field, a password field and a login button", () => {
-    const wrapper = mount(LoginView);
+    const wrapper = mountLoginView();
 
     const username = wrapper.get('input[aria-label="用户名"]');
     expect(username.attributes("value")).toBe("admin");
@@ -24,11 +33,12 @@ describe("LoginView", () => {
   it("logs in with the typed password and clears the input after the attempt", async () => {
     const auth = useAuthStore();
     const login = vi.spyOn(auth, "login").mockResolvedValue(undefined);
-    const wrapper = mount(LoginView);
+    const wrapper = mountLoginView();
 
     const password = wrapper.get('input[aria-label="密码"]');
     await password.setValue("hunter2-secret");
     await wrapper.get('button[name="登录"]').trigger("submit");
+    await flushPromises();
 
     expect(login).toHaveBeenCalledWith("hunter2-secret");
     expect((wrapper.get('input[aria-label="密码"]').element as HTMLInputElement).value).toBe("");
@@ -37,7 +47,7 @@ describe("LoginView", () => {
   it("clears the password even when the attempt fails", async () => {
     const auth = useAuthStore();
     vi.spyOn(auth, "login").mockRejectedValue(new Error("invalid"));
-    const wrapper = mount(LoginView);
+    const wrapper = mountLoginView();
 
     const password = wrapper.get('input[aria-label="密码"]');
     await password.setValue("wrong");
@@ -47,7 +57,7 @@ describe("LoginView", () => {
   });
 
   it("does not offer username editing", () => {
-    const wrapper = mount(LoginView);
+    const wrapper = mountLoginView();
     expect(wrapper.findAll('input[aria-label="用户名"]')).toHaveLength(1);
     expect(wrapper.get('input[aria-label="用户名"]').attributes("readonly")).toBeDefined();
   });
