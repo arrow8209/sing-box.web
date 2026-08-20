@@ -25,8 +25,13 @@ const profileA: Profile = {
 function mountProfileSidebar() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+    routes: [
+      { path: "/", component: { template: "<div />" } },
+      { path: "/config/:id/general", component: { template: "<div />" } },
+      { path: "/dashboard", component: { template: "<div />" } },
+    ],
   });
+  void router.push("/dashboard");
   return mount(ProfileSidebar, { global: { plugins: [router] } });
 }
 

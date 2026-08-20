@@ -8,8 +8,12 @@ import { useAuthStore } from "../../stores/auth";
 function mountLoginView() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+    routes: [
+      { path: "/", component: { template: "<div />" } },
+      { path: "/dashboard", component: { template: "<div />" } },
+    ],
   });
+  void router.push("/dashboard");
   return mount(LoginView, { global: { plugins: [router] } });
 }
 

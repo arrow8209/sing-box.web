@@ -8,8 +8,12 @@ import { useProfilesStore } from "../../stores/profiles";
 function mountCreateProfileDialog() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+    routes: [
+      { path: "/", component: { template: "<div />" } },
+      { path: "/config/:id/general", component: { template: "<div />" } },
+    ],
   });
+  void router.push("/config/test-profile/general");
   return {
     router,
     wrapper: mount(CreateProfileDialog, { global: { plugins: [router] } }),

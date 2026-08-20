@@ -1,16 +1,25 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { createPinia, setActivePinia } from "pinia";
 import { createRouter, createMemoryHistory } from "vue-router";
 import AppShell from "./AppShell.vue";
 import { useAuthStore } from "../../stores/auth";
 import { apiClient } from "../../api/client";
 
+const InertRoute = { template: "<div />" };
+
 function makeRouter() {
   const router = createRouter({
     history: createMemoryHistory(),
     routes: [
-      { path: "/:pathMatch(.*)*", component: AppShell },
+      { path: "/", component: InertRoute },
+      { path: "/dashboard", component: InertRoute },
+      { path: "/config", component: InertRoute },
+      { path: "/runtime", component: InertRoute },
+      { path: "/subscriptions", component: InertRoute },
+      { path: "/rulesets", component: InertRoute },
+      { path: "/settings", component: InertRoute },
+      { path: "/login", component: InertRoute },
     ],
   });
   return router;
@@ -93,8 +102,10 @@ describe("AppShell", () => {
 
     const wrapper = mount(AppShell, { global: { plugins: [router] } });
     await wrapper.get('button[name="退出登录"]').trigger("click");
+    await flushPromises();
 
     expect(logout).toHaveBeenCalled();
+    expect(router.currentRoute.value.fullPath).toBe("/login");
   });
 
   it("redirects to /login when no session exists", async () => {

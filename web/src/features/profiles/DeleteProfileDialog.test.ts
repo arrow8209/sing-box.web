@@ -25,8 +25,12 @@ const profile: Profile = {
 function mountDeleteProfileDialog() {
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: "/:pathMatch(.*)*", component: { template: "<div />" } }],
+    routes: [
+      { path: "/", component: { template: "<div />" } },
+      { path: "/dashboard", component: { template: "<div />" } },
+    ],
   });
+  void router.push("/dashboard");
   return mount(DeleteProfileDialog, {
     props: { profileId: profile.id },
     global: { plugins: [router] },
