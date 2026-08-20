@@ -8,7 +8,7 @@ Type=simple
 User=singbox-web
 Group=singbox-web
 SupplementaryGroups=sing-box
-ExecStart=/usr/local/bin/singbox-web serve --listen 127.0.0.1:8080 --data-dir /var/lib/singbox-web --config-root /etc/sing-box/web-profiles --sing-box /usr/local/bin/sing-box --config-group sing-box --public-origin https://singbox.example.com
+ExecStart=/usr/local/bin/singbox-web serve --listen 127.0.0.1:8080 --data-dir /var/lib/singbox-web --config-root /etc/sing-box/web-profiles --sing-box /usr/local/bin/sing-box --config-group sing-box
 Restart=on-failure
 RestartSec=3s
 UMask=0027
@@ -22,4 +22,3 @@ LockPersonality=true
 
 [Install]
 WantedBy=multi-user.target
-

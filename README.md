@@ -150,7 +150,6 @@ docs/superpowers/specs/2026-08-18-singbox-web-phase1-design.md，
 SINGBOX_WEB_LISTEN=127.0.0.1:50010 \
 SINGBOX_WEB_DATA_DIR=$PWD/.singbox-web/data \
 SINGBOX_WEB_CONFIG_ROOT=$PWD/.singbox-web/config \
-SINGBOX_WEB_PUBLIC_ORIGIN=http://127.0.0.1:50010 \
 ./scripts/start-dev.sh
 ```
 

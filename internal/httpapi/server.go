@@ -62,7 +62,6 @@ type Dependencies struct {
 	Publication  PublicationService
 	Auditor      Auditor
 	ConfigRoot   string
-	PublicOrigin string
 	TrustedProxy func(net.IP) bool
 	Now          func() time.Time
 }
@@ -98,7 +97,6 @@ func New(deps Dependencies) http.Handler {
 	var handler http.Handler = mux
 	handler = service.csrfMiddleware(handler)
 	handler = service.authenticationMiddleware(handler)
-	handler = service.originMiddleware(handler)
 	handler = service.trustedProxyMiddleware(handler)
 	handler = bodyLimitMiddleware(handler)
 	handler = WithSecurityHeaders(handler)

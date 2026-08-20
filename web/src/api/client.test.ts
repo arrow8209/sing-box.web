@@ -42,7 +42,7 @@ describe("APIClient", () => {
     expect(fetchMock.mock.calls[2][0]).toBe("/api/v1?include=archived");
   });
 
-  it("sets credentials same-origin and never sets Origin on login", async () => {
+  it("sets credentials same-origin on login", async () => {
     const client = new APIClient();
     const fetchMock = stubFetch(jsonResponse(200, { username: "admin", csrfToken: "t", expiresAt: "2030-01-01T00:00:00Z" }));
 
@@ -54,9 +54,6 @@ describe("APIClient", () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     const init = getFetch().mock.calls[0][1] as RequestInit;
     expect(init.credentials).toBe("same-origin");
-    expect(init.headers).toBeDefined();
-    const headers = init.headers as Headers;
-    expect(headers.has("Origin")).toBe(false);
   });
 
   it("adds the CSRF token only on non-GET API calls", async () => {

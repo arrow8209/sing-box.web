@@ -126,44 +126,11 @@ func TestUntrustedProxyStripsEveryForwardingHeaderCaseInsensitively(t *testing.T
 	}
 }
 
-func TestEmptyPublicOriginFailsClosedOnlyForUnsafeAPIRequests(t *testing.T) {
-	handler := New(Dependencies{})
-	for _, test := range []struct {
-		method string
-		path   string
-	}{
-		{method: http.MethodPost, path: "/api/v1/auth/login"},
-		{method: http.MethodPost, path: "/api/v1/auth/logout"},
-		{method: http.MethodPut, path: "/api/v1/auth/password"},
-		{method: http.MethodPost, path: "/api/v1/future-route"},
-	} {
-		request := httptest.NewRequest(test.method, test.path, strings.NewReader("{}"))
-		request.Header.Set("Origin", "https://admin.example")
-		response := httptest.NewRecorder()
-		handler.ServeHTTP(response, request)
-		if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), `"code":"forbidden_origin"`) {
-			t.Errorf("%s %s status=%d body=%q", test.method, test.path, response.Code, response.Body.String())
-		}
-	}
-
-	health := httptest.NewRecorder()
-	handler.ServeHTTP(health, httptest.NewRequest(http.MethodGet, "/healthz", nil))
-	if health.Code != http.StatusOK {
-		t.Fatalf("health status=%d", health.Code)
-	}
-	session := httptest.NewRecorder()
-	handler.ServeHTTP(session, httptest.NewRequest(http.MethodGet, "/api/v1/auth/session", nil))
-	if session.Code != http.StatusUnauthorized {
-		t.Fatalf("safe API GET status=%d", session.Code)
-	}
-}
-
-func TestMiddlewareOrderBodyOriginAuthenticationCSRF(t *testing.T) {
-	service := &server{deps: Dependencies{PublicOrigin: "https://admin.example"}}
+func TestMiddlewareOrderBodyAuthenticationCSRF(t *testing.T) {
+	service := &server{deps: Dependencies{}}
 	var handler http.Handler = http.HandlerFunc(func(http.ResponseWriter, *http.Request) {})
 	handler = service.csrfMiddleware(handler)
 	handler = service.authenticationMiddleware(handler)
-	handler = service.originMiddleware(handler)
 	handler = service.trustedProxyMiddleware(handler)
 	handler = bodyLimitMiddleware(handler)
 	handler = WithSecurityHeaders(handler)
@@ -171,23 +138,13 @@ func TestMiddlewareOrderBodyOriginAuthenticationCSRF(t *testing.T) {
 	handler = recoveryMiddleware(handler)
 
 	oversized := httptest.NewRequest(http.MethodPut, "/api/v1/auth/password", bytes.NewReader(bytes.Repeat([]byte("x"), maxBodyBytes+1)))
-	oversized.Header.Set("Origin", "https://evil.example")
 	response := httptest.NewRecorder()
 	handler.ServeHTTP(response, oversized)
 	if response.Code != http.StatusRequestEntityTooLarge {
-		t.Fatalf("oversized foreign unauthenticated status=%d", response.Code)
-	}
-
-	foreign := httptest.NewRequest(http.MethodPut, "/api/v1/auth/password", strings.NewReader("{}"))
-	foreign.Header.Set("Origin", "https://evil.example")
-	response = httptest.NewRecorder()
-	handler.ServeHTTP(response, foreign)
-	if response.Code != http.StatusForbidden || !strings.Contains(response.Body.String(), "forbidden_origin") {
-		t.Fatalf("foreign unauthenticated status=%d body=%q", response.Code, response.Body.String())
+		t.Fatalf("oversized unauthenticated status=%d", response.Code)
 	}
 
 	unauthenticated := httptest.NewRequest(http.MethodPut, "/api/v1/auth/password", strings.NewReader("{}"))
-	unauthenticated.Header.Set("Origin", "https://admin.example")
 	response = httptest.NewRecorder()
 	handler.ServeHTTP(response, unauthenticated)
 	if response.Code != http.StatusUnauthorized || !strings.Contains(response.Body.String(), "unauthorized") {

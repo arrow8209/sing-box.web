@@ -93,7 +93,6 @@ config_group=$(id -gn)
     --config-root "$config_root" \
     --sing-box "$fake_sing_box" \
     --config-group "$config_group" \
-    --public-origin https://127.0.0.1:18443 \
     >"$backend_log" 2>&1 &
 backend_pid=$!
 

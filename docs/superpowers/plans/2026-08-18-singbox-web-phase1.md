@@ -1918,7 +1918,7 @@ go test ./internal/capabilities
 
 Expected: PASS。
 
-- [ ] **Step 3: 写入登录 Cookie、Origin、CSRF 和安全头失败测试**
+- [ ] **Step 3: 写入登录 Cookie、CSRF 和安全头失败测试**
 
 Create `httptest` cases asserting:
 
@@ -1929,7 +1929,7 @@ Create `httptest` cases asserting:
 - `PUT /api/v1/auth/password` rotates the key/epoch, returns an expired session Cookie, and the old token immediately fails `GET /api/v1/auth/session`;
 - bad username and bad password both return status 401 and code `invalid_credentials` with identical body length;
 - protected API without cookie returns 401;
-- state-changing API without `X-CSRF-Token` or with a foreign `Origin` returns 403;
+- state-changing API without `X-CSRF-Token` returns 403;
 - every response contains `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'self'`、`X-Content-Type-Options: nosniff` and `Referrer-Policy: no-referrer`;
 - every `/api/v1/**` response, including errors, contains `Cache-Control: no-store`;
 - a body larger than 2,000,000 bytes returns 413 before JSON decoding.
@@ -1978,7 +1978,6 @@ type CapabilityService interface {
 type Dependencies struct {
     Auth         AuthService
     Capabilities CapabilityService
-    PublicOrigin string
     TrustedProxy func(net.IP) bool
     Now          func() time.Time
 }
@@ -1990,7 +1989,7 @@ Add `SessionManager.ChangePassword(password []byte) error` delegating to `FileSt
 
 - [ ] **Step 6: 实现安全中间件和内存限速**
 
-Middleware order must be: panic recovery → request ID → security headers → 2,000,000-byte body limit → trusted proxy normalization → Origin check → authentication → CSRF → handler. Never trust `X-Forwarded-*` unless `RemoteAddr` is loopback or `TrustedProxy` returns true.
+Middleware order must be: panic recovery → request ID → security headers → 2,000,000-byte body limit → trusted proxy normalization → authentication → CSRF → handler. Never trust `X-Forwarded-*` unless `RemoteAddr` is loopback or `TrustedProxy` returns true.
 
 Expose the idempotent security-header layer as `WithSecurityHeaders` so Task 20 can wrap the combined API + embedded SPA mux. `httpapi.New` uses it for API-only tests；wrapping twice must overwrite to the same exact values rather than append duplicate headers.
 
@@ -2209,7 +2208,6 @@ Create `internal/app/app_test.go` cases:
 - missing `auth.json` returns an initialization error before opening a listener;
 - malformed/unknown-version `auth.json` or `profiles.json` rejects startup, preserves the exact bytes, and reports only the affected path plus a safe parse/version class;
 - unsafe non-loopback listen address is rejected unless `AllowPublicListen` is true;
-- `PublicOrigin` must be one canonical HTTPS origin with host and no credentials/path/query/fragment；lookalike or trailing-slash values are rejected rather than normalized silently；only explicit development mode permits an HTTP loopback origin;
 - a held `app.lock` rejects a second app instance;
 - data-dir with group/other permission bits, config-root writable by group/other, symlink roots, `auth.json` broader than 0600, or a root not owned by the effective service user is rejected before listening;
 - a single corrupt draft does not block startup；the affected profile is read-only while another profile remains editable;
@@ -2226,8 +2224,6 @@ type Options struct {
     SingBoxPath       string
     ConfigGroup       string
     AllowPublicListen bool
-    Development      bool
-    PublicOrigin      string
     Version           string
     LogOutput         io.Writer
 }
@@ -2239,7 +2235,7 @@ func Run(ctx context.Context, options Options) error
 
 `app.Run` must:
 
-1. validate listen/public-origin rules, resolve `ConfigGroup` with `os/user.LookupGroup` and parse its numeric GID；require absolute cleaned roots and walk every existing path component with `Lstat` to reject symlinks；create data-dir as 0700 and config-root as 0750 with that group, require both roots to be owned by the effective UID, require config-root to have the configured GID, reject group/other bits on data-dir, reject group/other write bits on config-root, require `auth.json` to be a regular 0600 file, and apply the same regular-file/mode check to `profiles.json` when it already exists;
+1. validate listen rules, resolve `ConfigGroup` with `os/user.LookupGroup` and parse its numeric GID；require absolute cleaned roots and walk every existing path component with `Lstat` to reject symlinks；create data-dir as 0700 and config-root as 0750 with that group, require both roots to be owned by the effective UID, require config-root to have the configured GID, reject group/other bits on data-dir, reject group/other write bits on config-root, require `auth.json` to be a regular 0600 file, and apply the same regular-file/mode check to `profiles.json` when it already exists;
 2. acquire `data-dir/app.lock`;
 3. require and load `auth.json`;
 4. load embedded template, Schema and schema metadata;
@@ -2252,7 +2248,7 @@ func Run(ctx context.Context, options Options) error
 
 - [ ] **Step 7: 实现 serve CLI**
 
-Extend `cli.ServeOptions` with `AllowPublicListen bool`、`Development bool` and `PublicOrigin string`. Parse:
+Extend `cli.ServeOptions` with `AllowPublicListen bool` and `Development bool`. Parse:
 
 ```text
 singbox-web serve \
@@ -2260,11 +2256,10 @@ singbox-web serve \
   --data-dir /var/lib/singbox-web \
   --config-root /etc/sing-box/web-profiles \
   --sing-box /usr/local/bin/sing-box \
-  --config-group sing-box \
-  --public-origin https://example.com
+  --config-group sing-box
 ```
 
-`--data-dir`、`--config-root` and `--public-origin` are mandatory in production; local defaults are resolved to absolute paths only when `--dev` sets `Development=true`. Development may use an HTTP loopback origin but still may not listen publicly unless the separate danger flag is present. Parse `--allow-public-listen` as the sole mapping to `AllowPublicListen`; it is false by default and the production example never uses it. `cmd/singbox-web/deps.go` maps CLI options to `app.Options`, sets `LogOutput` to the process stderr, and never logs parsed passwords or environment values. Handle SIGINT/SIGTERM with a cancelable context.
+`--data-dir` and `--config-root` are mandatory in production; local defaults are resolved to absolute paths only when `--dev` sets `Development=true`. Development still may not listen publicly unless the separate danger flag is present. Parse `--allow-public-listen` as the sole mapping to `AllowPublicListen`; it is false by default and the production example never uses it. `cmd/singbox-web/deps.go` maps CLI options to `app.Options`, sets `LogOutput` to the process stderr, and never logs parsed passwords or environment values. Handle SIGINT/SIGTERM with a cancelable context.
 
 - [ ] **Step 8: 运行后端全量验证**
 
@@ -2419,7 +2414,7 @@ export interface PublicationReceipt {
 
 Use Vitest `vi.stubGlobal("fetch", ...)` to assert:
 
-- login sends `credentials:"same-origin"` and `Origin` is left to the browser;
+- login sends `credentials:"same-origin"`;
 - the returned CSRF token is added as `X-CSRF-Token` only on non-GET API calls;
 - an ETag is returned alongside draft data;
 - an API error throws typed `APIClientError` with code and current revision;
@@ -3104,7 +3099,7 @@ Type=simple
 User=singbox-web
 Group=singbox-web
 SupplementaryGroups=sing-box
-ExecStart=/usr/local/bin/singbox-web serve --listen 127.0.0.1:8080 --data-dir /var/lib/singbox-web --config-root /etc/sing-box/web-profiles --sing-box /usr/local/bin/sing-box --config-group sing-box --public-origin https://singbox.example.com
+ExecStart=/usr/local/bin/singbox-web serve --listen 127.0.0.1:8080 --data-dir /var/lib/singbox-web --config-root /etc/sing-box/web-profiles --sing-box /usr/local/bin/sing-box --config-group sing-box
 Restart=on-failure
 RestartSec=3s
 UMask=0027
@@ -3614,7 +3609,6 @@ config_group=$(id -gn)
     --config-root "$config_root" \
     --sing-box "$fake_sing_box" \
     --config-group "$config_group" \
-    --public-origin https://127.0.0.1:18443 \
     >"$backend_log" 2>&1 &
 backend_pid=$!
 

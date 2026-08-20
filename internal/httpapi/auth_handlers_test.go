@@ -48,7 +48,7 @@ func newAuthHarness(t *testing.T) authHarness {
 	}
 	manager := auth.NewSessionManager(store, func() time.Time { return current }, random)
 	return authHarness{
-		handler: New(Dependencies{Auth: manager, PublicOrigin: "https://admin.example", Now: func() time.Time { return current }}),
+		handler: New(Dependencies{Auth: manager, Now: func() time.Time { return current }}),
 		now:     &current,
 	}
 }
@@ -56,7 +56,6 @@ func newAuthHarness(t *testing.T) authHarness {
 func performJSON(handler http.Handler, method, path, body string, cookie *http.Cookie, csrf string) *httptest.ResponseRecorder {
 	request := httptest.NewRequest(method, path, strings.NewReader(body))
 	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Origin", "https://admin.example")
 	if cookie != nil {
 		request.AddCookie(cookie)
 	}
@@ -87,6 +86,17 @@ func login(t *testing.T, harness authHarness) (*http.Cookie, sessionResponse) {
 		t.Fatalf("cookie=%#v session=%#v", cookie, session)
 	}
 	return cookie, session
+}
+
+func TestLoginDoesNotRequireOrigin(t *testing.T) {
+	harness := newAuthHarness(t)
+	request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", strings.NewReader(`{"username":"admin","password":"a-strong-password"}`))
+	request.Header.Set("Content-Type", "application/json")
+	response := httptest.NewRecorder()
+	harness.handler.ServeHTTP(response, request)
+	if response.Code != http.StatusOK {
+		t.Fatalf("login without Origin status=%d body=%q", response.Code, response.Body.String())
+	}
 }
 
 func TestLoginRefreshAndLogoutCookies(t *testing.T) {
@@ -142,23 +152,13 @@ func TestInvalidCredentialResponsesAreIndistinguishable(t *testing.T) {
 	}
 }
 
-func TestOriginCSRFAndLoginRateLimit(t *testing.T) {
+func TestCSRFAndLoginRateLimit(t *testing.T) {
 	harness := newAuthHarness(t)
-	cookie, session := login(t, harness)
+	cookie, _ := login(t, harness)
 	missingCSRF := performJSON(harness.handler, http.MethodPost, "/api/v1/auth/logout", "", cookie, "")
 	if missingCSRF.Code != http.StatusForbidden {
 		t.Fatalf("missing csrf status=%d", missingCSRF.Code)
 	}
-	foreignRequest := httptest.NewRequest(http.MethodPost, "/api/v1/auth/logout", nil)
-	foreignRequest.Header.Set("Origin", "https://evil.example")
-	foreignRequest.Header.Set("X-CSRF-Token", session.CSRFToken)
-	foreignRequest.AddCookie(cookie)
-	foreign := httptest.NewRecorder()
-	harness.handler.ServeHTTP(foreign, foreignRequest)
-	if foreign.Code != http.StatusForbidden {
-		t.Fatalf("foreign status=%d", foreign.Code)
-	}
-
 	for index := 0; index < 5; index++ {
 		response := performJSON(harness.handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"wrong-password"}`, nil, "")
 		if response.Code != http.StatusUnauthorized {
@@ -179,9 +179,8 @@ func TestOriginCSRFAndLoginRateLimit(t *testing.T) {
 func TestSuccessfulLoginClearsPreviousFailures(t *testing.T) {
 	current := time.Date(2026, 8, 18, 12, 0, 0, 0, time.UTC)
 	handler := New(Dependencies{
-		Auth:         clearingLimiterAuth{now: current},
-		PublicOrigin: "https://admin.example",
-		Now:          func() time.Time { return current },
+		Auth: clearingLimiterAuth{now: current},
+		Now:  func() time.Time { return current },
 	})
 	for index := 0; index < 4; index++ {
 		response := performJSON(handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"wrong"}`, nil, "")

@@ -33,8 +33,6 @@ func dependencies() cli.Dependencies {
 				SingBoxPath:       options.SingBoxPath,
 				ConfigGroup:       options.ConfigGroup,
 				AllowPublicListen: options.AllowPublicListen,
-				Development:       options.Development,
-				PublicOrigin:      options.PublicOrigin,
 				Version:           version,
 				LogOutput:         os.Stderr,
 			})

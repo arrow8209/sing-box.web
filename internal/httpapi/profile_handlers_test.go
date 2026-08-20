@@ -51,7 +51,7 @@ func newProfileHarness(t *testing.T) profileHarness {
 	if err := os.MkdirAll(configRoot, 0o700); err != nil {
 		t.Fatal(err)
 	}
-	handler := New(Dependencies{Auth: manager, Profiles: profiles, ConfigRoot: configRoot, PublicOrigin: "https://admin.example", Now: func() time.Time { return now }})
+	handler := New(Dependencies{Auth: manager, Profiles: profiles, ConfigRoot: configRoot, Now: func() time.Time { return now }})
 	loginResponse := performJSON(handler, http.MethodPost, "/api/v1/auth/login", `{"username":"admin","password":"a-strong-password"}`, nil, "")
 	if loginResponse.Code != http.StatusOK {
 		t.Fatalf("login status=%d body=%q", loginResponse.Code, loginResponse.Body.String())
@@ -117,7 +117,6 @@ func TestDraftETagConflictAndValidation(t *testing.T) {
 	}
 	newSaveRequest := func() *http.Request {
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/"+item.ID+"/draft", strings.NewReader(`{"config":{"log":{"level":"debug"}},"editorBuffers":{}}`))
-		request.Header.Set("Origin", "https://admin.example")
 		request.Header.Set("X-CSRF-Token", h.csrf)
 		request.Header.Set("If-Match", `"draft-1"`)
 		request.AddCookie(h.cookie)
@@ -148,16 +147,10 @@ func TestProfileRejectsTraversalAbsoluteSlugAndUnknownFields(t *testing.T) {
 	assertAPIError(t, h.request(http.MethodPatch, "/api/v1/profiles/"+item.ID, `{"name":"bad","directory":"/tmp"}`), http.StatusBadRequest, "invalid_request")
 }
 
-func TestProfileRoutesRequireAuthenticationOriginAndCSRF(t *testing.T) {
+func TestProfileRoutesRequireAuthenticationAndCSRF(t *testing.T) {
 	h := newProfileHarness(t)
 	unauthenticated := performJSON(h.handler, http.MethodGet, "/api/v1/profiles", "", nil, "")
 	assertAPIError(t, unauthenticated, http.StatusUnauthorized, "unauthorized")
-	missingOrigin := httptest.NewRequest(http.MethodPost, "/api/v1/profiles", strings.NewReader(`{"name":"主配置","slug":"primary"}`))
-	missingOrigin.Header.Set("X-CSRF-Token", h.csrf)
-	missingOrigin.AddCookie(h.cookie)
-	response := httptest.NewRecorder()
-	h.handler.ServeHTTP(response, missingOrigin)
-	assertAPIError(t, response, http.StatusForbidden, "forbidden_origin")
 	missingCSRF := performJSON(h.handler, http.MethodPost, "/api/v1/profiles", `{"name":"主配置","slug":"primary"}`, h.cookie, "")
 	assertAPIError(t, missingCSRF, http.StatusForbidden, "invalid_csrf")
 }
@@ -169,7 +162,6 @@ func TestDraftModuleByteLimits(t *testing.T) {
 	_ = json.Unmarshal(created.Body.Bytes(), &item)
 	save := func(revision uint64, body string) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/"+item.ID+"/draft", strings.NewReader(body))
-		request.Header.Set("Origin", "https://admin.example")
 		request.Header.Set("X-CSRF-Token", h.csrf)
 		request.Header.Set("If-Match", draftETag(revision))
 		request.AddCookie(h.cookie)
@@ -211,7 +203,6 @@ func TestDraftModuleLimitCannotBeBypassedWithDuplicateKeys(t *testing.T) {
 	_ = json.Unmarshal(created.Body.Bytes(), &item)
 	save := func(revision uint64, body string) *httptest.ResponseRecorder {
 		request := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/"+item.ID+"/draft", strings.NewReader(body))
-		request.Header.Set("Origin", "https://admin.example")
 		request.Header.Set("X-CSRF-Token", h.csrf)
 		request.Header.Set("If-Match", draftETag(revision))
 		request.AddCookie(h.cookie)
@@ -281,7 +272,6 @@ func TestDraftCorruptIsReadOnlyAndUnchanged(t *testing.T) {
 		t.Fatalf("list status=%d body=%q items=%#v err=%v", listed.Code, listed.Body.String(), items, err)
 	}
 	request := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/"+item.ID+"/draft", strings.NewReader(`{"config":{},"editorBuffers":{}}`))
-	request.Header.Set("Origin", "https://admin.example")
 	request.Header.Set("X-CSRF-Token", h.csrf)
 	request.Header.Set("If-Match", `"draft-1"`)
 	request.AddCookie(h.cookie)

@@ -143,7 +143,7 @@ singbox-web admin set-password --data-dir <目录>
 - 默认在 24 小时无操作后过期，并在有效请求期间按节流策略续期。
 - 修改密码时同时轮换会话签名密钥和失效代次，使所有既有会话立即失效。
 - 退出登录清除浏览器 Cookie。
-- 所有写请求必须同时通过 Cookie、CSRF Token 和 `Origin` 检查。
+- 所有写请求必须同时通过 Cookie 和 CSRF Token 检查。
 - 登录失败使用统一响应，并按来源和账号执行限速。
 - API 不开放跨域访问。
 

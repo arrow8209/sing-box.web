@@ -130,19 +130,6 @@ func firstForwardedIP(values []string) net.IP {
 	return net.ParseIP(strings.Trim(first, "[]"))
 }
 
-func (service *server) originMiddleware(next http.Handler) http.Handler {
-	return http.HandlerFunc(func(response http.ResponseWriter, request *http.Request) {
-		if isUnsafeAPIRequest(request) {
-			origins := request.Header.Values("Origin")
-			if service.deps.PublicOrigin == "" || len(origins) != 1 || origins[0] != service.deps.PublicOrigin {
-				writeAPIError(response, http.StatusForbidden, "forbidden_origin", "请求来源无效")
-				return
-			}
-		}
-		next.ServeHTTP(response, request)
-	})
-}
-
 func isUnsafeAPIRequest(request *http.Request) bool {
 	if !(request.URL.Path == "/api/v1" || strings.HasPrefix(request.URL.Path, "/api/v1/")) {
 		return false

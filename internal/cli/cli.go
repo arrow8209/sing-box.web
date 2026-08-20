@@ -17,7 +17,6 @@ type ServeOptions struct {
 	ConfigGroup       string
 	AllowPublicListen bool
 	Development       bool
-	PublicOrigin      string
 }
 
 type Dependencies struct {
@@ -51,7 +50,6 @@ func runServe(ctx context.Context, args []string, stderr io.Writer, deps Depende
 	flags.StringVar(&options.ConfigRoot, "config-root", "", "正式配置根目录")
 	flags.StringVar(&options.SingBoxPath, "sing-box", "/usr/local/bin/sing-box", "sing-box 路径")
 	flags.StringVar(&options.ConfigGroup, "config-group", "sing-box", "正式配置组")
-	flags.StringVar(&options.PublicOrigin, "public-origin", "", "外部 HTTPS Origin")
 	flags.BoolVar(&options.Development, "dev", false, "开发模式")
 	flags.BoolVar(&options.AllowPublicListen, "allow-public-listen", false, "允许公开监听（危险）")
 	if err := flags.Parse(args); err != nil || flags.NArg() != 0 {
@@ -73,11 +71,8 @@ func runServe(ctx context.Context, args []string, stderr io.Writer, deps Depende
 			fmt.Fprintln(stderr, "无法解析配置目录")
 			return 2
 		}
-		if options.PublicOrigin == "" {
-			options.PublicOrigin = "http://" + options.Listen
-		}
-	} else if options.DataDir == "" || options.ConfigRoot == "" || options.PublicOrigin == "" {
-		fmt.Fprintln(stderr, "生产模式必须指定 --data-dir、--config-root 和 --public-origin")
+	} else if options.DataDir == "" || options.ConfigRoot == "" {
+		fmt.Fprintln(stderr, "生产模式必须指定 --data-dir 和 --config-root")
 		return 2
 	}
 	if deps.Serve == nil {

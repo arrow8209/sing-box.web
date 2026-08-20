@@ -13,21 +13,29 @@ import (
 func TestRunServeProductionAndDevelopmentOptions(t *testing.T) {
 	var got ServeOptions
 	deps := Dependencies{Serve: func(_ context.Context, options ServeOptions) error { got = options; return nil }}
-	production := []string{"serve", "--listen", "127.0.0.1:9000", "--data-dir", "/data", "--config-root", "/config", "--sing-box", "/bin/sing-box", "--config-group", "sing-box", "--public-origin", "https://admin.example"}
-	if code := Run(context.Background(), production, strings.NewReader(""), io.Discard, io.Discard, deps); code != 0 || got.PublicOrigin != "https://admin.example" || got.Development || got.AllowPublicListen {
+	production := []string{"serve", "--listen", "127.0.0.1:9000", "--data-dir", "/data", "--config-root", "/config", "--sing-box", "/bin/sing-box", "--config-group", "sing-box"}
+	if code := Run(context.Background(), production, strings.NewReader(""), io.Discard, io.Discard, deps); code != 0 || got.Development || got.AllowPublicListen {
 		t.Fatalf("code=%d options=%#v", code, got)
 	}
 	got = ServeOptions{}
-	if code := Run(context.Background(), []string{"serve", "--dev"}, strings.NewReader(""), io.Discard, io.Discard, deps); code != 0 || !got.Development || !filepath.IsAbs(got.DataDir) || !filepath.IsAbs(got.ConfigRoot) || got.PublicOrigin != "http://127.0.0.1:8080" {
+	if code := Run(context.Background(), []string{"serve", "--dev"}, strings.NewReader(""), io.Discard, io.Discard, deps); code != 0 || !got.Development || !filepath.IsAbs(got.DataDir) || !filepath.IsAbs(got.ConfigRoot) {
 		t.Fatalf("dev code=%d options=%#v", code, got)
 	}
 }
 
-func TestRunServeRequiresProductionRootsAndOrigin(t *testing.T) {
+func TestRunServeRequiresProductionRoots(t *testing.T) {
 	called := false
 	deps := Dependencies{Serve: func(context.Context, ServeOptions) error { called = true; return nil }}
 	if code := Run(context.Background(), []string{"serve"}, strings.NewReader(""), io.Discard, io.Discard, deps); code != 2 || called {
 		t.Fatalf("code=%d called=%v", code, called)
+	}
+}
+
+func TestRunServeRejectsRemovedPublicOriginFlag(t *testing.T) {
+	deps := Dependencies{Serve: func(context.Context, ServeOptions) error { return nil }}
+	args := []string{"serve", "--data-dir", "/data", "--config-root", "/config", "--public-origin", "https://admin.example"}
+	if code := Run(context.Background(), args, strings.NewReader(""), io.Discard, io.Discard, deps); code != 2 {
+		t.Fatalf("code=%d, want 2", code)
 	}
 }
 

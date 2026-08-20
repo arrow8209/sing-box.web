@@ -10,7 +10,6 @@ import (
 	"io"
 	"net"
 	"net/http"
-	"net/url"
 	"os"
 	"os/user"
 	"path/filepath"
@@ -40,8 +39,6 @@ type Options struct {
 	SingBoxPath       string
 	ConfigGroup       string
 	AllowPublicListen bool
-	Development       bool
-	PublicOrigin      string
 	Version           string
 	LogOutput         io.Writer
 }
@@ -58,7 +55,7 @@ var (
 )
 
 func Run(ctx context.Context, options Options) error {
-	if err := validateNetwork(options.Listen, options.PublicOrigin, options.AllowPublicListen, options.Development); err != nil {
+	if err := validateNetwork(options.Listen, options.AllowPublicListen); err != nil {
 		return err
 	}
 	group, err := user.LookupGroup(options.ConfigGroup)
@@ -163,7 +160,6 @@ func Run(ctx context.Context, options Options) error {
 		Publication:  publicationService,
 		Auditor:      auditor,
 		ConfigRoot:   options.ConfigRoot,
-		PublicOrigin: options.PublicOrigin,
 		Now:          now,
 	})
 	mux := &http.ServeMux{}
@@ -208,7 +204,7 @@ func Run(ctx context.Context, options Options) error {
 	}
 }
 
-func validateNetwork(listen, publicOrigin string, allowPublic, development bool) error {
+func validateNetwork(listen string, allowPublic bool) error {
 	host, _, err := net.SplitHostPort(listen)
 	if err != nil {
 		return fmt.Errorf("监听地址无效")
@@ -216,23 +212,6 @@ func validateNetwork(listen, publicOrigin string, allowPublic, development bool)
 	ip := net.ParseIP(strings.Trim(host, "[]"))
 	if !allowPublic && (ip == nil || !ip.IsLoopback()) {
 		return fmt.Errorf("拒绝公开监听地址")
-	}
-	parsed, err := url.Parse(publicOrigin)
-	if err != nil || publicOrigin == "" || parsed.String() != publicOrigin || parsed.User != nil || parsed.Host == "" || parsed.Hostname() == "" || parsed.Path != "" || parsed.RawQuery != "" || parsed.ForceQuery || parsed.Fragment != "" || parsed.Opaque != "" || parsed.Scheme != strings.ToLower(parsed.Scheme) || parsed.Host != strings.ToLower(parsed.Host) || strings.HasSuffix(parsed.Hostname(), ".") {
-		return fmt.Errorf("PublicOrigin 无效")
-	}
-	if (parsed.Scheme == "https" && parsed.Port() == "443") || (parsed.Scheme == "http" && parsed.Port() == "80") {
-		return fmt.Errorf("PublicOrigin 无效")
-	}
-	if parsed.Scheme == "https" {
-		return nil
-	}
-	if !development || parsed.Scheme != "http" {
-		return fmt.Errorf("PublicOrigin 必须使用 HTTPS")
-	}
-	originIP := net.ParseIP(strings.Trim(parsed.Hostname(), "[]"))
-	if originIP == nil || !originIP.IsLoopback() {
-		return fmt.Errorf("开发模式 HTTP Origin 必须为回环地址")
 	}
 	return nil
 }

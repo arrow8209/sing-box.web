@@ -36,7 +36,7 @@ func validOptions(t *testing.T) Options {
 	if err != nil {
 		t.Fatal(err)
 	}
-	options := Options{Listen: "127.0.0.1:0", DataDir: filepath.Join(t.TempDir(), "data"), ConfigRoot: filepath.Join(t.TempDir(), "config"), ConfigGroup: group.Name, PublicOrigin: "https://admin.example", SingBoxPath: "/definitely/missing/sing-box"}
+	options := Options{Listen: "127.0.0.1:0", DataDir: filepath.Join(t.TempDir(), "data"), ConfigRoot: filepath.Join(t.TempDir(), "config"), ConfigGroup: group.Name, SingBoxPath: "/definitely/missing/sing-box"}
 	store := auth.NewFileStore(filepath.Join(options.DataDir, "auth.json"), time.Now, bytes.NewReader(bytes.Repeat([]byte{7}, 4096)))
 	if err := store.SetPassword([]byte("a-strong-password")); err != nil {
 		t.Fatal(err)
@@ -62,28 +62,23 @@ func TestRunRejectsMissingAuthBeforeListen(t *testing.T) {
 		t.Fatal(err)
 	}
 	data, config := filepath.Join(t.TempDir(), "data"), filepath.Join(t.TempDir(), "config")
-	err = Run(context.Background(), Options{Listen: "127.0.0.1:0", DataDir: data, ConfigRoot: config, ConfigGroup: configuredGroup.Name, PublicOrigin: "https://admin.example", SingBoxPath: "/missing"})
+	err = Run(context.Background(), Options{Listen: "127.0.0.1:0", DataDir: data, ConfigRoot: config, ConfigGroup: configuredGroup.Name, SingBoxPath: "/missing"})
 	if err == nil {
 		t.Fatal("Run() succeeded without auth.json")
 	}
 }
 
-func TestValidateEndpointAndOrigin(t *testing.T) {
+func TestValidateEndpoint(t *testing.T) {
 	for _, test := range []struct {
-		name, listen, origin string
-		public, dev, ok      bool
+		name, listen string
+		public, ok   bool
 	}{
-		{"loopback production", "127.0.0.1:8080", "https://admin.example", false, false, true},
-		{"empty production origin", "127.0.0.1:8080", "", false, false, false},
-		{"public denied", "0.0.0.0:8080", "https://admin.example", false, false, false},
-		{"public allowed", "0.0.0.0:8080", "https://admin.example", true, false, true},
-		{"trailing slash", "127.0.0.1:8080", "https://admin.example/", false, false, false},
-		{"http production", "127.0.0.1:8080", "http://127.0.0.1:8080", false, false, false},
-		{"http dev loopback", "127.0.0.1:8080", "http://127.0.0.1:8080", false, true, true},
-		{"http dev public origin", "127.0.0.1:8080", "http://example.com", false, true, false},
+		{"loopback", "127.0.0.1:8080", false, true},
+		{"public denied", "0.0.0.0:8080", false, false},
+		{"public allowed", "0.0.0.0:8080", true, true},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			err := validateNetwork(test.listen, test.origin, test.public, test.dev)
+			err := validateNetwork(test.listen, test.public)
 			if (err == nil) != test.ok {
 				t.Fatalf("err=%v", err)
 			}

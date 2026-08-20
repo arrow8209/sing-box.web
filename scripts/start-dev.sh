@@ -9,7 +9,6 @@ listen="${SINGBOX_WEB_LISTEN:-127.0.0.1:50010}"
 data_dir="${SINGBOX_WEB_DATA_DIR:-$repo_root/.singbox-web/data}"
 config_root="${SINGBOX_WEB_CONFIG_ROOT:-$repo_root/.singbox-web/config}"
 config_group="${SINGBOX_WEB_CONFIG_GROUP:-$(id -gn)}"
-public_origin="${SINGBOX_WEB_PUBLIC_ORIGIN:-}"
 
 fail() {
 	echo "$1" >&2
@@ -31,14 +30,6 @@ fi
 
 if [ "$listen" = "$port" ] || [ -z "$host" ] || [ -z "$port" ]; then
 	fail "SINGBOX_WEB_LISTEN 必须是 host:port 格式，例如 127.0.0.1:50010"
-fi
-
-if [ -z "$public_origin" ]; then
-	if [ "$host" = "0.0.0.0" ] || [ "$host" = "::" ]; then
-		public_origin="http://127.0.0.1:$port"
-	else
-		public_origin="http://$host:$port"
-	fi
 fi
 
 if [ "$host" = "0.0.0.0" ] || [ "$host" = "::" ]; then
@@ -63,8 +54,7 @@ set -- "$binary" serve --dev \
 	--listen "$listen" \
 	--data-dir "$data_dir" \
 	--config-root "$config_root" \
-	--config-group "$config_group" \
-	--public-origin "$public_origin"
+	--config-group "$config_group"
 
 if [ -n "$public_listen" ]; then
 	set -- "$@" "$public_listen"
