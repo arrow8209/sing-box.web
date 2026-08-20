@@ -227,4 +227,68 @@ describe("useDraftStore", () => {
     expect(draft.status).toBe("error");
     expect(draft.lastError?.code).toBe("draft_read_only");
   });
+
+  it("wraps applied top-level buffers after structured config changes", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { log: { level: "info" } },
+        editorBuffers: {
+          log: { text: '{"log":{"level":"info"}}', valid: true, applied: true },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.replaceConfig({ log: { level: "warn" } });
+
+    expect(draft.draft?.content.editorBuffers.log).toEqual({
+      text: JSON.stringify({ log: { level: "warn" } }, null, 2),
+      valid: true,
+      applied: true,
+    });
+  });
+
+  it("restores an unapplied top-level buffer in the wrapped module format", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { log: { level: "info" } },
+        editorBuffers: {
+          log: { text: '{"log":', valid: false, applied: false },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.discardUnappliedBuffer("log");
+
+    expect(draft.draft?.content.editorBuffers.log).toEqual({
+      text: JSON.stringify({ log: { level: "info" } }, null, 2),
+      valid: true,
+      applied: true,
+    });
+  });
+
+  it("keeps collection-row buffers formatted as row objects", () => {
+    const draft = useDraftStore();
+    draft.draft = {
+      ...draftBody,
+      content: {
+        config: { outbounds: [{ type: "direct", tag: "direct" }] },
+        editorBuffers: {
+          "outbounds/0": { text: '{"type":"direct"}', valid: true, applied: true },
+        },
+      },
+    };
+    draft.status = "saved";
+
+    draft.replaceConfig({ outbounds: [{ type: "block", tag: "blocked" }] });
+
+    expect(draft.draft?.content.editorBuffers["outbounds/0"]?.text).toBe(
+      JSON.stringify({ type: "block", tag: "blocked" }, null, 2),
+    );
+  });
 });

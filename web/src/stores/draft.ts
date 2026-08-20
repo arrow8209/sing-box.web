@@ -106,7 +106,7 @@ export const useDraftStore = defineStore("draft", {
         const row = Array.isArray(collection) ? collection[index] : undefined;
         return JSON.stringify(row ?? null, null, 2);
       }
-      return JSON.stringify(config[module] ?? null, null, 2);
+      return JSON.stringify({ [module]: config[module] ?? null }, null, 2);
     },
     /** 单次变更同时更新规范配置与缓冲区（集合行编辑/重排/删除用，避免中间状态分叉）。 */
     updateConfigWithBuffers(
