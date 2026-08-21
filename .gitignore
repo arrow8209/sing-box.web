@@ -2,10 +2,3 @@ temp/
 node_modules/
 *.log
 .DS_Store
-data/
-config/
-config.staging-*/
-config.rollback-*/
-dist/
-web/dist/
-web/test-results/
