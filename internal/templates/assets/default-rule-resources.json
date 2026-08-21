@@ -1,0 +1,44 @@
+[
+  {
+    "templateKey": "5df11ac6df91d76c",
+    "name": "Category-Ads",
+    "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/category-ads-all.srs",
+    "format": "binary",
+    "updateInterval": ""
+  },
+  {
+    "templateKey": "893106ff02d65e99",
+    "name": "GeoIP-Private",
+    "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/private.srs",
+    "format": "binary",
+    "updateInterval": ""
+  },
+  {
+    "templateKey": "90a7ee9c83cbd755",
+    "name": "GeoSite-Private",
+    "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/private.srs",
+    "format": "binary",
+    "updateInterval": ""
+  },
+  {
+    "templateKey": "629a658f7e7780b1",
+    "name": "GeoIP-CN",
+    "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs",
+    "format": "binary",
+    "updateInterval": ""
+  },
+  {
+    "templateKey": "b80b71d86b3d57d4",
+    "name": "GeoSite-CN",
+    "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs",
+    "format": "binary",
+    "updateInterval": ""
+  },
+  {
+    "templateKey": "22a77a9e7b2275fe",
+    "name": "GeoLocation-!CN",
+    "url": "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs",
+    "format": "binary",
+    "updateInterval": ""
+  }
+]

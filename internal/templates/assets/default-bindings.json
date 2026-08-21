@@ -1,0 +1,32 @@
+[
+  {
+    "templateKey": "5df11ac6df91d76c",
+    "tag": "Category-Ads",
+    "enabled": true
+  },
+  {
+    "templateKey": "893106ff02d65e99",
+    "tag": "GeoIP-Private",
+    "enabled": true
+  },
+  {
+    "templateKey": "90a7ee9c83cbd755",
+    "tag": "GeoSite-Private",
+    "enabled": true
+  },
+  {
+    "templateKey": "629a658f7e7780b1",
+    "tag": "GeoIP-CN",
+    "enabled": true
+  },
+  {
+    "templateKey": "b80b71d86b3d57d4",
+    "tag": "GeoSite-CN",
+    "enabled": true
+  },
+  {
+    "templateKey": "22a77a9e7b2275fe",
+    "tag": "GeoLocation-!CN",
+    "enabled": true
+  }
+]
