@@ -3,13 +3,65 @@ package rules
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"testing"
 	"time"
 
 	"singbox-web/internal/paths"
 )
+
+type failingRuleDownloader struct{ err error }
+
+func (d failingRuleDownloader) Fetch(context.Context, Resource) (DownloadedFile, error) {
+	return DownloadedFile{}, d.err
+}
+
+func TestFailedUpdatePreservesCurrentFile(t *testing.T) {
+	service, layout := newRuleService(t, nil)
+	resource, err := service.Create(context.Background(), CreateInput{Name: "CN", URL: "https://example.test/cn.srs", Format: FormatBinary})
+	if err != nil {
+		t.Fatal(err)
+	}
+	target, _, err := layout.RuleSetPath(resource.ID, ".srs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(layout.RuleSetsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	old := []byte("old-binary")
+	if err := os.WriteFile(target, old, 0o600); err != nil {
+		t.Fatal(err)
+	}
+	sum := sha256.Sum256(old)
+	items, err := service.store.list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	items[0].LastSuccessAt = ptrTime(time.Unix(1, 0))
+	items[0].LastDigest = fmt.Sprintf("%x", sum)
+	if err := service.store.write(items); err != nil {
+		t.Fatal(err)
+	}
+	service.SetDownloader(failingRuleDownloader{errors.New("response exceeded 64 MiB")})
+	if _, err := service.UpdateNow(context.Background(), resource.ID); err == nil {
+		t.Fatal("update succeeded")
+	}
+	got, err := os.ReadFile(target)
+	if err != nil || string(got) != string(old) {
+		t.Fatalf("current file=%q err=%v", got, err)
+	}
+	updated, err := service.store.list()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if updated[0].LastError == "" || updated[0].LastSuccessAt == nil {
+		t.Fatalf("status=%+v", updated[0])
+	}
+}
 
 type referenceSource struct{ references map[string][]Reference }
 

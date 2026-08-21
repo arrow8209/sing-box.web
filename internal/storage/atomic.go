@@ -14,6 +14,110 @@ import (
 	"syscall"
 )
 
+// FileReplacement is a short lived, recoverable installation of a downloaded
+// file.  Call Commit only after the metadata pointing at the new file has been
+// durably written; otherwise call Restore.
+type FileReplacement struct {
+	target   string
+	rollback string
+	hadOld   bool
+	done     bool
+}
+
+// BeginFileReplacement atomically installs tempPath at target.  When target
+// already exists it is retained under a private rollback name until Commit.
+// Both paths must be in the same directory, so the final rename cannot cross
+// filesystems.
+func BeginFileReplacement(tempPath, target string, perm fs.FileMode) (*FileReplacement, error) {
+	if filepath.Dir(tempPath) != filepath.Dir(target) {
+		return nil, fmt.Errorf("临时规则文件必须与目标文件位于同一目录")
+	}
+	if err := RejectSymlinkPath(filepath.Dir(target)); err != nil {
+		return nil, err
+	}
+	directory, err := openDirectoryNoFollow(filepath.Dir(target))
+	if err != nil {
+		return nil, err
+	}
+	defer directory.Close()
+	targetName, tempName := filepath.Base(target), filepath.Base(tempPath)
+	if targetName == "." || tempName == "." {
+		return nil, fmt.Errorf("无效规则文件名")
+	}
+	if err := os.Chmod(tempPath, perm); err != nil {
+		return nil, err
+	}
+	r := &FileReplacement{target: target}
+	if _, err := os.Lstat(target); err == nil {
+		entropy := make([]byte, 16)
+		if _, err := rand.Read(entropy); err != nil {
+			return nil, err
+		}
+		r.rollback = filepath.Join(filepath.Dir(target), "."+targetName+".rollback-"+hex.EncodeToString(entropy))
+		if err := syscall.Renameat(int(directory.Fd()), targetName, int(directory.Fd()), filepath.Base(r.rollback)); err != nil {
+			return nil, err
+		}
+		r.hadOld = true
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err := syscall.Renameat(int(directory.Fd()), tempName, int(directory.Fd()), targetName); err != nil {
+		if r.hadOld {
+			_ = syscall.Renameat(int(directory.Fd()), filepath.Base(r.rollback), int(directory.Fd()), targetName)
+		}
+		return nil, err
+	}
+	if err := directory.Sync(); err != nil {
+		return nil, err
+	}
+	return r, nil
+}
+
+func (r *FileReplacement) Commit() error {
+	if r == nil || r.done {
+		return nil
+	}
+	if r.hadOld {
+		if err := os.Remove(r.rollback); err != nil {
+			return err
+		}
+		if dir, err := openDirectoryNoFollow(filepath.Dir(r.target)); err != nil {
+			return err
+		} else {
+			defer dir.Close()
+			if err := dir.Sync(); err != nil {
+				return err
+			}
+		}
+	}
+	r.done = true
+	return nil
+}
+
+func (r *FileReplacement) Restore() error {
+	if r == nil || r.done {
+		return nil
+	}
+	if err := os.Remove(r.target); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if r.hadOld {
+		if err := os.Rename(r.rollback, r.target); err != nil {
+			return err
+		}
+	}
+	dir, err := openDirectoryNoFollow(filepath.Dir(r.target))
+	if err != nil {
+		return err
+	}
+	defer dir.Close()
+	if err := dir.Sync(); err != nil {
+		return err
+	}
+	r.done = true
+	return nil
+}
+
 // ReadJSON reads a managed JSON document into a concrete, schema-bearing type.
 // Map and interface type arguments are rejected because they cannot enforce an
 // unknown-field boundary with json.Decoder.DisallowUnknownFields.

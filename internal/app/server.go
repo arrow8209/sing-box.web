@@ -116,6 +116,9 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := rules.RecoverRuleTransactions(ruleStore, layout); err != nil {
+		return nil, err
+	}
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),

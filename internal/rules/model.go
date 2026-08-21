@@ -90,3 +90,9 @@ type ResourceResponse struct {
 	LastError      string     `json:"lastError,omitempty"`
 	NextUpdateAt   *time.Time `json:"nextUpdateAt,omitempty"`
 }
+
+type UpdateResult struct {
+	Changed bool   `json:"changed"`
+	Digest  string `json:"digest"`
+	Message string `json:"message"`
+}

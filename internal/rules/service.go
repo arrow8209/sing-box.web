@@ -13,20 +13,24 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"singbox-web/internal/audit"
 	"singbox-web/internal/paths"
+	"singbox-web/internal/storage"
 )
 
 var ErrNotFound = errors.New("规则资源不存在")
 
 // Service owns resource metadata and the fixed local-file lifecycle.
 type Service struct {
-	store    *Store
-	layout   paths.Layout
-	profiles ProfileReferences
-	clock    func() time.Time
-	random   io.Reader
-	locks    *resourceLocks
-	mu       sync.Mutex
+	store      *Store
+	layout     paths.Layout
+	profiles   ProfileReferences
+	clock      func() time.Time
+	random     io.Reader
+	locks      *resourceLocks
+	downloader Downloader
+	audit      *audit.Logger
+	mu         sync.Mutex
 }
 
 func NewService(store *Store, layout paths.Layout, profiles ProfileReferences, clock func() time.Time, randomSource io.Reader) (*Service, error) {
@@ -39,7 +43,141 @@ func NewService(store *Store, layout paths.Layout, profiles ProfileReferences, c
 	if randomSource == nil {
 		randomSource = rand.Reader
 	}
-	return &Service{store: store, layout: layout, profiles: profiles, clock: clock, random: randomSource, locks: newResourceLocks()}, nil
+	return &Service{store: store, layout: layout, profiles: profiles, clock: clock, random: randomSource, locks: newResourceLocks(), downloader: NewDownloader()}, nil
+}
+
+func (s *Service) SetDownloader(downloader Downloader) {
+	if downloader != nil {
+		s.downloader = downloader
+	}
+}
+func (s *Service) SetAuditLogger(logger *audit.Logger) { s.audit = logger }
+
+// UpdateNow fetches, validates and atomically installs one resource.  It only
+// makes profile drafts need applying when the content digest actually changed.
+func (s *Service) UpdateNow(ctx context.Context, id string) (result UpdateResult, err error) {
+	started := s.clock().UTC()
+	stage, digest := "lookup", ""
+	defer func() {
+		if s.audit == nil {
+			return
+		}
+		event := audit.Event{Operation: "update_rule_resource", InternalID: id, Digest: digest, Stage: stage, DurationMS: s.clock().UTC().Sub(started).Milliseconds(), Result: "success"}
+		if err != nil {
+			event.Digest, event.Result = "", "failed"
+		}
+		s.audit.Record(event)
+	}()
+	if !resourceIDPattern.MatchString(id) {
+		return result, ErrNotFound
+	}
+	if err := ctx.Err(); err != nil {
+		return result, err
+	}
+	release, err := s.locks.Lock(ctx, id)
+	if err != nil {
+		return result, err
+	}
+	defer release()
+	s.mu.Lock()
+	resources, err := s.store.list()
+	if err == nil {
+		index := indexOf(resources, id)
+		if index < 0 {
+			err = ErrNotFound
+		} else {
+			resource := resources[index]
+			s.mu.Unlock()
+			return s.updateLocked(ctx, resources, index, resource, started, &stage, &digest)
+		}
+	}
+	s.mu.Unlock()
+	return result, err
+}
+
+func (s *Service) updateLocked(ctx context.Context, resources []Resource, index int, resource Resource, now time.Time, stage, digest *string) (UpdateResult, error) {
+	if resource.Disabled {
+		return UpdateResult{}, errors.New("已禁用的规则资源不能更新")
+	}
+	*stage = "download"
+	downloaded, err := s.downloader.Fetch(ctx, resource)
+	if err != nil {
+		return UpdateResult{}, s.recordUpdateFailure(resources, index, now, err)
+	}
+	defer os.Remove(downloaded.Path)
+	*digest = downloaded.Digest
+	*stage = "validate"
+	if err := ValidateDownloaded(resource.Format, downloaded.Payload); err != nil {
+		return UpdateResult{}, s.recordUpdateFailure(resources, index, now, err)
+	}
+	*stage = "install"
+	replacement, err := storage.BeginFileReplacement(downloaded.Path, resource.LocalPath, 0o600)
+	if err != nil {
+		return UpdateResult{}, s.recordUpdateFailure(resources, index, now, err)
+	}
+	changed := resource.LastDigest != downloaded.Digest
+	next := resource
+	next.LastAttemptAt, next.LastSuccessAt = ptrTime(now), ptrTime(now)
+	next.LastDigest, next.LastError = downloaded.Digest, ""
+	resources[index] = next
+	*stage = "save_status"
+	s.mu.Lock()
+	err = s.store.write(resources)
+	s.mu.Unlock()
+	if err != nil {
+		if restoreErr := replacement.Restore(); restoreErr != nil {
+			return UpdateResult{}, errors.Join(err, restoreErr)
+		}
+		return UpdateResult{}, err
+	}
+	if err := replacement.Commit(); err != nil {
+		return UpdateResult{}, err
+	}
+	if changed {
+		*stage = "mark_needs_apply"
+		if marker, ok := s.profiles.(interface {
+			MarkResourcesChanged(context.Context, []string) error
+		}); ok {
+			if err := marker.MarkResourcesChanged(ctx, []string{resource.ID}); err != nil {
+				return UpdateResult{}, err
+			}
+		}
+	}
+	*stage = "completed"
+	return UpdateResult{Changed: changed, Digest: downloaded.Digest, Message: updateMessage(changed)}, nil
+}
+
+func (s *Service) recordUpdateFailure(resources []Resource, index int, now time.Time, cause error) error {
+	resources[index].LastAttemptAt = ptrTime(now)
+	resources[index].LastError = safeUpdateError(cause)
+	s.mu.Lock()
+	err := s.store.write(resources)
+	s.mu.Unlock()
+	if err != nil {
+		return errors.Join(cause, err)
+	}
+	return cause
+}
+func ptrTime(value time.Time) *time.Time { value = value.UTC(); return &value }
+func safeUpdateError(err error) string {
+	switch {
+	case errors.Is(err, ErrUnsupportedURL):
+		return "规则地址不受支持"
+	case errors.Is(err, ErrTooManyRedirects):
+		return "规则下载重定向次数超过限制"
+	case errors.Is(err, ErrResponseTooLarge):
+		return "规则响应超过 64 MiB"
+	case errors.Is(err, ErrEmptyRuleSet):
+		return "规则文件不能为空"
+	default:
+		return "规则下载或校验失败"
+	}
+}
+func updateMessage(changed bool) string {
+	if changed {
+		return "规则资源已更新，请点击“应用”使 sing-box 使用新规则。"
+	}
+	return "规则资源内容未变化。"
 }
 
 func (s *Service) List(ctx context.Context) ([]ResourceResponse, error) {

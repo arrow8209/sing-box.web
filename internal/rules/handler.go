@@ -43,6 +43,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.references(w, r, parts[0])
 		return
 	}
+	if len(parts) == 2 && parts[1] == "update" && r.Method == http.MethodPost {
+		h.update(w, r, parts[0])
+		return
+	}
 	if len(parts) != 1 {
 		apierror.Write(w, http.StatusNotFound, apierror.Error{Code: "not_found", Message: "请求的资源不存在"})
 		return
@@ -55,6 +59,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		httpapi.MethodNotAllowed(w, http.MethodPatch, http.MethodDelete)
 	}
+}
+func (h *Handler) update(w http.ResponseWriter, r *http.Request, id string) {
+	result, err := h.service.UpdateNow(r.Context(), id)
+	if err != nil {
+		writeError(w, err, "update_rule_resource")
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, result)
 }
 
 func (h *Handler) list(w http.ResponseWriter, r *http.Request) {

@@ -30,6 +30,29 @@ func TestWriteJSONReplacesCompleteDocument(t *testing.T) {
 	}
 }
 
+func TestFileReplacementRestoresOldFile(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "rule.srs")
+	temp := filepath.Join(dir, ".rule.srs.download-test")
+	if err := os.WriteFile(target, []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(temp, []byte("new"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	replacement, err := storage.BeginFileReplacement(temp, target, 0o600)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := replacement.Restore(); err != nil {
+		t.Fatal(err)
+	}
+	got, err := os.ReadFile(target)
+	if err != nil || string(got) != "old" {
+		t.Fatalf("got=%q err=%v", got, err)
+	}
+}
+
 func TestWriteFileRejectsSymlinkedDirectory(t *testing.T) {
 	root, outside := t.TempDir(), t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "data")); err != nil {
