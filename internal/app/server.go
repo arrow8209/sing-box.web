@@ -37,6 +37,12 @@ type Dependencies struct {
 	// CoreEnvironment is an explicit allow-list passed to the check process.
 	// It is empty in production; integration tests use it for their fake core.
 	CoreEnvironment []string
+	// ListenAddress is reserved for isolated test servers. Production callers
+	// leave it empty and always use the documented default listener.
+	ListenAddress string
+	// Listener lets an isolated caller reserve a loopback port before the
+	// server starts. Production callers leave it nil.
+	Listener net.Listener
 }
 
 // Server owns the local HTTP server and the exclusive application lock.
@@ -50,6 +56,7 @@ type Server struct {
 	schedulerDone   chan struct{}
 	core            *core.Manager
 	operations      *core.OperationLock
+	listener        net.Listener
 	closed          bool
 }
 
@@ -197,14 +204,22 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		WebUI:               webui.Handler(),
 	})
 	keepLock = true
+	listenAddress := deps.ListenAddress
+	if deps.Listener != nil {
+		listenAddress = deps.Listener.Addr().String()
+	}
+	if listenAddress == "" {
+		listenAddress = defaultListenAddress
+	}
 	return &Server{
 		layout:        layout,
 		lock:          lock,
-		http:          &http.Server{Addr: defaultListenAddress, Handler: handler},
+		http:          &http.Server{Addr: listenAddress, Handler: handler},
 		scheduler:     rules.NewScheduler(ruleService, nil),
 		schedulerDone: make(chan struct{}),
 		core:          coreManager,
 		operations:    operation,
+		listener:      deps.Listener,
 	}, nil
 }
 
@@ -221,9 +236,13 @@ func (s *Server) Run(ctx context.Context) error {
 		s.closeMu.Unlock()
 		go func() { defer close(s.schedulerDone); _ = s.scheduler.Run(schedulerCtx) }()
 	}
-	listener, err := net.Listen("tcp", s.http.Addr)
-	if err != nil {
-		return errors.Join(err, s.closeWithTimeout())
+	listener := s.listener
+	if listener == nil {
+		var err error
+		listener, err = net.Listen("tcp", s.http.Addr)
+		if err != nil {
+			return errors.Join(err, s.closeWithTimeout())
+		}
 	}
 	result := make(chan error, 1)
 	go func() {

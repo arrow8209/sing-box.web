@@ -2,6 +2,7 @@ package updater
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -86,19 +87,46 @@ func parseRelease(payload []byte, goarch string) (Release, error) {
 		return Release{}, ErrUnsupportedArchitecture
 	}
 	archiveName := fmt.Sprintf("sing-box-%s-linux-%s.tar.gz", version, arch)
-	checksumName := fmt.Sprintf("sing-box-%s-checksums.txt", version)
 	archive, archiveCount := findAsset(document.Assets, archiveName)
-	checksums, checksumCount := findAsset(document.Assets, checksumName)
-	if archiveCount != 1 || checksumCount != 1 {
+	if archiveCount != 1 {
 		return Release{}, fmt.Errorf("官方核心版本资产不完整或不唯一")
 	}
 	if err := validateOfficialURLString(archive.URL); err != nil {
 		return Release{}, err
 	}
+	if digest, ok := parseGitHubAssetDigest(archive.Digest); ok {
+		return Release{Version: version, Asset: archive, ArchiveSHA256: digest, Arch: arch}, nil
+	}
+
+	// GitHub started publishing the SHA-256 directly in each release asset's
+	// metadata. Retain the old signed-release convention for historical
+	// versions, but do not accept a release with neither verification source.
+	checksumName := fmt.Sprintf("sing-box-%s-checksums.txt", version)
+	checksums, checksumCount := findAsset(document.Assets, checksumName)
+	if checksumCount != 1 {
+		return Release{}, fmt.Errorf("官方核心版本缺少 SHA-256 校验信息")
+	}
 	if err := validateOfficialURLString(checksums.URL); err != nil {
 		return Release{}, err
 	}
 	return Release{Version: version, Asset: archive, Checksums: checksums, Arch: arch}, nil
+}
+
+func parseGitHubAssetDigest(value string) (string, bool) {
+	const prefix = "sha256:"
+	if !strings.HasPrefix(value, prefix) {
+		return "", false
+	}
+	digest := strings.TrimPrefix(value, prefix)
+	if len(digest) != sha256.Size*2 {
+		return "", false
+	}
+	for _, character := range digest {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return "", false
+		}
+	}
+	return digest, true
 }
 
 func linuxArchitecture(goarch string) (string, bool) {

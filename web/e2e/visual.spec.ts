@@ -15,7 +15,7 @@ async function loginAndOpenProfile(page: Page): Promise<void> {
   const dashboardHeading = page.getByRole("heading", { name: "仪表盘" });
   await expect(loginButton.or(dashboardHeading)).toBeVisible();
   if (await loginButton.isVisible()) {
-    await page.getByLabel("管理密码").fill("visual-only-password");
+    await page.getByLabel("管理密码").fill("correct horse battery staple");
     await Promise.all([
       page.waitForURL((url) => url.pathname === "/"),
       loginButton.click()

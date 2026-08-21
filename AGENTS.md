@@ -2,23 +2,25 @@
 
 ## Project Structure & Module Organization
 
-The tracked application is a zero-dependency browser prototype under `prototype/`. Its entry point is `prototype/index.html`; application state, rendering, and event handling live in `prototype/src/app.js`, while global and responsive styles live in `prototype/src/styles.css`. Product and architecture decisions are documented in `docs/superpowers/specs/`. Keep `README.md` aligned with user-facing setup changes. `temp/`, `node_modules/`, and `*.log` are ignored scratch or generated content and must not become runtime dependencies.
+The application is a Go local service plus a Vue SPA under `web/`. Go commands live in `cmd/singbox-web`; packages are in `internal/`; built SPA assets are embedded from `internal/webui/assets/`. Browser tests and their isolated harness live in `web/e2e/` and `e2e/harness/`. Product and architecture decisions are documented in `docs/superpowers/specs/`. Keep `README.md` aligned with user-facing setup changes. `data/`, `config/`, `dist/`, `node_modules/`, and `*.log` are generated or runtime-only and must not be committed.
 
 ## Build, Test, and Development Commands
 
-- `npm --prefix prototype run dev` starts a Python HTTP server on port 4173.
-- `npm --prefix prototype run preview` provides the same local preview command.
-- `npm --prefix prototype run check` runs `node --check` against `src/app.js`.
+- `sh scripts/build.sh` builds the SPA into embedded assets then compiles `dist/singbox-web`.
+- `npm --prefix web run typecheck` type-checks the Vue application.
+- `npm --prefix web run test:unit` runs component and store tests.
+- `npm --prefix web run test:e2e` runs Playwright against the isolated harness.
+- `go test -race ./...` and `go vet ./...` validate Go code.
 
-Open <http://localhost:4173> after starting the server. The prototype has no install step, bundler, or production build. Use `-- --bind 0.0.0.0` only when LAN access is intentional.
+The production service defaults to `0.0.0.0:50010`. Do not change this listener convention without explicit user direction. The SPA has an npm install step and must be built through `scripts/build.sh` before running the compiled service.
 
 ## Coding Style & Naming Conventions
 
-Use two-space indentation in HTML, CSS, JavaScript, and JSON. Follow the existing JavaScript style: strict mode, semicolons, double-quoted strings, `const` by default, and `camelCase` for functions and variables. Use `kebab-case` CSS class names and define reusable colors, spacing, and dimensions as custom properties in `:root`. Preserve Chinese UI copy and responsive behavior. No formatter or linter is configured, so keep diffs focused and match surrounding code.
+Use two-space indentation in HTML, CSS, TypeScript, JavaScript, and JSON. Follow the existing JavaScript/TypeScript style: semicolons, double-quoted strings, `const` by default, and `camelCase` for functions and variables. Go code follows standard `gofmt`. Use `kebab-case` CSS class names and define reusable colors, spacing, and dimensions as custom properties in `:root`. Preserve Chinese UI copy and responsive behavior.
 
 ## Testing Guidelines
 
-There is currently no automated test framework or coverage threshold. Run `npm --prefix prototype run check` for every change. For UI work, manually verify desktop, tablet, and mobile layouts; light and dark themes; navigation; dialogs; and relevant `localStorage` persistence. Record those checks in the pull request. If adding a test framework, place tests under `prototype/tests/`, use `*.test.js`, and add an `npm test` script in the same change.
+Run `go test -race ./...`, `go vet ./...`, `npm --prefix web run typecheck`, and `npm --prefix web run test:unit` for relevant changes. UI work also requires `npm --prefix web run test:e2e` and manual desktop/tablet/mobile, light/dark, navigation, dialog, keyboard-focus checks. Contract tests are run with `sh scripts/contract-test.sh` only when its checked-in official binary selection is current and available.
 
 ## Commit & Pull Request Guidelines
 

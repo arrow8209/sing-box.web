@@ -1,0 +1,8 @@
+{
+  "version": "1.13.19",
+  "releaseURL": "https://api.github.com/repos/SagerNet/sing-box/releases/tags/v1.13.19",
+  "assetName": "sing-box-1.13.19-linux-amd64.tar.gz",
+  "assetURL": "https://github.com/SagerNet/sing-box/releases/download/v1.13.19/sing-box-1.13.19-linux-amd64.tar.gz",
+  "archiveSHA256": "ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1",
+  "binarySHA256": "7e9dcd7239c49478a576d79f272751e5ed1c2aba7cc08ab1b2bd69c00c904ba1"
+}

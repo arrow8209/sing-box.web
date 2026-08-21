@@ -8,7 +8,7 @@ export default defineConfig({
   use: { baseURL: "http://127.0.0.1:4173", trace: "retain-on-failure" },
   webServer: {
     cwd: "..",
-    command: "go run ./e2e/harness",
+    command: "go build -o /tmp/singbox-web-e2e-harness ./e2e/harness && exec /tmp/singbox-web-e2e-harness",
     env: {
       NO_PROXY: "127.0.0.1,localhost",
       no_proxy: "127.0.0.1,localhost"

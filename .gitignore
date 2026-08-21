@@ -8,3 +8,7 @@ internal/webui/assets/*
 web/node_modules/
 web/.vite/
 web/*.tsbuildinfo
+playwright-report/
+test-results/
+data/
+config/

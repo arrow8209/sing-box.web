@@ -98,13 +98,16 @@ func (f *Fetcher) Prepare(ctx context.Context, release Release) (prepared Prepar
 			cleanupFn()
 		}
 	}()
-	checksums, err := f.download(ctx, release.Checksums.URL, maxChecksumBytes, filepath.Join(directory, "checksums.txt"))
-	if err != nil {
-		return PreparedBinary{}, nil, err
-	}
-	expected, err := FindChecksum(checksums, release.Asset.Name)
-	if err != nil {
-		return PreparedBinary{}, nil, err
+	expected := release.ArchiveSHA256
+	if expected == "" {
+		checksums, err := f.download(ctx, release.Checksums.URL, maxChecksumBytes, filepath.Join(directory, "checksums.txt"))
+		if err != nil {
+			return PreparedBinary{}, nil, err
+		}
+		expected, err = FindChecksum(checksums, release.Asset.Name)
+		if err != nil {
+			return PreparedBinary{}, nil, err
+		}
 	}
 	archivePath := filepath.Join(directory, release.Asset.Name)
 	archive, err := f.download(ctx, release.Asset.URL, maxArchiveBytes, archivePath)
@@ -129,11 +132,20 @@ func (f *Fetcher) Prepare(ctx context.Context, release Release) (prepared Prepar
 }
 
 func validateRelease(release Release) error {
-	if release.Version == "" || release.Arch == "" || release.Asset.Name == "" || release.Checksums.Name == "" {
+	if release.Version == "" || release.Arch == "" || release.Asset.Name == "" {
 		return fmt.Errorf("核心版本信息无效")
 	}
 	if err := validateOfficialURLString(release.Asset.URL); err != nil {
 		return err
+	}
+	if release.ArchiveSHA256 != "" {
+		if _, ok := parseGitHubAssetDigest("sha256:" + release.ArchiveSHA256); !ok {
+			return fmt.Errorf("核心压缩包 SHA-256 无效")
+		}
+		return nil
+	}
+	if release.Checksums.Name == "" {
+		return fmt.Errorf("核心版本缺少 SHA-256 校验信息")
 	}
 	return validateOfficialURLString(release.Checksums.URL)
 }

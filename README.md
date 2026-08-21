@@ -1,67 +1,45 @@
 # SingBox Control
 
-当前仓库包含本地 Web 服务的后端核心操作阶段，以及用于视觉参照的交互原型。服务运行时固定在当前工作目录生成 `data/` 与 `config/`，不会接受数据目录或配置目录覆盖参数。
+当前仓库包含可构建的 Vue 管理界面和本地 Go 服务。服务运行时固定在当前工作目录生成 `data/` 与 `config/`，不会接受数据目录或配置目录覆盖参数。
 
 ## 本地服务开发
 
-首次启动前设置管理密码：
+前置条件：Go 1.26、Node.js 22 与 npm。首次使用先安装前端依赖并构建：
 
 ```bash
-go run ./cmd/singbox-web admin set-password
-go run ./cmd/singbox-web serve
-go test ./...
-go test ./internal/integration -v
+npm --prefix web install
+sh scripts/build.sh
+./dist/singbox-web admin set-password
+./dist/singbox-web serve
 ```
 
 服务监听所有 IPv4 网卡的 `0.0.0.0:50010`。Web 服务作为唯一父进程管理 sing-box 子进程；应用档案会自动执行停止、`check` 和重启。核心更新只能经管理员确认后手动触发。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
 
 `internal/integration` 的测试会把当前 Go 测试二进制复制为受控 fake sing-box 核心，并只使用本地 `httptest` 规则服务；不会访问公网、启动真实代理或写入仓库工作目录。
 
-## 视觉原型
-
-`prototype/` 是零依赖、可直接预览的 sing-box Web 控制台交互原型，包含：
-
-- 仪表盘与核心运行状态
-- 配置概览按官方 JSON Schema 展示全部 14 个顶层模块
-- 常用模块使用结构化表单，DNS、端点、服务及高级模块支持完整 JSON 片段编辑
-- 新增入站会按类型显示专属字段，“自定义”类型支持输入、校验和再次编辑完整 JSON 对象
-- 任意协议出站均可通过完整 JSON 对象导入、校验和再次编辑
-- TUN 入站支持堆栈、自动/严格路由、端点独立 NAT、MTU 与多组 IPv4/IPv6 路由地址
-- 策略组支持筛选条件、测速参数，以及引用其他出站与订阅节点
-- 路由设置在单页中集中展示通用参数、规则集与有序规则，并支持按规则类型和动作编辑专属参数
-- 订阅配置与同步操作
-- 规则集管理
-- 系统与界面设置
-- 紧凑桌面布局、平板抽屉导航、手机横向配置标签、底部保存栏与底部弹窗
-
-## 原型本地预览
+## 开发与验证
 
 ```bash
-npm --prefix prototype run dev
+go test -race ./...
+go vet ./...
+npm --prefix web run typecheck
+npm --prefix web run test:unit
+sh scripts/build.sh
+npm --prefix web run test:e2e
 ```
 
-然后访问 <http://localhost:4173>。也可以直接在浏览器中打开 `prototype/index.html`。
-
-如需从局域网中的其他设备访问：
-
-```bash
-npm --prefix prototype run dev -- --bind 0.0.0.0
-```
+浏览器 E2E 使用隔离的临时目录、本地 fake core 和本地规则/release 服务，不会读取仓库的 `data/`、访问公网或启动真实代理。真实 sing-box 契约测试使用已记录的官方二进制选择：`sh scripts/contract-test.sh`。只有维护者在明确允许网络访问后才可执行 `sh scripts/contract-test.sh --refresh` 更新选择。
 
 ## 项目结构
 
 ```text
 .
 ├── docs/                    # 设计与实施文档
-├── prototype/               # 零依赖交互原型
-│   ├── index.html           # 页面入口
-│   ├── package.json         # 开发与检查命令
-│   └── src/
-│       ├── app.js           # 页面数据与交互
-│       └── styles.css       # 全局样式与响应式布局
+├── web/                     # Vue SPA、单元和浏览器测试
+├── e2e/harness/             # 隔离的浏览器测试服务
+├── internal/                # Go 服务和嵌入的前端资源
+├── scripts/build.sh         # 构建嵌入 SPA 与服务二进制
 └── README.md
 ```
 
-当前页面使用演示数据，按钮、导航、主题切换、弹窗、配置保存、订阅同步和规则集更新均提供原型交互，不会修改真实的 sing-box 配置。它只是视觉参照，不是 `singbox-web serve` 的运行依赖。
-
-低频模块的片段编辑器负责 JSON 语法和顶层容器类型校验。不同 sing-box 版本、平台及编译标签支持的字段可能不同，部署前仍需使用目标核心执行 `sing-box check`。
+一期不包含 systemd、Caddy、HTTPS/公网部署、订阅、配置导出、自动核心更新或高级运行控制。低频模块的片段编辑器负责 JSON 语法和顶层容器类型校验；部署前仍需使用目标核心执行 `sing-box check`。

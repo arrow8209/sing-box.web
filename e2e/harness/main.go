@@ -7,19 +7,21 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
-	"os/exec"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
-)
 
-const visualSessionCookie = "singbox_web_e2e_session"
-const visualCSRFToken = "visual-csrf-token"
+	"singbox-web/internal/app"
+	"singbox-web/internal/auth"
+	"singbox-web/internal/paths"
+)
 
 func main() {
 	workDir, err := os.MkdirTemp("", "singbox-web-e2e-")
@@ -30,70 +32,97 @@ func main() {
 	if err := installFakeCore(workDir); err != nil {
 		panic(err)
 	}
-
-	vite := exec.Command("npm", "--prefix", "web", "run", "dev", "--", "--port", "5173")
-	vite.Stdout, vite.Stderr = os.Stdout, os.Stderr
-	if err := vite.Start(); err != nil {
+	layout, err := paths.Resolve(workDir)
+	if err != nil {
 		panic(err)
 	}
-	defer func() { _ = vite.Process.Signal(syscall.SIGTERM); _, _ = vite.Process.Wait() }()
-	if err := waitForVite(); err != nil {
+	if err := auth.NewStore(layout.AuthFile, nil).SetPassword([]byte("correct horse battery staple")); err != nil {
+		panic(err)
+	}
+	appListener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		panic(err)
+	}
+	appServer, err := app.NewServer(workDir, app.Dependencies{Listener: appListener})
+	if err != nil {
+		_ = appListener.Close()
+		panic(err)
+	}
+	appContext, cancelApp := context.WithCancel(context.Background())
+	appDone := make(chan struct{})
+	var appRunErr error
+	go func() {
+		appRunErr = appServer.Run(appContext)
+		close(appDone)
+	}()
+	defer func() {
+		cancelApp()
+		<-appDone
+		if appRunErr != nil {
+			panic(appRunErr)
+		}
+	}()
+	appURL := "http://" + appListener.Addr().String()
+	if err := waitFor(appURL+"/api/v1/auth/session", appDone, func() error { return appRunErr }); err != nil {
 		panic(err)
 	}
 
-	target, _ := url.Parse("http://127.0.0.1:5173")
-	proxy := httputil.NewSingleHostReverseProxy(target)
-	proxy.Transport = &http.Transport{Proxy: nil}
+	apiTarget, _ := url.Parse(appURL)
+	appProxy := httputil.NewSingleHostReverseProxy(apiTarget)
+	appProxy.Transport = &http.Transport{Proxy: nil}
+	// The browser remains on :4173 while this proxy reaches the isolated app.
+	// Preserve the public Host so production same-origin checks see the exact
+	// Origin that the browser sent.
+	proxyDirector := appProxy.Director
+	appProxy.Director = func(request *http.Request) {
+		proxyDirector(request)
+		request.Host = "127.0.0.1:4173"
+	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/auth/session" {
-			if hasVisualSession(r) {
-				writeJSON(w, map[string]any{"valid": true, "expiresAt": "2099-01-01T00:00:00Z", "csrfToken": visualCSRFToken})
-			} else {
-				writeJSON(w, map[string]any{"valid": false, "expiresAt": nil})
-			}
+		if r.URL.Path == "/api/v1/core/releases/latest" {
+			writeJSON(w, map[string]any{"version": "1.0.0", "arch": "amd64"})
 			return
 		}
-		if r.URL.Path == "/api/v1/auth/login" {
-			if r.Method != http.MethodPost {
-				http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
-				return
-			}
-			http.SetCookie(w, &http.Cookie{Name: visualSessionCookie, Value: "1", Path: "/", HttpOnly: true, SameSite: http.SameSiteLaxMode})
-			writeJSON(w, map[string]any{"csrfToken": visualCSRFToken})
+		if r.URL.Path == "/api/v1/core/update" {
+			writeJSON(w, map[string]any{"active": false, "stage": "idle"})
 			return
 		}
-		if r.URL.Path == "/api/v1/profiles" {
-			writeJSON(w, []any{})
-			return
+		// Vite emits hashed files into assets/assets while the embedded handler
+		// deliberately exposes them at /assets. Keep the harness self-contained
+		// without starting a second development server.
+		if strings.HasPrefix(r.URL.Path, "/assets/") {
+			r.URL.Path = "/assets/assets/" + strings.TrimPrefix(r.URL.Path, "/assets/")
 		}
-		if r.URL.Path == "/api/v1/rule-resources" {
-			writeJSON(w, []any{})
-			return
-		}
-		if r.URL.Path == "/api/v1/core" {
-			writeJSON(w, map[string]any{"state": "not_installed", "operation": map[string]any{"active": false, "stage": "idle"}})
-			return
-		}
-		proxy.ServeHTTP(w, r)
+		appProxy.ServeHTTP(w, r)
 	})
 	server := &http.Server{Addr: "127.0.0.1:4173", Handler: handler}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
-	go func() { <-signals; _ = server.Shutdown(context.Background()) }()
+	go func() {
+		<-signals
+		cancelApp()
+		_ = server.Shutdown(context.Background())
+	}()
 	if err := server.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
 		panic(err)
 	}
 }
 
-func hasVisualSession(r *http.Request) bool {
-	cookie, err := r.Cookie(visualSessionCookie)
-	return err == nil && cookie.Value == "1"
-}
-
-func waitForVite() error {
+func waitFor(endpoint string, serviceDone <-chan struct{}, serviceErr func() error) error {
 	deadline := time.Now().Add(20 * time.Second)
 	for time.Now().Before(deadline) {
-		response, err := (&http.Client{Transport: &http.Transport{Proxy: nil}}).Get("http://127.0.0.1:5173") // #nosec G107 -- fixed local test endpoint
+		if serviceDone != nil {
+			select {
+			case <-serviceDone:
+				err := serviceErr()
+				if err == nil {
+					return errors.New("E2E harness service exited before becoming ready")
+				}
+				return err
+			default:
+			}
+		}
+		response, err := (&http.Client{Transport: &http.Transport{Proxy: nil}}).Get(endpoint) // #nosec G107 -- fixed local test endpoint
 		if err == nil {
 			_, _ = io.Copy(io.Discard, response.Body)
 			_ = response.Body.Close()
@@ -101,7 +130,7 @@ func waitForVite() error {
 		}
 		time.Sleep(100 * time.Millisecond)
 	}
-	return errors.New("Vite visual harness did not start within 20 seconds")
+	return errors.New("E2E harness dependency did not start within 20 seconds")
 }
 
 func writeJSON(w http.ResponseWriter, value any) {

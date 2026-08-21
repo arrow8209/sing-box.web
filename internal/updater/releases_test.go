@@ -20,6 +20,26 @@ func TestLatestStableSelectsCurrentLinuxAssetAndChecksums(t *testing.T) {
 	}
 }
 
+func TestLatestStableSelectsGitHubAssetDigestWhenChecksumFileIsAbsent(t *testing.T) {
+	releaseJSON := `{"tag_name":"v1.13.19","draft":false,"prerelease":false,"assets":[{"name":"sing-box-1.13.19-linux-amd64.tar.gz","browser_download_url":"https://github.com/SagerNet/sing-box/releases/download/v1.13.19/sing-box-1.13.19-linux-amd64.tar.gz","digest":"sha256:ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1"}]}`
+	release, err := parseRelease([]byte(releaseJSON), "amd64")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if release.ArchiveSHA256 != "ef88a9e577d474210867bd708933d042e9b70106529df2656182c9db90106aa1" || release.Checksums.URL != "" {
+		t.Fatalf("release=%+v", release)
+	}
+}
+
+func TestParseReleaseRejectsMissingOrMalformedSHA256(t *testing.T) {
+	for _, digest := range []string{"", "sha256:wrong"} {
+		releaseJSON := `{"tag_name":"v1.13.19","draft":false,"prerelease":false,"assets":[{"name":"sing-box-1.13.19-linux-amd64.tar.gz","browser_download_url":"https://github.com/SagerNet/sing-box/releases/download/v1.13.19/sing-box-1.13.19-linux-amd64.tar.gz","digest":"` + digest + `"}]}`
+		if _, err := parseRelease([]byte(releaseJSON), "amd64"); err == nil {
+			t.Fatalf("accepted digest %q", digest)
+		}
+	}
+}
+
 func TestParseReleaseRejectsUnstableAndUnsupportedArch(t *testing.T) {
 	base := `{"tag_name":"v1.12.3","draft":false,"prerelease":false,"assets":[]}`
 	if _, err := parseRelease([]byte(strings.Replace(base, `"prerelease":false`, `"prerelease":true`, 1)), "amd64"); err == nil {

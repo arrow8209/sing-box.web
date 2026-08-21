@@ -20,17 +20,21 @@ var (
 )
 
 type Asset struct {
-	Name string `json:"name"`
-	URL  string `json:"browser_download_url"`
+	Name   string `json:"name"`
+	URL    string `json:"browser_download_url"`
+	Digest string `json:"digest"`
 }
 
-// Release is the sole stable release and pair of assets accepted by this
-// package.  It is intentionally not a general GitHub release representation.
+// Release is the sole stable release and its verified archive accepted by this
+// package. It is intentionally not a general GitHub release representation.
 type Release struct {
-	Version   string
-	Asset     Asset
-	Checksums Asset
-	Arch      string
+	Version string
+	Asset   Asset
+	// Checksums supports releases published before GitHub exposed immutable
+	// asset digests in the release API. New releases use ArchiveSHA256.
+	Checksums     Asset
+	ArchiveSHA256 string
+	Arch          string
 }
 
 type PreparedBinary struct {
