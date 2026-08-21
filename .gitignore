@@ -2,10 +2,11 @@ temp/
 node_modules/
 *.log
 .DS_Store
-web/node_modules/
+.singbox-web/
+data/
+config/
+config.staging-*/
+config.rollback-*/
+dist/
 web/dist/
 web/test-results/
-dist/
-.singbox-web/
-internal/webui/dist/*
-!internal/webui/dist/placeholder.txt
