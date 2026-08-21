@@ -20,5 +20,5 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
-.panel { padding: 20px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); } h2 { margin: 0; font-size: 17px; } p { color: var(--text-soft); } form { display: grid; gap: 13px; max-width: 420px; } label { display: grid; gap: 6px; } .error { color: var(--danger); }
+.panel { padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); } h2 { margin: 0; font-size: 15px; } p { color: var(--text-soft); font-size: 11px; } form { display: grid; gap: 12px; max-width: 420px; } label { display: grid; gap: 6px; color: var(--text-soft); font-size: 11px; font-weight: 650; } input { min-height: 38px; font-size: 11px; } button { width: fit-content; min-height: 35px; padding: 7px 12px; border-radius: 8px; font-size: 11px; } .error { color: var(--red); }
 </style>

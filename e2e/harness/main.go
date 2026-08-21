@@ -23,6 +23,10 @@ import (
 )
 
 func main() {
+	harnessAddress := "127.0.0.1:4173"
+	if port := os.Getenv("SINGBOX_WEB_E2E_PORT"); port != "" {
+		harnessAddress = net.JoinHostPort("127.0.0.1", port)
+	}
 	workDir, err := os.MkdirTemp("", "singbox-web-e2e-")
 	if err != nil {
 		panic(err)
@@ -75,7 +79,7 @@ func main() {
 	proxyDirector := appProxy.Director
 	appProxy.Director = func(request *http.Request) {
 		proxyDirector(request)
-		request.Host = "127.0.0.1:4173"
+		request.Host = harnessAddress
 	}
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/core/releases/latest" {
@@ -88,7 +92,7 @@ func main() {
 		}
 		appProxy.ServeHTTP(w, r)
 	})
-	server := &http.Server{Addr: "127.0.0.1:4173", Handler: handler}
+	server := &http.Server{Addr: harnessAddress, Handler: handler}
 	signals := make(chan os.Signal, 1)
 	signal.Notify(signals, os.Interrupt, syscall.SIGTERM)
 	go func() {

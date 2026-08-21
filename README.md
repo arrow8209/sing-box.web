@@ -1,6 +1,6 @@
 # SingBox Control
 
-当前仓库包含可构建的 Vue 管理界面和本地 Go 服务。服务运行时固定在当前工作目录生成 `data/` 与 `config/`，不会接受数据目录或配置目录覆盖参数。
+当前仓库包含可构建的 Vue 管理界面、本地 Go 服务，以及保留用于视觉和交互参照的 `prototype/`。服务运行时固定在当前工作目录生成 `data/` 与 `config/`，不会接受数据目录或配置目录覆盖参数。
 
 ## 本地服务开发
 
@@ -30,11 +30,26 @@ npm --prefix web run test:e2e
 
 浏览器 E2E 使用隔离的临时目录、本地 fake core 和本地规则/release 服务，不会读取仓库的 `data/`、访问公网或启动真实代理。真实 sing-box 契约测试使用已记录的官方二进制选择：`sh scripts/contract-test.sh`。只有维护者在明确允许网络访问后才可执行 `sh scripts/contract-test.sh --refresh` 更新选择。
 
+如本机正用 `prototype/` 占用默认的 4173 端口，可为 E2E 指定其他本机端口：
+
+```bash
+SINGBOX_WEB_E2E_PORT=4174 npm --prefix web run test:e2e
+```
+
+## 视觉参照原型
+
+`prototype/` 不会被正式服务加载或构建，保留它是为了让 Vue 页面持续对齐既有的信息架构、视觉层次和响应式布局。可单独预览：
+
+```bash
+npm --prefix prototype run dev
+```
+
 ## 项目结构
 
 ```text
 .
 ├── docs/                    # 设计与实施文档
+├── prototype/               # 保留的视觉与交互参照原型
 ├── web/                     # Vue SPA、单元和浏览器测试
 ├── e2e/harness/             # 隔离的浏览器测试服务
 ├── internal/                # Go 服务和嵌入的前端资源

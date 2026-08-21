@@ -1,0 +1,11 @@
+{
+  "name": "sing-box-control-prototype",
+  "version": "0.1.0",
+  "private": true,
+  "description": "sing-box Web 控制台交互原型",
+  "scripts": {
+    "dev": "python3 -m http.server 4173",
+    "preview": "python3 -m http.server 4173",
+    "check": "node --check src/app.js"
+  }
+}

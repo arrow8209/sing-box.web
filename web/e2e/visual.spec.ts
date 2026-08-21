@@ -28,11 +28,25 @@ async function setTheme(page: Page, theme: "light" | "dark"): Promise<void> {
   await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
 }
 
+async function ensureVisualProfile(page: Page): Promise<void> {
+  await page.goto("/profiles");
+  await expect(page.getByRole("heading", { name: "配置档案" })).toBeVisible();
+  if (await page.locator(".profile-list .profile").count()) return;
+  await page.getByRole("button", { name: "新建档案" }).click();
+  const dialog = page.getByRole("dialog", { name: "新建档案" });
+  await dialog.getByLabel("名称").fill("视觉基准档案");
+  await dialog.getByRole("button", { name: "确认" }).click();
+  await expect(page.getByRole("heading", { name: "视觉基准档案" })).toBeVisible();
+}
+
 for (const scenario of scenarios) {
   test(`${scenario.name} configuration workspace`, async ({ page }) => {
     await page.setViewportSize({ width: scenario.width, height: scenario.height });
     await loginAndOpenProfile(page);
     await setTheme(page, scenario.theme);
+    await ensureVisualProfile(page);
+    await page.goto("/workspace");
+    await expect(page.locator(".config-context-bar")).toBeVisible();
     await expect(page.locator("main")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-config.png`, { fullPage: true });
