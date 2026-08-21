@@ -82,10 +82,10 @@ Go 单体服务
     ├── CoreUpdater：官方版本检查、下载、校验与手动更新
     └── Capabilities：一期与后续运行能力声明
         │
-        ├── JSON 应用数据目录
-        ├── 固定规则文件目录
-        ├── 受管 sing-box 可执行文件
-        ├── 多套正式配置目录
+        ├── 相对 JSON 应用数据目录
+        ├── 相对固定规则文件目录
+        ├── 相对受管 sing-box 可执行文件
+        ├── 相对多套正式配置目录
         └── sing-box 子进程
 ```
 
@@ -103,30 +103,30 @@ Go 单体服务
 
 ### 6.1 目录结构
 
-应用数据目录与正式配置根目录分别配置。建议路径为 `/var/lib/singbox-web` 和 `/etc/sing-box/web-profiles`，但具体位置由运维决定。
+所有目录均使用相对于 Web 工作目录的路径，不接受绝对目录。应用数据目录与正式配置根目录分别配置，默认分别为 `data` 和 `config`。进程启动后工作目录保持不变；实际落盘位置由运维设置 Web 工作目录决定。
 
 ```text
-data-dir/
-├── auth.json
-├── profiles.json
-├── core.json
-├── rule-resources.json
-├── drafts/
-│   └── <profile-id>.json
-├── rulesets/
-│   └── <resource-id>.<json|srs>
-├── bin/
-│   ├── sing-box
-│   └── sing-box.bak
-├── logs/
-│   └── sing-box.log
-└── app.lock
-
-config-root/
-└── <profile-slug>/
-    ├── 10-log.json
-    ├── 20-dns.json
-    └── ...
+work-dir/
+├── data/
+│   ├── auth.json
+│   ├── profiles.json
+│   ├── core.json
+│   ├── rule-resources.json
+│   ├── drafts/
+│   │   └── <profile-id>.json
+│   ├── rulesets/
+│   │   └── <resource-id>.<json|srs>
+│   ├── bin/
+│   │   ├── sing-box
+│   │   └── sing-box.bak
+│   ├── logs/
+│   │   └── sing-box.log
+│   └── app.lock
+└── config/
+    └── <profile-slug>/
+        ├── 10-log.json
+        ├── 20-dns.json
+        └── ...
 ```
 
 - `auth.json`：Argon2id 密码哈希、会话签名密钥和会话失效代次。
@@ -156,7 +156,7 @@ config-root/
 应用只支持一个管理员。首次使用前执行：
 
 ```text
-singbox-web admin set-password --data-dir <目录>
+singbox-web admin set-password --data-dir data
 ```
 
 管理员用户名固定为 `admin`，一期不提供用户名修改。密码只从终端交互读取，不通过命令参数、环境变量或日志传递。初始化命令同时生成会话签名密钥；后端只保存 Argon2id 哈希和随机签名密钥。未初始化管理员时，`serve` 拒绝提供管理页面并给出操作指引。
@@ -306,7 +306,7 @@ Web 直接访问 URL，不解释也不使用 sing-box 的 `download_detour`。�
   "type": "local",
   "tag": "geosite-cn",
   "format": "binary",
-  "path": "/var/lib/singbox-web/rulesets/<resource-id>.srs"
+  "path": "data/rulesets/<resource-id>.srs"
 }
 ```
 
@@ -317,7 +317,7 @@ Web 直接访问 URL，不解释也不使用 sing-box 的 `download_detour`。�
 每个 slug 使用直接目录，不建立持久化发布代次：
 
 ```text
-config-root/
+config/
 ├── profile-a/
 │   ├── 10-log.json
 │   ├── 20-dns.json
@@ -335,7 +335,7 @@ Web 是正式目录的唯一写入者。应用前重新计算目录摘要；发�
 - 应用数据目录默认 `0700`，文件默认 `0600`。
 - 正式配置目录默认 `0750`，配置文件和规则文件默认 `0640`。
 - 受管 sing-box 以 Web 的受限服务身份运行，并只读正式配置和规则文件。
-- 可执行文件默认 `0750`，路径固定在 `data-dir/bin`。
+- 可执行文件默认 `0750`，路径固定在相对目录 `data/bin`。
 
 ## 11. 草稿自动保存与并发
 
@@ -363,7 +363,7 @@ Web 是正式目录的唯一写入者。应用前重新计算目录摘要；发�
 5. 使用当前受管二进制直接执行：
 
    ```text
-   <data-dir>/bin/sing-box check -C <临时配置目录>
+   data/bin/sing-box check -C config/.staging-<random>
    ```
 
 不维护或下载 JSON Schema，不做字段迁移或多版本转换。页面展示实际安装版本和 `sing-box check` 的清理后错误。当前二进制的检查结果是能否应用的最终依据。
@@ -383,7 +383,7 @@ Web 是正式目录的唯一写入者。应用前重新计算目录摘要；发�
 7. 直接启动：
 
    ```text
-   <data-dir>/bin/sing-box run -C <config-root>/<profile-slug>
+   data/bin/sing-box run -C config/<profile-slug>
    ```
 
 8. 子进程在启动观察期内未退出后，记录 `appliedRevision`、综合摘要、时间、当前档案和运行状态。
@@ -409,7 +409,7 @@ Web 是正式目录的唯一写入者。应用前重新计算目录摘要；发�
 CoreManager 直接持有 sing-box 子进程，不调用 systemd：
 
 - 只允许一个受管子进程。
-- 子进程使用固定程序路径、固定工作目录和参数数组，不经过 shell。
+- 子进程使用相对程序路径、与 Web 相同的固定工作目录和参数数组，不经过 shell。
 - 启动后记录 PID、版本、档案 ID、草稿修订、启动时间和状态。
 - 捕获标准输出与标准错误到受限日志文件，限制单条消息和日志总大小。
 - 停止时先发送优雅退出信号，默认等待 10 秒；超时后强制终止整个受管进程组。
@@ -533,7 +533,7 @@ API 使用同源 `/api/v1` 前缀：
 - 规则下载只允许 HTTP/HTTPS，限制响应大小、超时和重定向，并安全派生本地路径。
 - sing-box 程序只从官方 Release 下载，必须通过官方 SHA-256 校验。
 - 压缩包解压必须防止绝对路径、`..`、符号链接和其他目录穿越。
-- 配置、规则和程序路径经过根目录包含性检查，不接受客户端绝对路径。
+- 应用数据、配置、规则和程序目录必须是相对于 Web 工作目录的规范化路径；经过工作目录包含性检查，不接受绝对路径、`..` 或客户端自定义路径。
 - 外部程序直接使用参数数组执行，不经过 shell；环境变量采用明确允许列表。
 - Web 和受管 sing-box 均以同一专用非 root 身份运行。
 - Web 不把 Clash API Secret 暴露给浏览器。
@@ -585,7 +585,7 @@ Web
 ### 19.1 Go 单元测试
 
 - JSON 原子写入、文件锁、损坏处理和临时目录清理。
-- slug、规则资源 ID、路径包含性、压缩包目录穿越和权限。
+- slug、规则资源 ID、相对路径规范化、绝对路径与 `..` 拒绝、路径包含性、压缩包目录穿越和权限。
 - Web 模型到多文件配置的确定性生成。
 - 手工出站节点 JSON 的未知字段无损往返与稳定生成。
 - 拒绝直接应用原生远程 `route.rule_set`；规则资源绑定转换成本地 `route.rule_set`，并移除 URL、`download_detour` 和更新周期。
@@ -648,6 +648,7 @@ Web
 一期只有同时满足以下条件才完成：
 
 - Web 的安装、systemd、Caddy、HTTPS 和公网部署不构成代码或验收依赖。
+- 应用数据、正式配置、规则、日志和受管程序全部使用相对于 Web 工作目录的路径，不依赖主机绝对路径。
 - 未初始化管理员或应用数据权限不安全时拒绝进入管理服务。
 - 新档案由默认 Web 模板创建，Secret 和 `cache_id` 对每个档案唯一。
 - 代理节点只通过出站模块 JSON 手工粘贴或编辑，并在草稿、预览和应用后无损保留。
