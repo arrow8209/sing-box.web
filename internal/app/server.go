@@ -14,6 +14,7 @@ import (
 
 	"singbox-web/internal/auth"
 	"singbox-web/internal/capabilities"
+	"singbox-web/internal/configgen"
 	"singbox-web/internal/httpapi"
 	"singbox-web/internal/paths"
 	"singbox-web/internal/profile"
@@ -129,10 +130,12 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err := profileService.ReconcileResourceDigests(context.Background(), currentDigests); err != nil {
 		return nil, err
 	}
+	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, nil, nil, clock, randomSource)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),
 		RuleResourceHandler: rules.NewHandler(ruleService),
+		ConfigHandler:       configHandler,
 		Authenticate:        authHandler.Middleware,
 		RequireCSRF:         auth.RequireCSRF,
 		AuthHandler:         authHandler,

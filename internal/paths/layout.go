@@ -25,6 +25,25 @@ type Layout struct {
 	ConfigDir    string
 }
 
+// StagingConfigDir returns a new, fixed-name staging directory directly below
+// WorkDir. Keeping it outside data prevents a checked configuration from
+// accidentally resolving data/rulesets relative to a different directory.
+func (layout Layout) StagingConfigDir(token string) (string, error) {
+	if len(token) != 32 {
+		return "", fmt.Errorf("临时配置令牌无效")
+	}
+	for _, character := range token {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return "", fmt.Errorf("临时配置令牌无效")
+		}
+	}
+	path := filepath.Join(layout.WorkDir, "config.staging-"+token)
+	if !isWithin(layout.WorkDir, path) || filepath.Dir(path) != layout.WorkDir {
+		return "", fmt.Errorf("临时配置路径越出工作目录")
+	}
+	return path, nil
+}
+
 func Resolve(workDir string) (Layout, error) {
 	root, err := filepath.Abs(workDir)
 	if err != nil {
