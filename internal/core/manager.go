@@ -244,6 +244,18 @@ func (m *Manager) ClearApplication() error {
 	return err
 }
 
+// RecordRecoveryFailure exposes a non-fatal startup recovery failure to the
+// status endpoint without claiming that a core process is running.
+func (m *Manager) RecordRecoveryFailure(err error) {
+	if m == nil || err == nil {
+		return
+	}
+	m.mu.Lock()
+	m.process, m.state, m.lastError = nil, ProcessStartFailed, err.Error()
+	m.mu.Unlock()
+	m.persistError(err.Error(), false)
+}
+
 func (m *Manager) finishExit(process Process, result ProcessResult) {
 	m.mu.Lock()
 	if m.process != process {

@@ -48,6 +48,9 @@ type Server struct {
 	scheduler       *rules.Scheduler
 	schedulerCancel context.CancelFunc
 	schedulerDone   chan struct{}
+	core            *core.Manager
+	operations      *core.OperationLock
+	closed          bool
 }
 
 // NewServer builds the complete local service. It acquires the lock before
@@ -145,6 +148,37 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		return nil, err
 	}
 	coreManager := core.NewManager(layout, coreStore, coreLog, operation)
+	// Configuration and program recovery happen only after every managed JSON
+	// file passed its read-only validation gate and while app.lock is held.
+	state, recoveryErr := coreStore.Load()
+	if recoveryErr == nil {
+		recoveryErr = application.RecoverConfigTransactions(layout, state.ConfigDirectoryDigest)
+	}
+	if recoveryErr == nil {
+		state, recoveryErr = core.RecoverInstallation(layout, coreStore)
+	}
+	if recoveryErr != nil {
+		// A recovery problem must not lock administrators out of the UI. Core
+		// actions stay refused by the start_failed state until repaired.
+		coreManager.RecordRecoveryFailure(recoveryErr)
+	} else if state.ExpectedRunning {
+		metas, listErr := profileService.List(context.Background())
+		valid := listErr == nil && state.CurrentProfileID != "" && state.AppliedRevision != nil
+		if valid {
+			valid = false
+			for _, meta := range metas {
+				if meta.ID == state.CurrentProfileID && meta.AppliedRevision != nil && *meta.AppliedRevision == *state.AppliedRevision {
+					valid = true
+					break
+				}
+			}
+		}
+		if !valid {
+			coreManager.RecordRecoveryFailure(fmt.Errorf("无法恢复核心：当前已应用档案不存在或修订不匹配"))
+		} else if err := coreManager.Start(context.Background(), core.StartRequest{ProfileID: state.CurrentProfileID, DraftRevision: *state.AppliedRevision}); err != nil {
+			coreManager.RecordRecoveryFailure(err)
+		}
+	}
 	updateService := updater.NewService(layout, updater.NewReleaseClient(), updater.NewFetcher(layout), coreManager, coreStore, checker, operation)
 	coordinator := application.NewCoordinator(profileService, ruleService, nil, checker, coreManager, operation)
 	profileService.SetDeleteGuard(coordinator)
@@ -169,6 +203,8 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		http:          &http.Server{Addr: defaultListenAddress, Handler: handler},
 		scheduler:     rules.NewScheduler(ruleService, nil),
 		schedulerDone: make(chan struct{}),
+		core:          coreManager,
+		operations:    operation,
 	}, nil
 }
 
@@ -205,14 +241,23 @@ func (s *Server) Run(ctx context.Context) error {
 	}
 }
 
-// Close stops HTTP handling with the supplied deadline and always releases the
-// instance lock, including when HTTP shutdown times out.
+// Close stops accepting HTTP requests, cancels scheduling, lets one existing
+// transaction finish, then gracefully stops the child core. ExpectedRunning is
+// intentionally preserved so a normal Web restart can restore it.
 func (s *Server) Close(ctx context.Context) error {
 	if s == nil {
 		return nil
 	}
 	s.closeMu.Lock()
 	defer s.closeMu.Unlock()
+	if s.closed {
+		return nil
+	}
+	s.closed = true
+	var shutdownErr error
+	if s.http != nil {
+		shutdownErr = s.http.Shutdown(ctx)
+	}
 	if s.schedulerCancel != nil {
 		s.schedulerCancel()
 		s.schedulerCancel = nil
@@ -223,19 +268,26 @@ func (s *Server) Close(ctx context.Context) error {
 			}
 		}
 	}
-	var shutdownErr error
-	if s.http != nil {
-		shutdownErr = s.http.Shutdown(ctx)
+	var operationErr, coreErr error
+	if s.operations != nil {
+		operationCtx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
+		operationErr = s.operations.WaitIdle(operationCtx)
+		cancel()
+	}
+	if s.core != nil {
+		coreCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		coreErr = s.core.Stop(coreCtx)
+		cancel()
 	}
 	var lockErr error
 	if s.lock != nil {
 		lockErr = s.lock.Close()
 	}
-	return errors.Join(shutdownErr, lockErr)
+	return errors.Join(shutdownErr, operationErr, coreErr, lockErr)
 }
 
 func (s *Server) closeWithTimeout() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute+10*time.Second)
 	defer cancel()
 	return s.Close(ctx)
 }

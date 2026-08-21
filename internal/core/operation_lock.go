@@ -71,6 +71,25 @@ func (l *OperationLock) Status() OperationStatus {
 	return cloneOperationStatus(l.status)
 }
 
+// WaitIdle waits until no apply or update transaction owns the global slot.
+// It briefly takes the token itself, so a caller that proceeds afterwards has
+// observed a completed transaction rather than a stale status snapshot.
+func (l *OperationLock) WaitIdle(ctx context.Context) error {
+	if l == nil {
+		return nil
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	select {
+	case <-ctx.Done():
+		return ctx.Err()
+	case <-l.token:
+		l.token <- struct{}{}
+		return nil
+	}
+}
+
 // Operation represents the holder of the currently active operation slot.
 type Operation struct{ lock *OperationLock }
 
