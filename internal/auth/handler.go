@@ -30,6 +30,7 @@ type Handler struct {
 	sessions *SessionManager
 	limiter  *LoginLimiter
 	now      func() time.Time
+	verify   func(password []byte, encoded string) (bool, error)
 }
 
 func NewHandler(store *Store) *Handler {
@@ -47,7 +48,7 @@ func NewHandlerWithDependencies(store *Store, sessions *SessionManager, limiter 
 	if clock == nil {
 		clock = time.Now
 	}
-	return &Handler{store: store, sessions: sessions, limiter: limiter, now: clock}
+	return &Handler{store: store, sessions: sessions, limiter: limiter, now: clock, verify: Verify}
 }
 
 // Register registers all authentication endpoints on a standard ServeMux.
@@ -88,11 +89,6 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 	}
 	now := h.now().UTC()
 	source := sourceIP(r)
-	if retry, limited := h.limiter.Limited(source, now); limited {
-		w.Header().Set("Retry-After", strconv.FormatInt(int64(retry.Round(time.Second)/time.Second), 10))
-		apierror.Write(w, http.StatusTooManyRequests, apierror.Error{Code: "login_rate_limited", Message: "登录尝试过于频繁"})
-		return
-	}
 	var input loginRequest
 	if err := httpapi.DecodeJSON(w, r, &input, authRequestLimit); err != nil {
 		apierror.WriteError(w, err)
@@ -103,18 +99,25 @@ func (h *Handler) login(w http.ResponseWriter, r *http.Request) {
 		apierror.WriteError(w, err)
 		return
 	}
-	valid, err := Verify([]byte(input.Password), state.PasswordHash)
+	reservation, retry, limited := h.limiter.Reserve(source, now)
+	if limited {
+		w.Header().Set("Retry-After", strconv.FormatInt(int64(retry.Round(time.Second)/time.Second), 10))
+		apierror.Write(w, http.StatusTooManyRequests, apierror.Error{Code: "login_rate_limited", Message: "登录尝试过于频繁"})
+		return
+	}
+	valid, err := h.verify([]byte(input.Password), state.PasswordHash)
 	if err != nil || !valid {
-		h.limiter.Failure(source, now)
+		h.limiter.Complete(reservation, false)
 		invalidCredentials(w)
 		return
 	}
 	token, csrf, err := h.sessions.Issue(state, now)
 	if err != nil {
+		h.limiter.Cancel(reservation)
 		apierror.WriteError(w, err)
 		return
 	}
-	h.limiter.Success(source)
+	h.limiter.Complete(reservation, true)
 	http.SetCookie(w, Cookie(token, now))
 	httpapi.WriteJSON(w, http.StatusOK, struct {
 		CSRFToken string `json:"csrfToken"`

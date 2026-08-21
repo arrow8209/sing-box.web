@@ -6,7 +6,10 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
+	"sync"
+	"sync/atomic"
 	"testing"
+	"time"
 )
 
 func TestLoginAcceptsOnlyPasswordAndReturnsStrictCookie(t *testing.T) {
@@ -67,6 +70,71 @@ func TestLoginRateLimitAndSuccessReset(t *testing.T) {
 	limited := postJSON(handler, "/api/v1/auth/login", `{"password":"wrong password"}`)
 	if limited.Code != http.StatusTooManyRequests || limited.Header().Get("Retry-After") == "" {
 		t.Fatalf("limited status=%d retry=%q", limited.Code, limited.Header().Get("Retry-After"))
+	}
+}
+
+func TestConcurrentLoginReservesAtMostFivePasswordChecks(t *testing.T) {
+	const attempts = 8
+	handler := newAuthHandler(t, "correct horse battery staple")
+	enteredVerification := make(chan struct{}, 5)
+	releaseVerification := make(chan struct{})
+	var verificationCalls atomic.Int32
+	handler.verify = func(_ []byte, _ string) (bool, error) {
+		verificationCalls.Add(1)
+		enteredVerification <- struct{}{}
+		<-releaseVerification
+		return false, nil
+	}
+
+	start := make(chan struct{})
+	statuses := make(chan int, attempts)
+	var requests sync.WaitGroup
+	for range attempts {
+		requests.Add(1)
+		go func() {
+			defer requests.Done()
+			<-start
+			request := httptest.NewRequest(http.MethodPost, "/api/v1/auth/login", bytes.NewBufferString(`{"password":"wrong password"}`))
+			request.RemoteAddr = "192.0.2.1:43210"
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+			statuses <- response.Code
+		}()
+	}
+	close(start)
+	for range 5 {
+		select {
+		case <-enteredVerification:
+		case <-time.After(5 * time.Second):
+			t.Fatal("five password checks did not start")
+		}
+	}
+	if got := verificationCalls.Load(); got != 5 {
+		t.Fatalf("password checks=%d, want 5", got)
+	}
+
+	for range attempts - 5 {
+		select {
+		case status := <-statuses:
+			if status != http.StatusTooManyRequests {
+				t.Fatalf("concurrent status=%d, want 429", status)
+			}
+		case <-time.After(5 * time.Second):
+			t.Fatal("sixth or later concurrent request did not receive 429")
+		}
+	}
+	close(releaseVerification)
+	requests.Wait()
+	close(statuses)
+	unauthorized := 0
+	for status := range statuses {
+		if status != http.StatusUnauthorized {
+			t.Fatalf("completed verification status=%d, want 401", status)
+		}
+		unauthorized++
+	}
+	if unauthorized != 5 {
+		t.Fatalf("completed password failures=%d, want 5", unauthorized)
 	}
 }
 
