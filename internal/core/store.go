@@ -52,6 +52,21 @@ func (s *Store) Update(update func(*PersistentState) error) (PersistentState, er
 	return clonePersistentState(state), nil
 }
 
+// RecordInstalled records only the program that has already been atomically
+// installed on disk. Keeping this separate from application state means a
+// failed update cannot make durable metadata claim a binary that never ran.
+func (s *Store) RecordInstalled(version, digest string) error {
+	if version == "" || digest == "" {
+		return fmt.Errorf("已安装核心版本或摘要不能为空")
+	}
+	_, err := s.Update(func(state *PersistentState) error {
+		state.InstalledVersion = version
+		state.InstalledDigest = digest
+		return nil
+	})
+	return err
+}
+
 func (s *Store) loadLocked() (PersistentState, error) {
 	state, err := storage.ReadJSON[PersistentState](s.path)
 	if os.IsNotExist(err) {

@@ -23,6 +23,7 @@ import (
 	"singbox-web/internal/rules"
 	"singbox-web/internal/storage"
 	"singbox-web/internal/templates"
+	"singbox-web/internal/updater"
 	"singbox-web/internal/webui"
 )
 
@@ -144,6 +145,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		return nil, err
 	}
 	coreManager := core.NewManager(layout, coreStore, coreLog, operation)
+	updateService := updater.NewService(layout, updater.NewReleaseClient(), updater.NewFetcher(layout), coreManager, coreStore, checker, operation)
 	coordinator := application.NewCoordinator(profileService, ruleService, nil, checker, coreManager, operation)
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
@@ -153,6 +155,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		ConfigHandler:       configHandler,
 		ApplicationHandler:  application.NewHandler(coordinator),
 		CoreHandler:         core.NewHandler(coreManager),
+		UpdaterHandler:      updater.NewHandler(updateService),
 		Authenticate:        authHandler.Middleware,
 		RequireCSRF:         auth.RequireCSRF,
 		AuthHandler:         authHandler,
