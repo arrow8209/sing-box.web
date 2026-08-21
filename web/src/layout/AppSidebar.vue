@@ -1,8 +1,12 @@
 <script setup lang="ts">
 import { RouterLink } from "vue-router";
+import { onMounted } from "vue";
+import { useProfileStore } from "@/features/profiles/store";
 
 defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: [] }>();
+const profiles = useProfileStore();
+onMounted(() => { void profiles.refresh(); });
 
 const links = [
   { to: "/", label: "概览", icon: "◈" },
@@ -17,7 +21,7 @@ const links = [
     <div class="brand"><span class="brand-mark">S</span><span>sing-box</span></div>
     <nav aria-label="主导航">
       <RouterLink v-for="link in links" :key="link.to" :to="link.to" @click="emit('close')">
-        <span aria-hidden="true">{{ link.icon }}</span>{{ link.label }}
+        <span aria-hidden="true">{{ link.icon }}</span>{{ link.label }} <small v-if="link.to === '/profiles' && profiles.profiles.value.length">{{ profiles.profiles.value.length }}</small>
       </RouterLink>
     </nav>
   </aside>
@@ -27,6 +31,6 @@ const links = [
 .sidebar { position: fixed; z-index: 10; inset: 0 auto 0 0; width: var(--sidebar-width); padding: 20px 14px; border-right: 1px solid var(--line); background: var(--sidebar); transition: transform .18s ease; }
 .brand { display: flex; align-items: center; gap: 10px; padding: 6px 10px 28px; font-size: 18px; font-weight: 750; }
 .brand-mark { display: grid; width: 28px; height: 28px; place-items: center; border-radius: 9px; background: var(--primary); color: #fff; font-size: 14px; }
-nav { display: grid; gap: 4px; } nav a { display: flex; align-items: center; gap: 11px; padding: 10px; border-radius: var(--radius-sm); color: var(--text-soft); font-weight: 600; text-decoration: none; } nav a.router-link-exact-active { background: var(--primary-soft); color: var(--primary-strong); }
+nav { display: grid; gap: 4px; } nav a { display: flex; align-items: center; gap: 11px; padding: 10px; border-radius: var(--radius-sm); color: var(--text-soft); font-weight: 600; text-decoration: none; } nav small { margin-left: auto; padding: 1px 6px; border-radius: 8px; background: var(--surface-tint); } nav a.router-link-exact-active { background: var(--primary-soft); color: var(--primary-strong); }
 @media (max-width: 760px) { .sidebar { transform: translateX(-100%); box-shadow: var(--shadow-lg); } .sidebar.open { transform: translateX(0); } }
 </style>

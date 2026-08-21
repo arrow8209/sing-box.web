@@ -3,6 +3,7 @@ import { createRouter, createWebHistory } from "vue-router";
 import LoginView from "./features/auth/LoginView.vue";
 import { useAuthStore } from "./features/auth/store";
 import AppShell from "./layout/AppShell.vue";
+import ProfileSidebar from "./features/profiles/ProfileSidebar.vue";
 
 const PlaceholderView = defineComponent({
   setup() {
@@ -22,7 +23,7 @@ const router = createRouter({
       component: AppShell,
       children: [
         { path: "", name: "overview", component: PlaceholderView },
-        { path: "profiles", name: "profiles", component: PlaceholderView },
+        { path: "profiles", name: "profiles", component: ProfileSidebar },
         { path: "rules", name: "rules", component: PlaceholderView },
         { path: "core", name: "core", component: PlaceholderView }
       ]
