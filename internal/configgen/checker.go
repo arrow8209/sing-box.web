@@ -42,10 +42,14 @@ type Runner interface {
 }
 
 // ExecRunner executes an argument array directly. It intentionally never
-// invokes a shell and starts with a small fixed environment.
-type ExecRunner struct{}
+// invokes a shell and starts with a small fixed environment. Environment is
+// an explicit allow-list extension, chiefly for controlled test helpers; it
+// never inherits the web process environment.
+type ExecRunner struct {
+	Environment []string
+}
 
-func (ExecRunner) Run(ctx context.Context, spec CommandSpec, timeout time.Duration, limit int) (ProcessResult, error) {
+func (r ExecRunner) Run(ctx context.Context, spec CommandSpec, timeout time.Duration, limit int) (ProcessResult, error) {
 	if len(spec.Args) == 0 || spec.Args[0] == "" {
 		return ProcessResult{}, fmt.Errorf("检查命令为空")
 	}
@@ -53,7 +57,7 @@ func (ExecRunner) Run(ctx context.Context, spec CommandSpec, timeout time.Durati
 	defer cancel()
 	cmd := exec.CommandContext(runCtx, spec.Args[0], spec.Args[1:]...)
 	cmd.Dir = spec.Dir
-	cmd.Env = []string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8", "LC_ALL=C.UTF-8"}
+	cmd.Env = append([]string{"PATH=/usr/bin:/bin", "LANG=C.UTF-8", "LC_ALL=C.UTF-8"}, r.Environment...)
 	// A check may invoke helper processes. Put it in a private process group so
 	// a timeout cannot leave a child holding stdout/stderr open and delay Wait.
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}

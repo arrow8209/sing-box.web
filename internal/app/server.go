@@ -31,6 +31,9 @@ type Dependencies struct {
 	Random          io.Reader
 	Clock           func() time.Time
 	TemplateFactory *templates.Factory
+	// CoreEnvironment is an explicit allow-list passed to the check process.
+	// It is empty in production; integration tests use it for their fake core.
+	CoreEnvironment []string
 }
 
 // Server owns the local HTTP server and the exclusive application lock.
@@ -130,7 +133,8 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err := profileService.ReconcileResourceDigests(context.Background(), currentDigests); err != nil {
 		return nil, err
 	}
-	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, nil, nil, clock, randomSource)
+	checker := configgen.NewChecker(layout.WorkDir, configgen.ExecRunner{Environment: append([]string(nil), deps.CoreEnvironment...)}, 30*time.Second, 64<<10)
+	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, nil, clock, randomSource)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),

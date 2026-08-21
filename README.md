@@ -10,9 +10,12 @@
 go run ./cmd/singbox-web admin set-password
 go run ./cmd/singbox-web serve
 go test ./...
+go test ./internal/integration -v
 ```
 
 服务监听所有 IPv4 网卡的 `0.0.0.0:50010`。当前阶段不包含 systemd、Caddy、HTTPS 或公网部署；请仅允许可信网络访问。
+
+`internal/integration` 的测试会把当前 Go 测试二进制复制为受控 fake sing-box 核心，并只使用本地 `httptest` 规则服务；不会访问公网、启动真实代理或写入仓库工作目录。
 
 ## 视觉原型
 
