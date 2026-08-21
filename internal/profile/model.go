@@ -55,7 +55,8 @@ type DefaultBindingSource interface {
 }
 
 // DeleteGuard reserves deletion of a currently applied profile for the core
-// operations layer. The foundational service uses it only when one is set.
+// operations layer. The foundational service installs a conservative guard
+// until that layer injects one that can identify the active profile.
 type DeleteGuard interface {
 	GuardDelete(ctx context.Context, profileID string, stopCurrent bool) error
 }

@@ -2,6 +2,7 @@ package profile
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,10 @@ type profileAPISession struct {
 	cookie *http.Cookie
 	csrf   string
 }
+
+type allowDeleteGuard struct{}
+
+func (allowDeleteGuard) GuardDelete(context.Context, string, bool) error { return nil }
 
 func TestDraftAPIRequiresIfMatchAndReturnsLatestRevision(t *testing.T) {
 	handler, session := newAuthenticatedProfileAPI(t)
@@ -51,7 +56,7 @@ func TestProfileCreateRejectsDirectoryFields(t *testing.T) {
 }
 
 func TestProfileCRUDRequiresAuthenticationAndCSRF(t *testing.T) {
-	handler, session := newAuthenticatedProfileAPI(t)
+	handler, session := newAuthenticatedProfileAPIWithDeleteGuard(t, allowDeleteGuard{})
 
 	unauthenticated := httptest.NewRecorder()
 	handler.ServeHTTP(unauthenticated, httptest.NewRequest(http.MethodGet, "/api/v1/profiles", nil))
@@ -80,6 +85,17 @@ func TestProfileCRUDRequiresAuthenticationAndCSRF(t *testing.T) {
 	}
 }
 
+func TestProfileDeleteRequiresCoreDecisionByDefault(t *testing.T) {
+	handler, session := newAuthenticatedProfileAPI(t)
+	profileID := createProfile(t, handler, session, `{"name":"活动档案"}`)
+
+	response := profileRequest(t, handler, session, http.MethodDelete, "/api/v1/profiles/"+profileID, `{"confirmName":"活动档案","stopCurrent":false}`, nil)
+	if response.Code != http.StatusConflict {
+		t.Fatalf("delete=%d body=%s", response.Code, response.Body.String())
+	}
+	assertProfileJSON(t, response.Body.Bytes(), "error.code", "current_profile_requires_core_decision")
+}
+
 func TestDraftAPIRejectsForgedEnvelopeAndOversizedBody(t *testing.T) {
 	handler, session := newAuthenticatedProfileAPI(t)
 	profileID := createProfile(t, handler, session, `{"name":"草稿"}`)
@@ -98,7 +114,15 @@ func TestDraftAPIRejectsForgedEnvelopeAndOversizedBody(t *testing.T) {
 
 func newAuthenticatedProfileAPI(t *testing.T) (http.Handler, profileAPISession) {
 	t.Helper()
+	return newAuthenticatedProfileAPIWithDeleteGuard(t, nil)
+}
+
+func newAuthenticatedProfileAPIWithDeleteGuard(t *testing.T, guard DeleteGuard) (http.Handler, profileAPISession) {
+	t.Helper()
 	service, layout := newTestService(t)
+	if guard != nil {
+		service.SetDeleteGuard(guard)
+	}
 	store := auth.NewStore(filepath.Join(layout.DataDir, "auth.json"), nil)
 	if err := store.SetPassword([]byte("correct horse battery staple")); err != nil {
 		t.Fatal(err)

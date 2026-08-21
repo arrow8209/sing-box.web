@@ -45,7 +45,7 @@ func Open(layout paths.Layout, factory *templates.Factory, source DefaultBinding
 	if randomSource == nil {
 		randomSource = rand.Reader
 	}
-	service := &Service{templates: factory, defaultBindings: source, store: newStore(layout), clock: clock, random: randomSource}
+	service := &Service{templates: factory, defaultBindings: source, store: newStore(layout), clock: clock, random: randomSource, guard: conservativeDeleteGuard{}}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	if _, err := service.refreshMetas(); err != nil {
@@ -57,7 +57,21 @@ func Open(layout paths.Layout, factory *templates.Factory, source DefaultBinding
 func (s *Service) SetDeleteGuard(guard DeleteGuard) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
+	if guard == nil {
+		s.guard = conservativeDeleteGuard{}
+		return
+	}
 	s.guard = guard
+}
+
+// conservativeDeleteGuard is used before the core operations layer can
+// reliably identify the active profile. Refusing every deletion is safer than
+// accidentally deleting the active configuration; Core Operations replaces it
+// with a guard that can allow non-current profiles.
+type conservativeDeleteGuard struct{}
+
+func (conservativeDeleteGuard) GuardDelete(context.Context, string, bool) error {
+	return ErrCurrentProfileRequiresCoreDecision
 }
 
 func (s *Service) List(ctx context.Context) ([]Meta, error) {
