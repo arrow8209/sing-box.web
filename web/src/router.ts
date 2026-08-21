@@ -5,6 +5,7 @@ import { useAuthStore } from "./features/auth/store";
 import AppShell from "./layout/AppShell.vue";
 import ProfileSidebar from "./features/profiles/ProfileSidebar.vue";
 import ConfigWorkspace from "./features/config-editor/ConfigWorkspace.vue";
+import RuleResourcesView from "./features/rule-resources/RuleResourcesView.vue";
 
 const PlaceholderView = defineComponent({
   setup() {
@@ -25,7 +26,7 @@ const router = createRouter({
       children: [
         { path: "", name: "overview", component: ConfigWorkspace },
         { path: "profiles", name: "profiles", component: ProfileSidebar },
-        { path: "rules", name: "rules", component: PlaceholderView },
+        { path: "rules", name: "rules", component: RuleResourcesView },
         { path: "core", name: "core", component: PlaceholderView }
       ]
     }
