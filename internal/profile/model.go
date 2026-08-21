@@ -86,10 +86,11 @@ type DeleteInput struct {
 }
 
 var (
-	ErrNotFound             = fmt.Errorf("档案不存在")
-	ErrPreconditionRequired = fmt.Errorf("保存草稿必须携带有效 If-Match")
-	ErrQuarantined          = fmt.Errorf("档案草稿已隔离")
-	ErrDeleteNameMismatch   = fmt.Errorf("删除确认名称不匹配")
+	ErrNotFound                           = fmt.Errorf("档案不存在")
+	ErrPreconditionRequired               = fmt.Errorf("保存草稿必须携带有效 If-Match")
+	ErrQuarantined                        = fmt.Errorf("档案草稿已隔离")
+	ErrDeleteNameMismatch                 = fmt.Errorf("删除确认名称不匹配")
+	ErrCurrentProfileRequiresCoreDecision = fmt.Errorf("当前档案需要核心操作层决策")
 )
 
 type RevisionConflict struct{ LatestRevision uint64 }
