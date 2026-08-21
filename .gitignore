@@ -5,3 +5,6 @@ node_modules/
 dist/
 internal/webui/assets/*
 !internal/webui/assets/_placeholder
+web/node_modules/
+web/.vite/
+web/*.tsbuildinfo
