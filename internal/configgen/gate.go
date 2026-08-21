@@ -6,7 +6,7 @@ import "context"
 // the managed core. The core package replaces this implementation with its
 // shared operation lock in the next phase without changing Handler.
 type OperationGate interface {
-	Enter(ctx context.Context, kind string) (release func(), err error)
+	EnterGate(ctx context.Context, kind string) (release func(), err error)
 }
 
 type mutexGate struct{ token chan struct{} }
@@ -17,7 +17,7 @@ func NewOperationGate() OperationGate {
 	return gate
 }
 
-func (g *mutexGate) Enter(ctx context.Context, _ string) (func(), error) {
+func (g *mutexGate) EnterGate(ctx context.Context, _ string) (func(), error) {
 	select {
 	case <-ctx.Done():
 		return nil, ctx.Err()

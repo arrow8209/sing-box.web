@@ -100,7 +100,7 @@ func (h *Handler) Preview(ctx context.Context, profileID string, revision uint64
 }
 
 func (h *Handler) Validate(ctx context.Context, profileID string, revision uint64) (result ValidateResult, err error) {
-	releaseOperation, err := h.gate.Enter(ctx, "validate")
+	releaseOperation, err := h.gate.EnterGate(ctx, "validate")
 	if err != nil {
 		return ValidateResult{}, err
 	}
