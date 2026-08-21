@@ -30,6 +30,8 @@ type Service struct {
 	clock           func() time.Time
 	random          io.Reader
 	guard           DeleteGuard
+	resourceDigests map[string]string
+	resourceKnown   bool
 	mu              sync.Mutex
 }
 
@@ -46,7 +48,7 @@ func Open(layout paths.Layout, factory *templates.Factory, source DefaultBinding
 	if randomSource == nil {
 		randomSource = rand.Reader
 	}
-	service := &Service{templates: factory, defaultBindings: source, store: newStore(layout), clock: clock, random: randomSource, guard: conservativeDeleteGuard{}}
+	service := &Service{templates: factory, defaultBindings: source, store: newStore(layout), clock: clock, random: randomSource, guard: conservativeDeleteGuard{}, resourceDigests: map[string]string{}}
 	service.mu.Lock()
 	defer service.mu.Unlock()
 	if _, err := service.refreshMetas(); err != nil {
@@ -439,9 +441,72 @@ func (s *Service) MarkApplied(ctx context.Context, result AppliedResult) error {
 	metas[index].AppliedDigest = result.Digest
 	metas[index].AppliedResourceDigests = cloneStringMap(result.ResourceDigests)
 	metas[index].AppliedAt = &appliedAt
-	metas[index].NeedsApply = false
+	// If resource reconciliation has seen a newer/missing file, an apply based
+	// on an older snapshot must not accidentally clear its dirty marker.
+	if !s.resourceKnown || s.enabledBindingsMatchCurrent(result.ProfileID, result.ResourceDigests) {
+		metas[index].NeedsApply = false
+	} else {
+		metas[index].NeedsApply = true
+	}
 	metas[index].LastValidation = &validation
 	return s.store.writeMetas(metas)
+}
+
+// ReconcileResourceDigests records the currently usable rule files and marks
+// every profile whose enabled bindings no longer match its applied snapshot.
+// It is invoked at startup and after a durable rule status write.
+func (s *Service) ReconcileResourceDigests(ctx context.Context, current map[string]string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.resourceDigests = cloneStringMap(current)
+	s.resourceKnown = true
+	metas, err := s.refreshMetas()
+	if err != nil {
+		return err
+	}
+	changed := false
+	for index := range metas {
+		if metas[index].QuarantinedError != "" {
+			continue
+		}
+		draft, err := s.store.readDraft(metas[index].ID)
+		if err != nil {
+			continue
+		}
+		if !bindingsMatchDigests(draft.Bindings, metas[index].AppliedResourceDigests, current) && !metas[index].NeedsApply {
+			metas[index].NeedsApply = true
+			changed = true
+		}
+	}
+	if !changed {
+		return nil
+	}
+	return s.store.writeMetas(metas)
+}
+
+func (s *Service) enabledBindingsMatchCurrent(profileID string, digests map[string]string) bool {
+	draft, err := s.store.readDraft(profileID)
+	if err != nil {
+		return false
+	}
+	return bindingsMatchDigests(draft.Bindings, digests, s.resourceDigests)
+}
+
+func bindingsMatchDigests(bindings []RuleBinding, expected, current map[string]string) bool {
+	for _, binding := range bindings {
+		if !binding.Enabled {
+			continue
+		}
+		expectedDigest, expectedOK := expected[binding.ResourceID]
+		currentDigest, currentOK := current[binding.ResourceID]
+		if !expectedOK || !currentOK || expectedDigest != currentDigest {
+			return false
+		}
+	}
+	return true
 }
 
 func (s *Service) ReferencesForResource(ctx context.Context, resourceID string) ([]Reference, error) {

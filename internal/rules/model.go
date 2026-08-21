@@ -53,6 +53,14 @@ type PatchInput struct {
 	Disabled       *bool   `json:"disabled"`
 }
 
+// RuleBinding is shared with the profile package. Keeping the concrete type in
+// rules lets the rules service create a typed snapshot without an import cycle.
+type RuleBinding struct {
+	ResourceID string `json:"resourceId"`
+	Tag        string `json:"tag"`
+	Enabled    bool   `json:"enabled"`
+}
+
 // ProfileReferences reports profiles that bind a rule resource. It keeps the
 // rules service independent from profile persistence.
 type ProfileReferences interface {

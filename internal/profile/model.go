@@ -32,11 +32,7 @@ type ValidationSummary struct {
 	Message   string    `json:"message"`
 }
 
-type RuleBinding struct {
-	ResourceID string `json:"resourceId"`
-	Tag        string `json:"tag"`
-	Enabled    bool   `json:"enabled"`
-}
+type RuleBinding = rules.RuleBinding
 
 type AppliedResult struct {
 	ProfileID       string

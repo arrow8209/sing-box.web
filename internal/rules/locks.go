@@ -3,7 +3,14 @@ package rules
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 )
+
+// ResourceLocker is deliberately small so snapshots can lock several rule
+// files in a globally stable order and tests can observe that order.
+type ResourceLocker interface {
+	Lock(ctx context.Context, resourceID string) (release func(), err error)
+}
 
 // resourceLocks serializes every operation that can replace or move a single
 // fixed rule-set file. Different resources remain independent.
@@ -29,6 +36,11 @@ func (l *resourceLocks) Lock(ctx context.Context, id string) (func(), error) {
 		go func() { <-acquired; lock.Unlock() }()
 		return nil, ctx.Err()
 	case <-acquired:
-		return lock.Unlock, nil
+		var released atomic.Bool
+		return func() {
+			if released.CompareAndSwap(false, true) {
+				lock.Unlock()
+			}
+		}, nil
 	}
 }

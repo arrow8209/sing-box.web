@@ -27,10 +27,17 @@ type Service struct {
 	profiles   ProfileReferences
 	clock      func() time.Time
 	random     io.Reader
-	locks      *resourceLocks
+	locks      ResourceLocker
 	downloader Downloader
 	audit      *audit.Logger
 	mu         sync.Mutex
+}
+
+// SetResourceLocker is intended for deterministic lock-order tests.
+func (s *Service) SetResourceLocker(locker ResourceLocker) {
+	if locker != nil {
+		s.locks = locker
+	}
 }
 
 func NewService(store *Store, layout paths.Layout, profiles ProfileReferences, clock func() time.Time, randomSource io.Reader) (*Service, error) {
@@ -141,6 +148,13 @@ func (s *Service) updateLocked(ctx context.Context, resources []Resource, index 
 			if err := marker.MarkResourcesChanged(ctx, []string{resource.ID}); err != nil {
 				return UpdateResult{}, err
 			}
+		}
+	}
+	if reconciler, ok := s.profiles.(interface {
+		ReconcileResourceDigests(context.Context, map[string]string) error
+	}); ok {
+		if err := reconciler.ReconcileResourceDigests(ctx, s.resourceDigests(resources)); err != nil {
+			return UpdateResult{}, err
 		}
 	}
 	*stage = "completed"
@@ -291,11 +305,24 @@ func (s *Service) Patch(ctx context.Context, id string, input PatchInput) (Resou
 		}
 		return s.response(next), nil
 	}
+	if next.Disabled || next.UpdateInterval == "" || input.Disabled != nil || input.UpdateInterval != nil {
+		next.NextUpdateAt = nil
+	}
 	resources[index] = next
 	if err := s.store.write(resources); err != nil {
 		return ResourceResponse{}, err
 	}
 	return s.response(next), nil
+}
+
+func (s *Service) resourceDigests(resources []Resource) map[string]string {
+	digests := make(map[string]string, len(resources))
+	for _, resource := range resources {
+		if resource.LastSuccessAt != nil && resource.LastDigest != "" && resourceFileDigest(resource) == resource.LastDigest {
+			digests[resource.ID] = resource.LastDigest
+		}
+	}
+	return digests
 }
 
 func (s *Service) Delete(ctx context.Context, id string) error {

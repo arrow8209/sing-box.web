@@ -34,10 +34,13 @@ type Dependencies struct {
 
 // Server owns the local HTTP server and the exclusive application lock.
 type Server struct {
-	layout  paths.Layout
-	lock    *storage.InstanceLock
-	http    *http.Server
-	closeMu sync.Mutex
+	layout          paths.Layout
+	lock            *storage.InstanceLock
+	http            *http.Server
+	closeMu         sync.Mutex
+	scheduler       *rules.Scheduler
+	schedulerCancel context.CancelFunc
+	schedulerDone   chan struct{}
 }
 
 // NewServer builds the complete local service. It acquires the lock before
@@ -119,6 +122,13 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err := rules.RecoverRuleTransactions(ruleStore, layout); err != nil {
 		return nil, err
 	}
+	currentDigests, err := ruleService.CurrentDigests(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	if err := profileService.ReconcileResourceDigests(context.Background(), currentDigests); err != nil {
+		return nil, err
+	}
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),
@@ -131,9 +141,11 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	})
 	keepLock = true
 	return &Server{
-		layout: layout,
-		lock:   lock,
-		http:   &http.Server{Addr: defaultListenAddress, Handler: handler},
+		layout:        layout,
+		lock:          lock,
+		http:          &http.Server{Addr: defaultListenAddress, Handler: handler},
+		scheduler:     rules.NewScheduler(ruleService, nil),
+		schedulerDone: make(chan struct{}),
 	}, nil
 }
 
@@ -142,6 +154,13 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 func (s *Server) Run(ctx context.Context) error {
 	if s == nil || s.http == nil {
 		return errors.New("服务未初始化")
+	}
+	if s.scheduler != nil {
+		schedulerCtx, cancel := context.WithCancel(ctx)
+		s.closeMu.Lock()
+		s.schedulerCancel = cancel
+		s.closeMu.Unlock()
+		go func() { defer close(s.schedulerDone); _ = s.scheduler.Run(schedulerCtx) }()
 	}
 	listener, err := net.Listen("tcp", s.http.Addr)
 	if err != nil {
@@ -171,6 +190,16 @@ func (s *Server) Close(ctx context.Context) error {
 	}
 	s.closeMu.Lock()
 	defer s.closeMu.Unlock()
+	if s.schedulerCancel != nil {
+		s.schedulerCancel()
+		s.schedulerCancel = nil
+		if s.schedulerDone != nil {
+			select {
+			case <-s.schedulerDone:
+			case <-ctx.Done():
+			}
+		}
+	}
 	var shutdownErr error
 	if s.http != nil {
 		shutdownErr = s.http.Shutdown(ctx)
