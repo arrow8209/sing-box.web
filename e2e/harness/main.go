@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"strings"
 	"syscall"
 	"time"
 
@@ -86,12 +85,6 @@ func main() {
 		if r.URL.Path == "/api/v1/core/update" {
 			writeJSON(w, map[string]any{"active": false, "stage": "idle"})
 			return
-		}
-		// Vite emits hashed files into assets/assets while the embedded handler
-		// deliberately exposes them at /assets. Keep the harness self-contained
-		// without starting a second development server.
-		if strings.HasPrefix(r.URL.Path, "/assets/") {
-			r.URL.Path = "/assets/assets/" + strings.TrimPrefix(r.URL.Path, "/assets/")
 		}
 		appProxy.ServeHTTP(w, r)
 	})

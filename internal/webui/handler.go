@@ -25,7 +25,7 @@ func Handler() http.Handler {
 }
 
 func newHandler(files fs.FS) http.Handler {
-	assets, assetsErr := fs.Sub(files, "assets")
+	assets, assetsErr := fs.Sub(files, "assets/assets")
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodGet && r.Method != http.MethodHead {
 			http.Error(w, "请求方法不被允许", http.StatusMethodNotAllowed)

@@ -1,16 +1,21 @@
 package webui
 
 import (
+	"errors"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"testing"
 	"testing/fstest"
 )
 
+var builtAssetReferencePattern = regexp.MustCompile(`(?:src|href)="(/assets/[^"]+)"`)
+
 func TestHandlerServesAssetsAndRejectsTraversal(t *testing.T) {
 	handler := newHandler(fstest.MapFS{
-		"assets/index.html":      &fstest.MapFile{Data: []byte("built")},
-		"assets/app.1234abcd.js": &fstest.MapFile{Data: []byte("console.log(1)")},
+		"assets/index.html":             &fstest.MapFile{Data: []byte("built")},
+		"assets/assets/app.1234abcd.js": &fstest.MapFile{Data: []byte("console.log(1)")},
 	})
 
 	asset := httptest.NewRecorder()
@@ -27,5 +32,29 @@ func TestHandlerServesAssetsAndRejectsTraversal(t *testing.T) {
 	handler.ServeHTTP(nonAssetTraversal, httptest.NewRequest(http.MethodGet, "/profiles/%2e%2e/config", nil))
 	if nonAssetTraversal.Code != http.StatusBadRequest && nonAssetTraversal.Code != http.StatusNotFound {
 		t.Fatalf("non-asset traversal=%d", nonAssetTraversal.Code)
+	}
+}
+
+func TestEmbeddedBuildReferencesResolvableAssets(t *testing.T) {
+	index, err := fs.ReadFile(Files, builtIndexPath)
+	if errors.Is(err, fs.ErrNotExist) {
+		t.Skip("前端尚未构建")
+	}
+	if err != nil {
+		t.Fatal(err)
+	}
+	references := builtAssetReferencePattern.FindAllSubmatch(index, -1)
+	if len(references) == 0 {
+		t.Fatal("构建后的 index.html 未引用静态资源")
+	}
+
+	handler := Handler()
+	for _, reference := range references {
+		requestPath := string(reference[1])
+		recorder := httptest.NewRecorder()
+		handler.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, requestPath, nil))
+		if recorder.Code != http.StatusOK {
+			t.Errorf("asset %s status=%d body=%q", requestPath, recorder.Code, recorder.Body.String())
+		}
 	}
 }
