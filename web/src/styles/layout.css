@@ -66,4 +66,5 @@
 .app-dialog__header, .app-dialog__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
 .app-dialog__header { margin-bottom: 16px; }
 .app-dialog__header h2 { margin: 0; font-size: 18px; }
+.app-dialog__header p { margin: 3px 0 0; color: var(--text-faint); font-size: 11px; }
 .app-dialog__footer { justify-content: end; margin-top: 22px; }

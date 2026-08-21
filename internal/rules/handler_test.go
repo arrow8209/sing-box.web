@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"singbox-web/internal/httpapi"
@@ -75,5 +76,61 @@ func TestDeleteReferenceAPIErrorIncludesProfiles(t *testing.T) {
 	api.ServeHTTP(deleted, httptest.NewRequest(http.MethodDelete, "/api/v1/rule-resources/"+created.ID, nil))
 	if deleted.Code != http.StatusConflict || !bytes.Contains(deleted.Body.Bytes(), []byte("家庭出口")) {
 		t.Fatalf("response=%d %s", deleted.Code, deleted.Body.String())
+	}
+}
+
+func TestManualResourceAPIStoresContentAndReturnsDetail(t *testing.T) {
+	service, _ := newRuleService(t, nil)
+	api := NewHandler(service)
+	created := httptest.NewRecorder()
+	api.ServeHTTP(created, httptest.NewRequest(http.MethodPost, "/api/v1/rule-resources", bytes.NewBufferString(`{"sourceType":"manual","name":"私有网络","content":{"version":3,"rules":[{"ip_is_private":true}]}}`)))
+	if created.Code != http.StatusCreated {
+		t.Fatalf("status=%d body=%s", created.Code, created.Body.String())
+	}
+	var resource ResourceResponse
+	if err := json.Unmarshal(created.Body.Bytes(), &resource); err != nil {
+		t.Fatal(err)
+	}
+	detail := httptest.NewRecorder()
+	api.ServeHTTP(detail, httptest.NewRequest(http.MethodGet, "/api/v1/rule-resources/"+resource.ID, nil))
+	if detail.Code != http.StatusOK || !bytes.Contains(detail.Body.Bytes(), []byte(`"ip_is_private"`)) {
+		t.Fatalf("status=%d body=%s", detail.Code, detail.Body.String())
+	}
+}
+
+func TestCatalogAPIRefreshesPreviewsImportsAndRejectsDuplicates(t *testing.T) {
+	service, layout := newRuleService(t, nil)
+	service.SetDownloader(catalogRuleDownloader{})
+	document := catalogRemoteDocument{
+		GeoSite: geositeBaseURL,
+		GeoIP:   geoipBaseURL,
+		List:    []catalogRemoteItem{{Name: "cn", Type: "geosite", Count: 10}},
+	}
+	catalog := NewCatalogService(layout.RuleCatalogFile, layout, service, fixedCatalogFetcher{document: document, digest: strings.Repeat("a", 64)}, nil)
+	api := NewHandler(service, catalog)
+
+	refresh := httptest.NewRecorder()
+	api.ServeHTTP(refresh, httptest.NewRequest(http.MethodPost, "/api/v1/rule-resources/catalog/refresh", nil))
+	if refresh.Code != http.StatusOK || !bytes.Contains(refresh.Body.Bytes(), []byte(`"total":1`)) || !bytes.Contains(refresh.Body.Bytes(), []byte(`"geosite":"`+geositeBaseURL+`"`)) {
+		t.Fatalf("refresh=%d %s", refresh.Code, refresh.Body.String())
+	}
+
+	preview := httptest.NewRecorder()
+	api.ServeHTTP(preview, httptest.NewRequest(http.MethodGet, "/api/v1/rule-resources/catalog/preview?key=geosite%3Acn", nil))
+	if preview.Code != http.StatusOK || !bytes.Contains(preview.Body.Bytes(), []byte(`"ruleCount":2`)) {
+		t.Fatalf("preview=%d %s", preview.Code, preview.Body.String())
+	}
+
+	input := `{"key":"geosite:cn","format":"binary","updateInterval":"24h"}`
+	imported := httptest.NewRecorder()
+	api.ServeHTTP(imported, httptest.NewRequest(http.MethodPost, "/api/v1/rule-resources/catalog/import", bytes.NewBufferString(input)))
+	if imported.Code != http.StatusCreated || !bytes.Contains(imported.Body.Bytes(), []byte(geositeBaseURL+"cn.srs")) || !bytes.Contains(imported.Body.Bytes(), []byte(`"catalogKey":"geosite:cn"`)) {
+		t.Fatalf("import=%d %s", imported.Code, imported.Body.String())
+	}
+
+	duplicate := httptest.NewRecorder()
+	api.ServeHTTP(duplicate, httptest.NewRequest(http.MethodPost, "/api/v1/rule-resources/catalog/import", bytes.NewBufferString(input)))
+	if duplicate.Code != http.StatusConflict || !bytes.Contains(duplicate.Body.Bytes(), []byte(`"code":"rule_catalog_already_imported"`)) {
+		t.Fatalf("duplicate=%d %s", duplicate.Code, duplicate.Body.String())
 	}
 }

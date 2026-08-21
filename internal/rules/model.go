@@ -2,6 +2,7 @@ package rules
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"time"
 )
@@ -13,8 +14,23 @@ const (
 	FormatBinary Format = "binary"
 )
 
+type SourceType string
+
+const (
+	SourceRemote SourceType = "remote"
+	SourceManual SourceType = "manual"
+)
+
+func effectiveSourceType(value SourceType) SourceType {
+	if value == "" {
+		return SourceRemote
+	}
+	return value
+}
+
 type ResourceTemplate struct {
 	TemplateKey    string `json:"templateKey"`
+	CatalogKey     string `json:"catalogKey,omitempty"`
 	Name           string `json:"name"`
 	URL            string `json:"url"`
 	Format         Format `json:"format"`
@@ -24,6 +40,8 @@ type ResourceTemplate struct {
 type Resource struct {
 	ID             string     `json:"id"`
 	TemplateKey    string     `json:"templateKey,omitempty"`
+	CatalogKey     string     `json:"catalogKey,omitempty"`
+	SourceType     SourceType `json:"sourceType,omitempty"`
 	Name           string     `json:"name"`
 	URL            string     `json:"url"`
 	Format         Format     `json:"format"`
@@ -35,22 +53,27 @@ type Resource struct {
 	LastDigest     string     `json:"lastDigest,omitempty"`
 	LastError      string     `json:"lastError,omitempty"`
 	NextUpdateAt   *time.Time `json:"nextUpdateAt,omitempty"`
+	RuleCount      *int       `json:"ruleCount,omitempty"`
 }
 
 type CreateInput struct {
-	Name           string `json:"name"`
-	URL            string `json:"url"`
-	Format         Format `json:"format"`
-	UpdateInterval string `json:"updateInterval"`
-	Disabled       bool   `json:"disabled"`
+	SourceType     SourceType      `json:"sourceType,omitempty"`
+	Name           string          `json:"name"`
+	URL            string          `json:"url"`
+	Format         Format          `json:"format"`
+	UpdateInterval string          `json:"updateInterval"`
+	Disabled       bool            `json:"disabled"`
+	Content        json.RawMessage `json:"content,omitempty"`
 }
 
 type PatchInput struct {
-	Name           *string `json:"name"`
-	URL            *string `json:"url"`
-	Format         *Format `json:"format"`
-	UpdateInterval *string `json:"updateInterval"`
-	Disabled       *bool   `json:"disabled"`
+	SourceType     *SourceType      `json:"sourceType"`
+	Name           *string          `json:"name"`
+	URL            *string          `json:"url"`
+	Format         *Format          `json:"format"`
+	UpdateInterval *string          `json:"updateInterval"`
+	Disabled       *bool            `json:"disabled"`
+	Content        *json.RawMessage `json:"content"`
 }
 
 // RuleBinding is shared with the profile package. Keeping the concrete type in
@@ -86,6 +109,8 @@ func (e *ReferencedError) Error() string {
 // absent: it is an installation-only mapping detail.
 type ResourceResponse struct {
 	ID             string     `json:"id"`
+	CatalogKey     string     `json:"catalogKey,omitempty"`
+	SourceType     SourceType `json:"sourceType"`
 	Name           string     `json:"name"`
 	URL            string     `json:"url"`
 	Format         Format     `json:"format"`
@@ -97,6 +122,13 @@ type ResourceResponse struct {
 	LastDigest     string     `json:"lastDigest,omitempty"`
 	LastError      string     `json:"lastError,omitempty"`
 	NextUpdateAt   *time.Time `json:"nextUpdateAt,omitempty"`
+	SizeBytes      *int64     `json:"sizeBytes,omitempty"`
+	RuleCount      *int       `json:"ruleCount,omitempty"`
+}
+
+type ResourceDetail struct {
+	ResourceResponse
+	Content json.RawMessage `json:"content,omitempty"`
 }
 
 type UpdateResult struct {

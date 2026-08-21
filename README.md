@@ -17,6 +17,17 @@ sh scripts/build.sh
 
 `internal/integration` 的测试会把当前 Go 测试二进制复制为受控 fake sing-box 核心，并只使用本地 `httptest` 规则服务；不会访问公网、启动真实代理或写入仓库工作目录。
 
+## 规则集来源
+
+“规则集中心”使用 GUI-for-Cores Ruleset-Hub 的完整 sing-box 目录，不再使用旧的 SagerNet GeoSite/GeoIP 规则地址：
+
+- 目录：`https://github.com/GUI-for-Cores/Ruleset-Hub/releases/download/latest/sing-full.json`
+- 目录校验：`https://github.com/GUI-for-Cores/Ruleset-Hub/releases/download/latest/sing-full-version.txt`
+- GeoSite：`https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/`
+- GeoIP：`https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/`
+
+服务端会校验目录 SHA-256 并缓存最近一次成功结果；刷新失败不会覆盖可用缓存。目录项目可分别以 Source（`.json`）或 Binary（`.srs`）格式导入并首次下载。除网络规则外，也可以在页面中直接维护 Source JSON 手工规则；手工内容只会写入服务端派生的固定文件，不接受任意本地路径。
+
 ## 开发与验证
 
 ```bash

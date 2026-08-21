@@ -34,6 +34,9 @@ type Dependencies struct {
 	Random          io.Reader
 	Clock           func() time.Time
 	TemplateFactory *templates.Factory
+	// RuleHTTPTransport is reserved for isolated tests that must replace both
+	// Ruleset-Hub and rule-file HTTP requests without accessing the network.
+	RuleHTTPTransport http.RoundTripper
 	// CoreEnvironment is an explicit allow-list passed to the check process.
 	// It is empty in production; integration tests use it for their fake core.
 	CoreEnvironment []string
@@ -136,6 +139,13 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	catalogFetcher := rules.NewCatalogFetcher()
+	if deps.RuleHTTPTransport != nil {
+		policy := rules.DownloadPolicyForTest(deps.RuleHTTPTransport)
+		ruleService.SetDownloader(rules.NewDownloader(policy))
+		catalogFetcher = rules.NewCatalogFetcher(policy)
+	}
+	ruleCatalog := rules.NewCatalogService(layout.RuleCatalogFile, layout, ruleService, catalogFetcher, clock)
 	if err := rules.RecoverRuleTransactions(ruleStore, layout); err != nil {
 		return nil, err
 	}
@@ -192,7 +202,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),
-		RuleResourceHandler: rules.NewHandler(ruleService),
+		RuleResourceHandler: rules.NewHandler(ruleService, ruleCatalog),
 		ConfigHandler:       configHandler,
 		ApplicationHandler:  application.NewHandler(coordinator),
 		CoreHandler:         core.NewHandler(coreManager),

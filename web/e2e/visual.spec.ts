@@ -40,15 +40,28 @@ async function ensureVisualProfile(page: Page): Promise<void> {
 }
 
 for (const scenario of scenarios) {
-  test(`${scenario.name} configuration workspace`, async ({ page }) => {
+  test(`${scenario.name} configuration and rules workspace`, async ({ page }) => {
     await page.setViewportSize({ width: scenario.width, height: scenario.height });
     await loginAndOpenProfile(page);
-    await setTheme(page, scenario.theme);
     await ensureVisualProfile(page);
     await page.goto("/workspace");
+    await setTheme(page, scenario.theme);
     await expect(page.locator(".config-context-bar")).toBeVisible();
     await expect(page.locator("main")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-config.png`, { fullPage: true });
+
+    await page.goto("/rules");
+    await setTheme(page, scenario.theme);
+    await expect(page.getByRole("heading", { name: "规则集中心" })).toBeVisible();
+    await expect(page.locator(".ruleset-table-card")).toBeVisible();
+    await page.locator(".path").evaluateAll((elements) => {
+      for (const element of elements) {
+        element.textContent = "data/rulesets/[managed-id]";
+        element.removeAttribute("title");
+      }
+    });
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
+    await expect(page).toHaveScreenshot(`${scenario.name}-rules.png`, { fullPage: true });
   });
 }

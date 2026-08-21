@@ -1,6 +1,7 @@
 package integration
 
 import (
+	"bytes"
 	"context"
 	"crypto/rand"
 	"encoding/json"
@@ -186,6 +187,37 @@ func TestRuleDownloadPreviewAndValidateFlow(t *testing.T) {
 	if _, err := os.Stat(env.layout.ConfigDir); !os.IsNotExist(err) {
 		t.Fatalf("正式 config 被预览或检查创建: %v", err)
 	}
+}
+
+func TestManualRulePreviewAndValidateFlow(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	env.InstallFakeCore(t, fakeCoreBehavior{Version: "sing-box version 1.12.0", CheckExit: 0})
+	resource, err := env.rules.Create(context.Background(), rules.CreateInput{
+		SourceType: rules.SourceManual,
+		Name:       "手工私有域名",
+		Content:    json.RawMessage(`{"version":3,"rules":[{"domain_suffix":["example.com","example.org"]}]}`),
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileID, revision := env.CreateBoundProfile(t, resource.ID, "Manual-Domains")
+	preview, err := env.config.Preview(context.Background(), profileID, revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertPreviewLocalRule(t, preview, "Manual-Domains", "data/rulesets/"+resource.ID+".json")
+	validated, err := env.config.Validate(context.Background(), profileID, revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !validated.Valid {
+		t.Fatalf("validate=%+v", validated)
+	}
+	payload, err := os.ReadFile(filepath.Join(env.layout.RuleSetsDir, resource.ID+".json"))
+	if err != nil || !bytes.Contains(payload, []byte("example.org")) {
+		t.Fatalf("manual payload=%s err=%v", payload, err)
+	}
+	assertNoTransactionDirs(t, env.workDir)
 }
 
 func assertPreviewLocalRule(t *testing.T, preview configgen.PreviewResult, tag, path string) {

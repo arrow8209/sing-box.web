@@ -78,11 +78,32 @@ func validateDocument(data document, layout paths.Layout) error {
 			}
 			templateKeys[resource.TemplateKey] = struct{}{}
 		}
+		if resource.CatalogKey != "" && !validCatalogKey(resource.CatalogKey) {
+			return fmt.Errorf("resources[%d].catalogKey 无效", index)
+		}
 		if resource.Format != FormatBinary && resource.Format != FormatSource {
 			return fmt.Errorf("resources[%d].format 无效", index)
 		}
-		if err := validateInput(resource.Name, resource.URL, resource.Format, resource.UpdateInterval); err != nil {
-			return fmt.Errorf("resources[%d] 无效: %w", index, err)
+		if resource.RuleCount != nil && *resource.RuleCount < 0 {
+			return fmt.Errorf("resources[%d].ruleCount 无效", index)
+		}
+		switch effectiveSourceType(resource.SourceType) {
+		case SourceRemote:
+			if err := validateRemoteInput(resource.Name, resource.URL, resource.Format, resource.UpdateInterval); err != nil {
+				return fmt.Errorf("resources[%d] 无效: %w", index, err)
+			}
+		case SourceManual:
+			if err := validateName(resource.Name); err != nil {
+				return fmt.Errorf("resources[%d] 无效: %w", index, err)
+			}
+			if resource.URL != "" || resource.UpdateInterval != "" || resource.Format != FormatSource {
+				return fmt.Errorf("resources[%d] 的手工规则字段无效", index)
+			}
+			if resource.LastSuccessAt == nil || resource.LastDigest == "" {
+				return fmt.Errorf("resources[%d] 的手工规则缺少内容状态", index)
+			}
+		default:
+			return fmt.Errorf("resources[%d].sourceType 无效", index)
 		}
 		derived, _, err := layout.RuleSetPath(resource.ID, extension(resource.Format))
 		if err != nil {
@@ -123,9 +144,14 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 		if template.TemplateKey == "" || template.Name == "" || template.URL == "" || (template.Format != FormatBinary && template.Format != FormatSource) {
 			return nil, fmt.Errorf("无效默认规则模板: %s", template.TemplateKey)
 		}
-		for _, resource := range data.Resources {
+		for index := range data.Resources {
+			resource := data.Resources[index]
 			if resource.TemplateKey == template.TemplateKey {
 				ids[template.TemplateKey] = resource.ID
+				if resource.CatalogKey == "" && template.CatalogKey != "" {
+					data.Resources[index].CatalogKey = template.CatalogKey
+					changed = true
+				}
 				break
 			}
 		}
@@ -140,7 +166,7 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 		if err != nil {
 			return nil, err
 		}
-		data.Resources = append(data.Resources, Resource{ID: id, TemplateKey: template.TemplateKey, Name: template.Name, URL: template.URL, Format: template.Format, UpdateInterval: template.UpdateInterval, LocalPath: localPath})
+		data.Resources = append(data.Resources, Resource{ID: id, TemplateKey: template.TemplateKey, CatalogKey: template.CatalogKey, SourceType: SourceRemote, Name: template.Name, URL: template.URL, Format: template.Format, UpdateInterval: template.UpdateInterval, LocalPath: localPath})
 		ids[template.TemplateKey] = id
 		changed = true
 	}
@@ -185,11 +211,21 @@ func (s *Store) list() ([]Resource, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
-	return append([]Resource(nil), data.Resources...), nil
+	resources := make([]Resource, len(data.Resources))
+	copy(resources, data.Resources)
+	for index := range resources {
+		resources[index].SourceType = effectiveSourceType(resources[index].SourceType)
+	}
+	return resources, nil
 }
 
 func (s *Store) write(resources []Resource) error {
-	data := document{Resources: append([]Resource(nil), resources...)}
+	copied := make([]Resource, len(resources))
+	copy(copied, resources)
+	data := document{Resources: copied}
+	for index := range data.Resources {
+		data.Resources[index].SourceType = effectiveSourceType(data.Resources[index].SourceType)
+	}
 	if err := validateDocument(data, s.layout); err != nil {
 		return err
 	}

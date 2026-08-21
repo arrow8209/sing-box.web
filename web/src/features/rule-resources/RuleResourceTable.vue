@@ -1,13 +1,53 @@
 <script setup lang="ts">
+import AppIcon from "@/layout/AppIcon.vue";
 import type { RuleResource } from "./types";
-defineProps<{ resources: RuleResource[]; updatingId?: string | null }>();
-const emit = defineEmits<{ edit: [resource: RuleResource]; update: [resource: RuleResource]; remove: [resource: RuleResource] }>();
-function stamp(value?: string): string { return value ? new Date(value).toLocaleString() : "—"; }
-function digest(value?: string): string { return value ? `${value.slice(0, 12)}…` : "—"; }
+
+defineProps<{ resources: RuleResource[]; updatingIds?: string[]; filtered?: boolean }>();
+const emit = defineEmits<{ edit: [resource: RuleResource]; update: [resource: RuleResource]; clearFilter: [] }>();
+
+const intervalLabels: Record<string, string> = { "15m": "每 15 分钟", "1h": "每 1 小时", "6h": "每 6 小时", "12h": "每 12 小时", "24h": "每天", "168h": "每 7 天" };
+function stamp(value?: string): string { return value ? new Date(value).toLocaleString("zh-CN", { month: "numeric", day: "numeric", hour: "2-digit", minute: "2-digit" }) : "尚未更新"; }
+function size(value?: number): string {
+  if (value === undefined) return "--";
+  if (value < 1024) return `${value} B`;
+  if (value < 1024 * 1024) return `${(value / 1024).toFixed(1)} KB`;
+  return `${(value / 1024 / 1024).toFixed(1)} MB`;
+}
+function count(value?: number): string { return value === undefined ? "--" : value.toLocaleString("zh-CN"); }
+function source(resource: RuleResource): string {
+  if (resource.sourceType === "manual") return "Web 手工维护 · JSON";
+  if (resource.catalogKey) return `Ruleset-Hub · ${resource.catalogKey.replace(":", "/")}`;
+  try { return new URL(resource.url).hostname; } catch { return resource.url; }
+}
+function schedule(resource: RuleResource): string {
+  if (resource.disabled) return "已禁用";
+  if (resource.sourceType === "manual") return "手工维护";
+  return intervalLabels[resource.updateInterval] ?? (resource.updateInterval || "仅手动更新");
+}
 </script>
+
 <template>
-  <div class="table-wrap"><table class="rules-table"><thead><tr><th>资源</th><th>状态与周期</th><th>固定相对路径</th><th>下载记录</th><th>操作</th></tr></thead><tbody><tr v-for="resource in resources" :key="resource.id"><td><strong>{{ resource.name }}</strong><small>{{ resource.format === 'binary' ? 'binary' : 'source' }} · {{ resource.url }}</small></td><td><span class="resource-state" :class="{ disabled: resource.disabled }">{{ resource.disabled ? '已禁用' : '已启用' }}</span><small>{{ resource.updateInterval || '手动更新' }}<template v-if="resource.nextUpdateAt"> · 下次 {{ stamp(resource.nextUpdateAt) }}</template></small></td><td><code>{{ resource.localPath }}</code></td><td><small>最近尝试：{{ stamp(resource.lastAttemptAt) }}<br />最近成功：{{ stamp(resource.lastSuccessAt) }}<br />摘要：{{ digest(resource.lastDigest) }}</small><p v-if="resource.lastError" class="error">{{ resource.lastError }}</p></td><td class="actions"><button type="button" class="secondary" @click="emit('edit', resource)">编辑</button><button type="button" class="update" :data-update-rule="resource.id" :disabled="updatingId === resource.id" @click="emit('update', resource)">{{ updatingId === resource.id ? '更新中…' : '立即更新' }}</button><button type="button" class="remove" :data-delete-rule="resource.id" :disabled="updatingId === resource.id" @click="emit('remove', resource)">删除</button></td></tr><tr v-if="!resources.length"><td colspan="5" class="empty">尚无规则资源。新增资源后，服务端会负责安全下载和周期调度。</td></tr></tbody></table></div>
+  <article class="ruleset-table-card">
+    <div v-if="resources.length" class="table-wrap">
+      <table class="ruleset-data-table">
+        <thead><tr><th>规则集</th><th>来源</th><th>格式</th><th>规则数</th><th>更新策略</th><th>最近更新</th><th class="right">操作</th></tr></thead>
+        <tbody>
+          <tr v-for="resource in resources" :key="resource.id" :class="{ disabled: resource.disabled }">
+            <td><div class="ruleset-name"><span class="ruleset-icon" :class="resource.sourceType"><AppIcon :name="resource.sourceType === 'manual' ? 'code' : 'globe'" :size="15" /></span><div><strong>{{ resource.name }}</strong><small :title="resource.url || resource.localPath">{{ source(resource) }}</small></div></div></td>
+            <td><span class="source-badge" :class="resource.sourceType">{{ resource.sourceType === "manual" ? "纯手工" : "网络" }}</span></td>
+            <td><span class="format-badge">{{ resource.format }}</span><small class="path" :title="resource.localPath">{{ resource.localPath }}</small></td>
+            <td><strong class="rule-count">{{ count(resource.ruleCount) }}</strong><small>{{ size(resource.sizeBytes) }}</small></td>
+            <td><div class="update-plan"><span :class="{ scheduled: resource.sourceType === 'remote' && Boolean(resource.updateInterval) && !resource.disabled }"><AppIcon :name="resource.sourceType === 'manual' ? 'edit' : 'clock'" :size="11" />{{ schedule(resource) }}</span><small v-if="resource.nextUpdateAt">下次 {{ stamp(resource.nextUpdateAt) }}</small><small v-else>{{ resource.sourceType === "manual" ? "直接编辑规则内容" : "等待手动更新" }}</small></div></td>
+            <td><div class="updated" :class="{ failed: resource.lastError }"><strong>{{ stamp(resource.lastSuccessAt) }}</strong><span :title="resource.lastError">{{ resource.lastError || (resource.sourceType === "manual" ? "手工内容" : "网络内容") }}</span></div></td>
+            <td><div class="table-actions"><button v-if="resource.sourceType === 'remote'" type="button" :aria-label="`立即更新 ${resource.name}`" :title="resource.disabled ? '已禁用' : '立即更新'" :disabled="resource.disabled || updatingIds?.includes(resource.id)" @click="emit('update', resource)"><AppIcon name="rotate" :size="14" /></button><button type="button" :aria-label="`编辑 ${resource.name}`" title="编辑规则集" :disabled="updatingIds?.includes(resource.id)" @click="emit('edit', resource)"><AppIcon :name="resource.sourceType === 'manual' ? 'code' : 'edit'" :size="14" /></button></div></td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+    <div v-else class="empty-state"><AppIcon :name="filtered ? 'search' : 'database'" :size="28" /><strong>{{ filtered ? "没有匹配的规则集" : "尚无规则集" }}</strong><span>{{ filtered ? "调整关键词或来源筛选后重试" : "可从规则集中心导入，或手动添加规则集" }}</span><button v-if="filtered" type="button" @click="emit('clearFilter')">清除筛选</button></div>
+  </article>
 </template>
+
 <style scoped>
-.table-wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.rules-table { width: 100%; min-width: 900px; border-collapse: collapse; } th, td { padding: 13px 14px; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line); } th { color: var(--text-faint); background: var(--surface-soft); font-size: 10px; font-weight: 720; letter-spacing: .25px; text-transform: uppercase; } td strong { color: var(--text); font-size: 12px; } td small, td strong { display: block; } td small { margin-top: 4px; color: var(--text-soft); font-size: 10px; overflow-wrap: anywhere; } code { padding: 3px 5px; border-radius: 5px; color: var(--primary-strong); background: var(--primary-soft); font-size: 10px; }.resource-state { display: inline-flex; align-items: center; gap: 5px; color: var(--green); font-size: 10px; font-weight: 670; }.resource-state::before { width: 5px; height: 5px; border-radius: 50%; content: ""; background: currentColor; }.resource-state.disabled, .error { color: var(--red); }.error { margin: 6px 0 0; font-size: 10px; }.actions { display: flex; flex-wrap: wrap; gap: 5px; }.actions button { min-height: 29px; padding: 5px 7px; border-radius: 6px; font-size: 10px; }.actions .secondary { color: var(--text-soft); background: var(--surface-soft); }.actions .update { color: var(--primary-strong); background: var(--primary-soft); }.actions .remove { color: var(--red); background: var(--red-soft); }.empty { padding: 32px; color: var(--text-soft); text-align: center; }
+.ruleset-table-card { overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.table-wrap { overflow-x: auto; }.ruleset-data-table { width: 100%; min-width: 980px; border-collapse: collapse; }.ruleset-data-table th { padding: 11px 13px; color: var(--text-faint); background: var(--surface-soft); font-size: 9px; font-weight: 700; text-align: left; }.ruleset-data-table th.right { text-align: right; }.ruleset-data-table td { padding: 11px 13px; border-top: 1px solid var(--line); vertical-align: middle; }.ruleset-data-table tr.disabled { opacity: .58; }.ruleset-data-table tr:hover td { background: color-mix(in srgb, var(--surface-soft) 72%, transparent); }.ruleset-name { display: flex; min-width: 180px; align-items: center; gap: 10px; }.ruleset-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.ruleset-icon.manual { color: var(--green); background: var(--green-soft); }.ruleset-name strong, .ruleset-name small { display: block; max-width: 220px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.ruleset-name strong { color: var(--text); font-size: 11px; }.ruleset-name small { margin-top: 1px; color: var(--text-faint); font-size: 8px; }.source-badge { display: inline-flex; min-height: 22px; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; color: var(--primary); background: var(--primary-soft); font-size: 9px; font-weight: 670; }.source-badge::before { width: 4px; height: 4px; border-radius: 50%; content: ""; background: currentColor; }.source-badge.manual { color: var(--green); background: var(--green-soft); }.format-badge { display: inline-flex; padding: 3px 7px; border-radius: 6px; color: var(--primary); background: var(--primary-soft); font: 9px ui-monospace, monospace; }.path { display: block; max-width: 130px; overflow: hidden; margin-top: 3px; color: var(--text-faint); font-size: 7px; text-overflow: ellipsis; white-space: nowrap; }.rule-count { display: block; color: var(--text); font-size: 10px; font-variant-numeric: tabular-nums; }.rule-count + small { display: block; margin-top: 2px; color: var(--text-faint); font-size: 8px; }.update-plan span, .update-plan small, .updated strong, .updated span { display: block; }.update-plan span { display: inline-flex; align-items: center; gap: 4px; color: var(--text-soft); font-size: 9px; font-weight: 650; }.update-plan span.scheduled { color: var(--primary); }.update-plan small, .updated span { margin-top: 2px; color: var(--text-faint); font-size: 8px; }.updated { max-width: 130px; }.updated strong { color: var(--text-soft); font-size: 9px; }.updated span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.updated.failed strong, .updated.failed span { color: var(--red); }.table-actions { display: flex; justify-content: flex-end; gap: 4px; }.table-actions button { display: inline-grid; width: 30px; min-height: 30px; place-items: center; padding: 0; border: 0; border-radius: 7px; color: var(--text-soft); background: transparent; }.table-actions button:hover { color: var(--primary); background: var(--primary-soft); }.empty-state { display: grid; min-height: 240px; place-items: center; align-content: center; gap: 7px; color: var(--text-faint); text-align: center; }.empty-state strong { color: var(--text); font-size: 12px; }.empty-state span { font-size: 9px; }.empty-state button { min-height: 31px; margin-top: 4px; padding: 5px 9px; color: var(--primary); background: var(--primary-soft); font-size: 9px; }
 </style>

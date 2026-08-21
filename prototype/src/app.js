@@ -260,15 +260,15 @@
   ];
 
   const rulesetHubItems = [
-    { id: "geosite-cn", name: "geosite-cn", category: "geosite", count: 124632, source: "SagerNet/sing-geosite", description: "中国大陆常用域名集合" },
-    { id: "geosite-private", name: "geosite-private", category: "geosite", count: 1934, source: "SagerNet/sing-geosite", description: "局域网与私有域名集合" },
-    { id: "geosite-geolocation-not-cn", name: "geosite-geolocation-!cn", category: "geosite", count: 86319, source: "SagerNet/sing-geosite", description: "中国大陆以外的域名集合" },
-    { id: "geosite-category-ads-all", name: "geosite-category-ads-all", category: "geosite", count: 216804, source: "SagerNet/sing-geosite", description: "广告与跟踪域名集合" },
-    { id: "geosite-google", name: "geosite-google", category: "geosite", count: 11482, source: "SagerNet/sing-geosite", description: "Google 服务域名集合" },
-    { id: "geosite-github", name: "geosite-github", category: "geosite", count: 1246, source: "SagerNet/sing-geosite", description: "GitHub 及相关服务域名" },
-    { id: "geoip-cn", name: "geoip-cn", category: "geoip", count: 8926, source: "SagerNet/sing-geoip", description: "中国大陆 IPv4 与 IPv6 地址段" },
-    { id: "geoip-private", name: "geoip-private", category: "geoip", count: 32, source: "SagerNet/sing-geoip", description: "私有网络 IP 地址段" },
-    { id: "geoip-cloudflare", name: "geoip-cloudflare", category: "geoip", count: 486, source: "SagerNet/sing-geoip", description: "Cloudflare 网络地址段" },
+    { id: "geosite-cn", name: "cn", category: "geosite", count: 111868, source: "MetaCubeX/meta-rules-dat", description: "中国大陆常用域名集合" },
+    { id: "geosite-private", name: "private", category: "geosite", count: 131, source: "MetaCubeX/meta-rules-dat", description: "局域网与私有域名集合" },
+    { id: "geosite-geolocation-not-cn", name: "geolocation-!cn", category: "geosite", count: 27001, source: "MetaCubeX/meta-rules-dat", description: "中国大陆以外的域名集合" },
+    { id: "geosite-category-ads-all", name: "category-ads-all", category: "geosite", count: 905, source: "MetaCubeX/meta-rules-dat", description: "广告与跟踪域名集合" },
+    { id: "geosite-google", name: "google", category: "geosite", count: 1070, source: "MetaCubeX/meta-rules-dat", description: "Google 服务域名集合" },
+    { id: "geosite-github", name: "github", category: "geosite", count: 63, source: "MetaCubeX/meta-rules-dat", description: "GitHub 及相关服务域名" },
+    { id: "geoip-cn", name: "cn", category: "geoip", count: 5817, source: "MetaCubeX/meta-rules-dat", description: "中国大陆 IPv4 与 IPv6 地址段" },
+    { id: "geoip-private", name: "private", category: "geoip", count: 18, source: "MetaCubeX/meta-rules-dat", description: "私有网络 IP 地址段" },
+    { id: "geoip-cloudflare", name: "cloudflare", category: "geoip", count: 711, source: "MetaCubeX/meta-rules-dat", description: "Cloudflare 网络地址段" },
   ];
 
   const routeRuleTypeOptions = [
@@ -545,11 +545,11 @@
       },
     ],
     rulesets: [
-      { id: 1, hubId: "geosite-cn", name: "geosite-cn", source: "SagerNet/sing-geosite", type: "remote", format: "binary", count: 124632, size: "3.8 MB", updated: "今天 09:42", url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-cn.srs", updateInterval: "6h", nextUpdate: "约 6 小时后", disabled: false },
-      { id: 2, hubId: "geoip-cn", name: "geoip-cn", source: "SagerNet/sing-geoip", type: "remote", format: "binary", count: 8926, size: "1.2 MB", updated: "今天 09:42", url: "https://raw.githubusercontent.com/SagerNet/sing-geoip/rule-set/geoip-cn.srs", updateInterval: "12h", nextUpdate: "约 12 小时后", disabled: false },
-      { id: 3, hubId: "geosite-geolocation-not-cn", name: "geosite-geolocation-!cn", source: "SagerNet/sing-geosite", type: "remote", format: "binary", count: 86319, size: "4.6 MB", updated: "昨天 22:16", url: "https://raw.githubusercontent.com/SagerNet/sing-geosite/rule-set/geosite-geolocation-!cn.srs", updateInterval: "1d", nextUpdate: "约 1 天后", disabled: false },
+      { id: 1, hubId: "geosite-cn", name: "geosite-cn", source: "MetaCubeX/meta-rules-dat", type: "remote", format: "binary", count: 111868, size: "3.8 MB", updated: "今天 09:42", url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/cn.srs", updateInterval: "6h", nextUpdate: "约 6 小时后", disabled: false },
+      { id: 2, hubId: "geoip-cn", name: "geoip-cn", source: "MetaCubeX/meta-rules-dat", type: "remote", format: "binary", count: 5817, size: "1.2 MB", updated: "今天 09:42", url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/cn.srs", updateInterval: "12h", nextUpdate: "约 12 小时后", disabled: false },
+      { id: 3, hubId: "geosite-geolocation-not-cn", name: "geosite-geolocation-!cn", source: "MetaCubeX/meta-rules-dat", type: "remote", format: "binary", count: 27001, size: "4.6 MB", updated: "昨天 22:16", url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/geolocation-!cn.srs", updateInterval: "1d", nextUpdate: "约 1 天后", disabled: false },
       { id: 4, name: "private-custom", source: "手工规则 · JSON", type: "manual", format: "source", count: 4, size: "238 B", updated: "8 月 16 日", url: "", updateInterval: "manual", nextUpdate: "手工维护", disabled: false, content: manualRulesetExample },
-      { id: 5, hubId: "geosite-category-ads-all", name: "ads-all", source: "privacy-protection", type: "remote", format: "binary", count: 216804, size: "6.7 MB", updated: "8 月 17 日", url: "https://example.com/rules/ads-all.srs", updateInterval: "7d", nextUpdate: "约 7 天后", disabled: false },
+      { id: 5, hubId: "geosite-category-ads-all", name: "ads-all", source: "MetaCubeX/meta-rules-dat", type: "remote", format: "binary", count: 905, size: "6.7 MB", updated: "8 月 17 日", url: "https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/category-ads-all.srs", updateInterval: "7d", nextUpdate: "约 7 天后", disabled: false },
     ],
   };
 
@@ -2743,9 +2743,9 @@
   }
 
   function rulesetHubUrl(item, format) {
-    const repository = item.category === "geoip" ? "sing-geoip" : "sing-geosite";
+    const directory = item.category === "geoip" ? "geoip" : "geosite";
     const suffix = format === "source" ? "json" : "srs";
-    return `https://raw.githubusercontent.com/SagerNet/${repository}/rule-set/${item.name}.${suffix}`;
+    return `https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/${directory}/${item.name}.${suffix}`;
   }
 
   function isRulesetHubItemAdded(itemId, format) {
@@ -2801,7 +2801,7 @@
 
   function rulesetHubModal() {
     const body = `<div class="modal-body ruleset-hub-body">
-      <div class="ruleset-hub-overview"><span class="ruleset-hub-overview-icon">${icon("database")}</span><div class="ruleset-hub-overview-copy"><strong>精选公共规则模板</strong><span>来自 SagerNet 社区仓库，导入后可独立设置更新周期。</span></div><div class="ruleset-hub-overview-stats"><span><strong>${rulesetHubItems.length}</strong><small>全部模板</small></span><span><strong data-ruleset-hub-imported-count>${rulesetHubImportedCount()}</strong><small>已导入</small></span></div></div>
+      <div class="ruleset-hub-overview"><span class="ruleset-hub-overview-icon">${icon("database")}</span><div class="ruleset-hub-overview-copy"><strong>Ruleset-Hub 规则目录</strong><span>目录来自 GUI-for-Cores，规则文件由 MetaCubeX/meta-rules-dat 提供。</span></div><div class="ruleset-hub-overview-stats"><span><strong>${rulesetHubItems.length}</strong><small>全部模板</small></span><span><strong data-ruleset-hub-imported-count>${rulesetHubImportedCount()}</strong><small>已导入</small></span></div></div>
       <div class="ruleset-hub-toolbar"><label class="search-wrap">${icon("search")}<input class="search-input" data-ruleset-hub-search value="${escapeHtml(state.rulesetHubSearch)}" placeholder="搜索名称、来源或用途..." /></label><div class="ruleset-hub-filters" role="group" aria-label="规则模板分类">${["all", "geosite", "geoip"].map(rulesetHubFilterButton).join("")}</div><button class="btn btn-sm ruleset-hub-refresh" type="button" data-action="refresh-ruleset-hub" title="刷新规则集中心">${icon("rotate")}<span>刷新</span></button></div>
       <div data-ruleset-hub-results>${rulesetHubResultsMarkup()}</div>
     </div>`;

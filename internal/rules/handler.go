@@ -10,11 +10,20 @@ import (
 	"singbox-web/internal/storage"
 )
 
-const requestLimit = 16 << 10
+const requestLimit = maxRuleBytes + (64 << 10)
 
-type Handler struct{ service *Service }
+type Handler struct {
+	service *Service
+	catalog *CatalogService
+}
 
-func NewHandler(service *Service) *Handler { return &Handler{service: service} }
+func NewHandler(service *Service, catalogs ...*CatalogService) *Handler {
+	handler := &Handler{service: service}
+	if len(catalogs) > 0 {
+		handler.catalog = catalogs[0]
+	}
+	return handler
+}
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.service == nil {
@@ -31,6 +40,10 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			httpapi.MethodNotAllowed(w, http.MethodGet, http.MethodPost)
 		}
+		return
+	}
+	if r.URL.Path == base+"/catalog" || strings.HasPrefix(r.URL.Path, base+"/catalog/") {
+		h.catalogRequest(w, r, strings.TrimPrefix(r.URL.Path, base+"/catalog"))
 		return
 	}
 	part := strings.TrimPrefix(r.URL.Path, base+"/")
@@ -52,13 +65,77 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch r.Method {
+	case http.MethodGet:
+		h.get(w, r, parts[0])
 	case http.MethodPatch:
 		h.patch(w, r, parts[0])
 	case http.MethodDelete:
 		h.delete(w, r, parts[0])
 	default:
-		httpapi.MethodNotAllowed(w, http.MethodPatch, http.MethodDelete)
+		httpapi.MethodNotAllowed(w, http.MethodGet, http.MethodPatch, http.MethodDelete)
 	}
+}
+
+func (h *Handler) catalogRequest(w http.ResponseWriter, r *http.Request, suffix string) {
+	if h.catalog == nil {
+		apierror.Write(w, http.StatusServiceUnavailable, apierror.Error{Code: "rule_catalog_unavailable", Message: "规则集目录服务不可用"})
+		return
+	}
+	switch {
+	case suffix == "" && r.Method == http.MethodGet:
+		result, err := h.catalog.List(r.Context())
+		if err != nil {
+			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "rule_catalog_cache_invalid", Message: err.Error(), Stage: "list_rule_catalog"})
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, result)
+	case suffix == "/refresh" && r.Method == http.MethodPost:
+		result, err := h.catalog.Refresh(r.Context())
+		if err != nil {
+			apierror.Write(w, http.StatusBadGateway, apierror.Error{Code: "rule_catalog_refresh_failed", Message: "刷新规则集目录失败", Stage: "refresh_rule_catalog"})
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, result)
+	case suffix == "/preview" && r.Method == http.MethodGet:
+		result, err := h.catalog.Preview(r.Context(), r.URL.Query().Get("key"))
+		if err != nil {
+			status := http.StatusBadRequest
+			if errors.Is(err, ErrCatalogUnavailable) {
+				status = http.StatusServiceUnavailable
+			}
+			apierror.Write(w, status, apierror.Error{Code: "rule_catalog_preview_failed", Message: err.Error(), Stage: "preview_rule_catalog"})
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, result)
+	case suffix == "/import" && r.Method == http.MethodPost:
+		var input CatalogImportInput
+		if err := httpapi.DecodeJSON(w, r, &input, 16<<10); err != nil {
+			apierror.WriteError(w, err)
+			return
+		}
+		result, err := h.catalog.Import(r.Context(), input)
+		if err != nil {
+			var duplicate *CatalogAlreadyImportedError
+			if errors.As(err, &duplicate) {
+				apierror.Write(w, http.StatusConflict, apierror.Error{Code: "rule_catalog_already_imported", Message: duplicate.Error(), Stage: "import_rule_catalog"})
+				return
+			}
+			writeError(w, err, "import_rule_catalog")
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusCreated, result)
+	default:
+		httpapi.MethodNotAllowed(w, http.MethodGet, http.MethodPost)
+	}
+}
+
+func (h *Handler) get(w http.ResponseWriter, r *http.Request, id string) {
+	resource, err := h.service.Get(r.Context(), id)
+	if err != nil {
+		writeError(w, err, "get_rule_resource")
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, resource)
 }
 func (h *Handler) update(w http.ResponseWriter, r *http.Request, id string) {
 	result, err := h.service.UpdateNow(r.Context(), id)

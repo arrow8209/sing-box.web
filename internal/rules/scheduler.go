@@ -79,7 +79,7 @@ func (s *Service) RebuildSchedule(ctx context.Context, now time.Time) error {
 	changed := false
 	for index := range resources {
 		resource := &resources[index]
-		if resource.Disabled || resource.UpdateInterval == "" {
+		if effectiveSourceType(resource.SourceType) == SourceManual || resource.Disabled || resource.UpdateInterval == "" {
 			if resource.NextUpdateAt != nil {
 				resource.NextUpdateAt = nil
 				changed = true
@@ -107,7 +107,7 @@ func (s *Service) NextScheduled() (ScheduledUpdate, bool) {
 	}
 	var next ScheduledUpdate
 	for _, resource := range resources {
-		if resource.Disabled || resource.UpdateInterval == "" || resource.NextUpdateAt == nil {
+		if effectiveSourceType(resource.SourceType) == SourceManual || resource.Disabled || resource.UpdateInterval == "" || resource.NextUpdateAt == nil {
 			continue
 		}
 		if next.ResourceID == "" || resource.NextUpdateAt.Before(next.At) || (resource.NextUpdateAt.Equal(next.At) && resource.ID < next.ResourceID) {
@@ -137,7 +137,7 @@ func (s *Service) RecordScheduleResult(ctx context.Context, id string, updateErr
 		return ErrNotFound
 	}
 	resource := &resources[index]
-	if resource.Disabled || resource.UpdateInterval == "" {
+	if effectiveSourceType(resource.SourceType) == SourceManual || resource.Disabled || resource.UpdateInterval == "" {
 		resource.NextUpdateAt = nil
 		return s.store.write(resources)
 	}
