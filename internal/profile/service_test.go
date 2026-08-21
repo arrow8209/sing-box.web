@@ -74,6 +74,55 @@ func TestDraftRoundTripPreservesUnknownOutboundFields(t *testing.T) {
 	}
 }
 
+func TestDraftRoundTripPreservesUnknownTopLevelModule(t *testing.T) {
+	service, layout := newTestService(t)
+	meta, _, err := service.Create(context.Background(), CreateInput{Name: "未来模块"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	raw := `{"futureInteger":9007199254740993,"nested":["x",true]}`
+	saved, _, err := service.SaveDraft(context.Background(), meta.ID, `"rev-1"`, DraftInput{Buffers: map[string]string{"future_module": raw}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(saved.Config["future_module"]) != raw || saved.Buffers["future_module"] != raw {
+		t.Fatalf("saved=%+v", saved)
+	}
+	reopened, err := Open(layout, service.templates, service.defaultBindings, testClock, bytes.NewReader(bytes.Repeat([]byte{0x44}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, _, err := reopened.GetDraft(context.Background(), meta.ID)
+	if err != nil || !bytes.Contains(draft.Config["future_module"], []byte("9007199254740993")) || draft.Buffers["future_module"] != raw {
+		t.Fatalf("unknown module was not preserved, err=%v", err)
+	}
+}
+
+func TestSaveDraftMergesPartialBuffersAndPreservesInvalidBuffer(t *testing.T) {
+	service, _ := newTestService(t)
+	meta, _, err := service.Create(context.Background(), CreateInput{Name: "局部缓冲"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	original, _, err := service.GetDraft(context.Background(), meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := service.SaveDraft(context.Background(), meta.ID, `"rev-1"`, DraftInput{Buffers: map[string]string{"outbounds": "[{"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(saved.Config["outbounds"], original.Config["outbounds"]) {
+		t.Fatalf("invalid buffer overwrote valid config: %s", saved.Config["outbounds"])
+	}
+	if saved.Buffers["outbounds"] != "[{" {
+		t.Fatalf("invalid buffer was not retained: %q", saved.Buffers["outbounds"])
+	}
+	if saved.Buffers["dns"] != original.Buffers["dns"] {
+		t.Fatal("unsubmitted dns buffer was discarded")
+	}
+}
+
 func TestCorruptSingleDraftQuarantinesOnlyThatProfile(t *testing.T) {
 	service, layout := newTestService(t)
 	first, _, err := service.Create(context.Background(), CreateInput{Name: "A"})
@@ -153,6 +202,33 @@ func TestConcurrentSaveAllowsOnlyOneMatchingRevision(t *testing.T) {
 	}
 	if successes != 1 || conflicts != 1 {
 		t.Fatalf("successes=%d conflicts=%d", successes, conflicts)
+	}
+}
+
+func TestMarkResourcesChangedIgnoresDisabledBindings(t *testing.T) {
+	service, _ := newTestService(t)
+	meta, draft, err := service.Create(context.Background(), CreateInput{Name: "禁用资源"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := service.MarkApplied(context.Background(), AppliedResult{ProfileID: meta.ID, Revision: draft.Revision, AppliedAt: testClock()}); err != nil {
+		t.Fatal(err)
+	}
+	if _, _, err := service.SaveDraft(context.Background(), meta.ID, `"rev-1"`, DraftInput{Bindings: []RuleBinding{{ResourceID: "resource-a", Tag: "geosite-cn", Enabled: false}}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.MarkApplied(context.Background(), AppliedResult{ProfileID: meta.ID, Revision: 2, AppliedAt: testClock()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.MarkResourcesChanged(context.Background(), []string{"resource-a"}); err != nil {
+		t.Fatal(err)
+	}
+	profiles, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if profiles[0].NeedsApply {
+		t.Fatalf("disabled binding changed needsApply: %+v", profiles[0])
 	}
 }
 

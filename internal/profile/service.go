@@ -22,13 +22,6 @@ const (
 	maxDraftBytes  = 4 << 20
 )
 
-var editableModules = map[string]struct{}{
-	"$schema": {}, "log": {}, "dns": {}, "ntp": {}, "certificate": {},
-	"certificate_providers": {}, "http_clients": {}, "network_namespaces": {},
-	"endpoints": {}, "inbounds": {}, "outbounds": {}, "route": {},
-	"services": {}, "experimental": {},
-}
-
 type Service struct {
 	templates       *templates.Factory
 	defaultBindings DefaultBindingSource
@@ -157,10 +150,22 @@ func (s *Service) Delete(ctx context.Context, profileID string, input DeleteInpu
 		}
 	}
 	next := append(append([]Meta(nil), metas[:index]...), metas[index+1:]...)
-	if err := s.store.writeMetas(next); err != nil {
+	stagedDraft := s.store.draftPath(profileID) + ".deleting"
+	if _, err := os.Lstat(stagedDraft); err == nil {
+		return fmt.Errorf("存在未完成的草稿删除: %s", profileID)
+	} else if !os.IsNotExist(err) {
 		return err
 	}
-	if err := os.Remove(s.store.draftPath(profileID)); err != nil && !os.IsNotExist(err) {
+	if err := os.Rename(s.store.draftPath(profileID), stagedDraft); err != nil && !os.IsNotExist(err) {
+		return err
+	}
+	if err := s.store.writeMetas(next); err != nil {
+		if restoreErr := os.Rename(stagedDraft, s.store.draftPath(profileID)); restoreErr != nil && !os.IsNotExist(restoreErr) {
+			return fmt.Errorf("删除档案元数据失败: %w（恢复草稿失败: %v）", err, restoreErr)
+		}
+		return err
+	}
+	if err := os.Remove(stagedDraft); err != nil && !os.IsNotExist(err) {
 		return err
 	}
 	return nil
@@ -203,7 +208,11 @@ func (s *Service) SaveDraft(ctx context.Context, profileID, ifMatch string, inpu
 	if err != nil {
 		return Draft{}, "", err
 	}
-	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, Config: nextConfig, Buffers: cloneBuffers(input.Buffers), Bindings: append([]RuleBinding(nil), input.Bindings...), SavedAt: s.clock().UTC()}
+	nextBuffers := cloneBuffers(draft.Buffers)
+	for module, buffer := range input.Buffers {
+		nextBuffers[module] = buffer
+	}
+	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, Config: nextConfig, Buffers: nextBuffers, Bindings: append([]RuleBinding(nil), input.Bindings...), SavedAt: s.clock().UTC()}
 	if err := validateDraftEnvelope(next, maxModuleBytes, maxDraftBytes); err != nil {
 		return Draft{}, "", err
 	}
@@ -276,7 +285,11 @@ func (s *Service) MarkResourcesChanged(ctx context.Context, resourceIDs []string
 			continue
 		}
 		for _, binding := range draft.Bindings {
-			if _, ok := wanted[binding.ResourceID]; ok {
+			if binding.Enabled {
+				_, ok := wanted[binding.ResourceID]
+				if !ok {
+					continue
+				}
 				if !metas[index].NeedsApply {
 					metas[index].NeedsApply = true
 					changed = true
@@ -433,9 +446,6 @@ func randomHex(source io.Reader, size int) (string, error) {
 func reconcileBuffers(current map[string]json.RawMessage, buffers map[string]string) (map[string]json.RawMessage, error) {
 	next := cloneConfig(current)
 	for module, buffer := range buffers {
-		if _, ok := editableModules[module]; !ok {
-			return nil, fmt.Errorf("不支持的草稿模块: %s", module)
-		}
 		if len(buffer) > maxModuleBytes {
 			return nil, fmt.Errorf("草稿模块过大: %s", module)
 		}
@@ -455,9 +465,6 @@ func validateDraftEnvelope(draft Draft, moduleLimit, totalLimit int) error {
 		return fmt.Errorf("草稿包不完整")
 	}
 	for module, value := range draft.Config {
-		if _, ok := editableModules[module]; !ok {
-			return fmt.Errorf("不支持的草稿模块: %s", module)
-		}
 		if len(value) > moduleLimit {
 			return fmt.Errorf("草稿模块过大: %s", module)
 		}
@@ -466,9 +473,6 @@ func validateDraftEnvelope(draft Draft, moduleLimit, totalLimit int) error {
 		}
 	}
 	for module, value := range draft.Buffers {
-		if _, ok := editableModules[module]; !ok {
-			return fmt.Errorf("不支持的草稿模块: %s", module)
-		}
 		if len(value) > moduleLimit {
 			return fmt.Errorf("草稿模块过大: %s", module)
 		}
