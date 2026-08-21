@@ -23,7 +23,11 @@ func TestDefaultBindingSourceCreatesConcreteBindings(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	bindings, err := NewDefaultBindingSource(factory, store, bytes.NewReader(bytes.Repeat([]byte{0x22}, 256))).DefaultBindings(context.Background())
+	randomIDs := make([]byte, 0, 16*6)
+	for value := byte(1); value <= 6; value++ {
+		randomIDs = append(randomIDs, bytes.Repeat([]byte{value}, 16)...)
+	}
+	bindings, err := NewDefaultBindingSource(factory, store, bytes.NewReader(randomIDs)).DefaultBindings(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}

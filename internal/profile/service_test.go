@@ -250,3 +250,74 @@ func TestServiceReopensDraftAndQuarantineState(t *testing.T) {
 		t.Fatalf("draft=%+v etag=%q err=%v", draft, etag, err)
 	}
 }
+
+func TestRecoverDeletingDraftRestoresExistingProfile(t *testing.T) {
+	service, layout := newTestService(t)
+	meta, _, err := service.Create(context.Background(), CreateInput{Name: "恢复删除"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draftPath := filepath.Join(layout.DraftsDir, meta.ID+".json")
+	stagedPath := draftPath + ".deleting"
+	if err := os.Rename(draftPath, stagedPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecoverDeletingDrafts(layout); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(draftPath); err != nil {
+		t.Fatalf("draft was not restored: %v", err)
+	}
+	if _, err := os.Stat(stagedPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("staged draft remains: %v", err)
+	}
+}
+
+func TestRecoverDeletingDraftCleansDeletedProfile(t *testing.T) {
+	service, layout := newTestService(t)
+	meta, _, err := service.Create(context.Background(), CreateInput{Name: "清理删除"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	draftPath := filepath.Join(layout.DraftsDir, meta.ID+".json")
+	stagedPath := draftPath + ".deleting"
+	if err := os.Rename(draftPath, stagedPath); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.store.writeMetas([]Meta{}); err != nil {
+		t.Fatal(err)
+	}
+	if err := RecoverDeletingDrafts(layout); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stagedPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("deleted profile draft remains: %v", err)
+	}
+}
+
+func TestDeleteReturnsSuccessAfterMetadataCommitWhenCleanupFails(t *testing.T) {
+	service, layout := newTestService(t)
+	service.SetDeleteGuard(allowDeleteGuard{})
+	meta, _, err := service.Create(context.Background(), CreateInput{Name: "一致删除"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	service.store.removeFile = func(string) error { return errors.New("injected cleanup failure") }
+	if err := service.Delete(context.Background(), meta.ID, DeleteInput{ConfirmName: meta.Name}); err != nil {
+		t.Fatalf("committed delete reported failure: %v", err)
+	}
+	metas, err := service.List(context.Background())
+	if err != nil || len(metas) != 0 {
+		t.Fatalf("metas=%+v err=%v", metas, err)
+	}
+	stagedPath := filepath.Join(layout.DraftsDir, meta.ID+".json.deleting")
+	if _, err := os.Stat(stagedPath); err != nil {
+		t.Fatalf("expected staged cleanup recovery file: %v", err)
+	}
+	if err := RecoverDeletingDrafts(layout); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(stagedPath); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("startup recovery did not clean staged draft: %v", err)
+	}
+}

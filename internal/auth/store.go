@@ -30,7 +30,7 @@ func (s *Store) Load() (State, error) {
 		return State{}, err
 	}
 	if err := validateState(state); err != nil {
-		return State{}, err
+		return State{}, &storage.CorruptFileError{Path: s.file, Err: err}
 	}
 	return state, nil
 }

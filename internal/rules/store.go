@@ -8,6 +8,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"regexp"
 	"sync"
 	"time"
 
@@ -18,6 +19,9 @@ import (
 type document struct {
 	Resources []Resource `json:"resources"`
 }
+
+var resourceIDPattern = regexp.MustCompile(`^ID_[0-9a-f]{32}$`)
+
 type Store struct {
 	file   string
 	layout paths.Layout
@@ -33,13 +37,60 @@ func OpenStore(file string, layout paths.Layout, clock func() time.Time) (*Store
 		clock = time.Now
 	}
 	if _, err := os.Stat(file); err == nil {
-		if _, err := storage.ReadJSON[document](file); err != nil {
+		if err := ValidateManagedState(file, layout); err != nil {
 			return nil, err
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
 	return &Store{file: file, layout: layout, clock: clock}, nil
+}
+
+// ValidateManagedState performs the read-only rule-resource startup gate.
+func ValidateManagedState(file string, layout paths.Layout) error {
+	document, err := storage.ReadJSON[document](file)
+	if err != nil {
+		return err
+	}
+	if err := validateDocument(document, layout); err != nil {
+		return &storage.CorruptFileError{Path: file, Err: err}
+	}
+	return nil
+}
+
+func validateDocument(data document, layout paths.Layout) error {
+	if data.Resources == nil {
+		return fmt.Errorf("resources 不能为 null")
+	}
+	ids := make(map[string]struct{}, len(data.Resources))
+	templateKeys := make(map[string]struct{}, len(data.Resources))
+	for index, resource := range data.Resources {
+		if !resourceIDPattern.MatchString(resource.ID) {
+			return fmt.Errorf("resources[%d].id 无效", index)
+		}
+		if _, exists := ids[resource.ID]; exists {
+			return fmt.Errorf("resources[%d].id 重复: %s", index, resource.ID)
+		}
+		ids[resource.ID] = struct{}{}
+		if resource.TemplateKey != "" {
+			if _, exists := templateKeys[resource.TemplateKey]; exists {
+				return fmt.Errorf("resources[%d].templateKey 重复: %s", index, resource.TemplateKey)
+			}
+			templateKeys[resource.TemplateKey] = struct{}{}
+		}
+		if resource.Format != FormatBinary && resource.Format != FormatSource {
+			return fmt.Errorf("resources[%d].format 无效", index)
+		}
+		derived := filepath.Join(layout.RuleSetsDir, resource.ID+".srs")
+		relative, err := filepath.Rel(layout.RuleSetsDir, derived)
+		if err != nil || relative != resource.ID+".srs" || filepath.IsAbs(relative) {
+			return fmt.Errorf("resources[%d].id 派生的规则路径无效", index)
+		}
+		if filepath.Clean(resource.LocalPath) != filepath.Clean(derived) {
+			return fmt.Errorf("resources[%d].localPath 不是固定派生路径", index)
+		}
+	}
+	return nil
 }
 
 func (s *Store) EnsureTemplateResources(ctx context.Context, templates []ResourceTemplate, randomSource io.Reader) (map[string]string, error) {
@@ -51,12 +102,15 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 	}
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	data := document{}
+	data := document{Resources: []Resource{}}
 	if _, err := os.Stat(s.file); err == nil {
 		var readErr error
 		data, readErr = storage.ReadJSON[document](s.file)
 		if readErr != nil {
 			return nil, readErr
+		}
+		if validateErr := validateDocument(data, s.layout); validateErr != nil {
+			return nil, &storage.CorruptFileError{Path: s.file, Err: validateErr}
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
@@ -85,6 +139,9 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 		changed = true
 	}
 	if changed || os.IsNotExist(statErr(s.file)) {
+		if err := validateDocument(data, s.layout); err != nil {
+			return nil, err
+		}
 		if err := storage.WriteJSON(s.file, data, 0o600); err != nil {
 			return nil, err
 		}

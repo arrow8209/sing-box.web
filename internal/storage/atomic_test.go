@@ -80,3 +80,15 @@ func TestReadJSONRejectsUnknownFieldsAndTrailingValue(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateJSONRejectsTrailingValueWithPath(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "core.json")
+	if err := os.WriteFile(path, []byte(`{} {}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	err := storage.ValidateJSON(path)
+	var corrupt *storage.CorruptFileError
+	if !errors.As(err, &corrupt) || corrupt.Path != path {
+		t.Fatalf("err=%v", err)
+	}
+}

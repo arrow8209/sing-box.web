@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 	"time"
@@ -52,6 +53,81 @@ func Open(layout paths.Layout, factory *templates.Factory, source DefaultBinding
 		return nil, err
 	}
 	return service, nil
+}
+
+// ValidateManagedState performs the read-only profiles gate used before any
+// startup recovery or initialization may write managed state.
+func ValidateManagedState(layout paths.Layout) error {
+	_, err := newStore(layout).loadMetas()
+	return err
+}
+
+// RecoverDeletingDrafts resolves interrupted deletions using the already
+// validated profiles index as the commit record. NewServer calls this while it
+// owns the exclusive application lock.
+func RecoverDeletingDrafts(layout paths.Layout) error {
+	store := newStore(layout)
+	metas, err := store.loadMetas()
+	if err != nil {
+		return err
+	}
+	present := make(map[string]struct{}, len(metas))
+	for _, meta := range metas {
+		present[meta.ID] = struct{}{}
+	}
+	entries, err := os.ReadDir(layout.DraftsDir)
+	if os.IsNotExist(err) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	changed := false
+	for _, entry := range entries {
+		name := entry.Name()
+		if !strings.HasSuffix(name, ".json.deleting") {
+			continue
+		}
+		profileID := strings.TrimSuffix(name, ".json.deleting")
+		if !profileIDPattern.MatchString(profileID) {
+			continue
+		}
+		staged := filepath.Join(layout.DraftsDir, name)
+		info, err := entry.Info()
+		if err != nil {
+			return fmt.Errorf("检查待恢复草稿失败 %s: %w", staged, err)
+		}
+		if !info.Mode().IsRegular() {
+			return fmt.Errorf("待恢复草稿不是普通文件: %s", staged)
+		}
+		if _, exists := present[profileID]; exists {
+			canonical := store.draftPath(profileID)
+			if _, err := os.Lstat(canonical); err == nil {
+				return fmt.Errorf("草稿与待恢复草稿同时存在: %s", staged)
+			} else if !os.IsNotExist(err) {
+				return err
+			}
+			if err := os.Rename(staged, canonical); err != nil {
+				return fmt.Errorf("恢复草稿失败 %s: %w", staged, err)
+			}
+		} else if err := store.removeFile(staged); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("清理已删除档案草稿失败 %s: %w", staged, err)
+		}
+		changed = true
+	}
+	if changed {
+		return syncDirectory(layout.DraftsDir)
+	}
+	return nil
+}
+
+func syncDirectory(path string) error {
+	directory, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer directory.Close()
+	return directory.Sync()
 }
 
 func (s *Service) SetDeleteGuard(guard DeleteGuard) {
@@ -173,14 +249,23 @@ func (s *Service) Delete(ctx context.Context, profileID string, input DeleteInpu
 	if err := os.Rename(s.store.draftPath(profileID), stagedDraft); err != nil && !os.IsNotExist(err) {
 		return err
 	}
+	if err := syncDirectory(s.store.draftsDir); err != nil {
+		return err
+	}
 	if err := s.store.writeMetas(next); err != nil {
 		if restoreErr := os.Rename(stagedDraft, s.store.draftPath(profileID)); restoreErr != nil && !os.IsNotExist(restoreErr) {
 			return fmt.Errorf("删除档案元数据失败: %w（恢复草稿失败: %v）", err, restoreErr)
 		}
+		if restoreErr := syncDirectory(s.store.draftsDir); restoreErr != nil {
+			return fmt.Errorf("删除档案元数据失败: %w（同步恢复草稿失败: %v）", err, restoreErr)
+		}
 		return err
 	}
-	if err := os.Remove(stagedDraft); err != nil && !os.IsNotExist(err) {
-		return err
+	// profiles.json is the deletion commit point. Cleanup is best effort so the
+	// API cannot report failure after the profile has already disappeared;
+	// startup recovery removes any staged draft left behind.
+	if err := s.store.removeFile(stagedDraft); err == nil {
+		_ = syncDirectory(s.store.draftsDir)
 	}
 	return nil
 }

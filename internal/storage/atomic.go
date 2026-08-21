@@ -42,6 +42,29 @@ func ReadJSON[T any](path string) (T, error) {
 	return value, nil
 }
 
+// ValidateJSON verifies that path contains exactly one syntactically valid
+// JSON value without imposing a schema owned by a later implementation phase.
+func ValidateJSON(path string) error {
+	file, err := os.Open(path)
+	if err != nil {
+		return err
+	}
+	defer file.Close()
+	decoder := json.NewDecoder(file)
+	var value json.RawMessage
+	if err := decoder.Decode(&value); err != nil {
+		return &CorruptFileError{Path: path, Err: err}
+	}
+	var extra any
+	if err := decoder.Decode(&extra); err != io.EOF {
+		if err == nil {
+			err = fmt.Errorf("包含多个 JSON 值")
+		}
+		return &CorruptFileError{Path: path, Err: err}
+	}
+	return nil
+}
+
 func WriteJSON(path string, value any, perm fs.FileMode) error {
 	payload, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {

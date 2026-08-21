@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"regexp"
 
 	"singbox-web/internal/paths"
 	"singbox-web/internal/storage"
@@ -18,10 +19,13 @@ type profileDocument struct {
 type store struct {
 	profilesFile string
 	draftsDir    string
+	removeFile   func(string) error
 }
 
+var profileIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
+
 func newStore(layout paths.Layout) *store {
-	return &store{profilesFile: layout.ProfilesFile, draftsDir: layout.DraftsDir}
+	return &store{profilesFile: layout.ProfilesFile, draftsDir: layout.DraftsDir, removeFile: os.Remove}
 }
 
 func (s *store) loadMetas() ([]Meta, error) {
@@ -35,12 +39,24 @@ func (s *store) loadMetas() ([]Meta, error) {
 		return nil, err
 	}
 	if document.Version != 1 {
-		return nil, fmt.Errorf("不支持的档案索引版本: %d", document.Version)
+		return nil, s.corrupt(fmt.Errorf("不支持的档案索引版本: %d", document.Version))
+	}
+	if document.Profiles == nil {
+		return nil, s.corrupt(fmt.Errorf("profiles 不能为 null"))
+	}
+	if err := s.validateMetas(document.Profiles); err != nil {
+		return nil, s.corrupt(err)
 	}
 	return cloneMetas(document.Profiles), nil
 }
 
 func (s *store) writeMetas(metas []Meta) error {
+	if metas == nil {
+		metas = []Meta{}
+	}
+	if err := s.validateMetas(metas); err != nil {
+		return err
+	}
 	return storage.WriteJSON(s.profilesFile, profileDocument{Version: 1, Profiles: cloneMetas(metas)}, 0o600)
 }
 
@@ -81,6 +97,44 @@ func (s *store) create(meta Meta, draft Draft) error {
 
 func (s *store) draftPath(profileID string) string {
 	return filepath.Join(s.draftsDir, profileID+".json")
+}
+
+func (s *store) corrupt(err error) error {
+	return &storage.CorruptFileError{Path: s.profilesFile, Err: err}
+}
+
+func (s *store) validateMetas(metas []Meta) error {
+	seen := make(map[string]struct{}, len(metas))
+	for index, meta := range metas {
+		if !profileIDPattern.MatchString(meta.ID) {
+			return fmt.Errorf("profiles[%d].id 无效", index)
+		}
+		if _, exists := seen[meta.ID]; exists {
+			return fmt.Errorf("profiles[%d].id 重复: %s", index, meta.ID)
+		}
+		seen[meta.ID] = struct{}{}
+		if _, err := validateName(meta.Name); err != nil {
+			return fmt.Errorf("profiles[%d].name: %w", index, err)
+		}
+		if meta.DraftRevision == 0 {
+			return fmt.Errorf("profiles[%d].draftRevision 无效", index)
+		}
+		if meta.AppliedRevision != nil && (*meta.AppliedRevision == 0 || *meta.AppliedRevision > meta.DraftRevision) {
+			return fmt.Errorf("profiles[%d].appliedRevision 无效", index)
+		}
+		if meta.AppliedResourceDigests == nil {
+			return fmt.Errorf("profiles[%d].appliedResourceDigests 不能为 null", index)
+		}
+		if meta.LastValidation != nil && (meta.LastValidation.Revision == 0 || meta.LastValidation.Revision > meta.DraftRevision) {
+			return fmt.Errorf("profiles[%d].lastValidation.revision 无效", index)
+		}
+		derived := s.draftPath(meta.ID)
+		relative, err := filepath.Rel(s.draftsDir, derived)
+		if err != nil || relative != meta.ID+".json" || filepath.IsAbs(relative) {
+			return fmt.Errorf("profiles[%d].id 派生的草稿路径无效", index)
+		}
+	}
+	return nil
 }
 
 func cloneDraft(source Draft) Draft {

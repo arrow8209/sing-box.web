@@ -81,6 +81,28 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		}
 		return nil, fmt.Errorf("请先执行 singbox-web admin set-password: %w", err)
 	}
+	// Complete every read-only managed JSON gate before recovery or service
+	// initialization is allowed to write state.
+	if err := profile.ValidateManagedState(layout); err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(layout.RulesFile); err == nil {
+		if err := rules.ValidateManagedState(layout.RulesFile, layout); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if _, err := os.Stat(layout.CoreFile); err == nil {
+		if err := storage.ValidateJSON(layout.CoreFile); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	if err := profile.RecoverDeletingDrafts(layout); err != nil {
+		return nil, err
+	}
 	ruleStore, err := rules.OpenStore(layout.RulesFile, layout, clock)
 	if err != nil {
 		return nil, err
