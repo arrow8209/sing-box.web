@@ -191,7 +191,8 @@ func (m *Manager) Status(_ context.Context) Status {
 	defer m.mu.Unlock()
 	status := Status{InstalledVersion: state.InstalledVersion, InstalledDigest: state.InstalledDigest, State: m.state,
 		CurrentProfileID: state.CurrentProfileID, AppliedRevision: state.AppliedRevision, ExpectedRunning: state.ExpectedRunning,
-		LastError: state.LastStartError, Operation: m.operation.Status()}
+		ConfigDirectoryDigest: state.ConfigDirectoryDigest,
+		LastError:             state.LastStartError, Operation: m.operation.Status()}
 	if status.LastError == "" {
 		status.LastError = m.lastError
 	}
@@ -208,6 +209,39 @@ func (m *Manager) Status(_ context.Context) Status {
 		status.State = ProcessNotInstalled
 	}
 	return status
+}
+
+func (m *Manager) CommitApplication(profileID string, revision uint64, digest string) error {
+	if m == nil || m.store == nil {
+		return errors.New("核心状态存储不可用")
+	}
+	_, err := m.store.Update(func(state *PersistentState) error {
+		state.CurrentProfileID = profileID
+		state.AppliedRevision = &revision
+		state.ExpectedRunning = true
+		state.ConfigDirectoryDigest = digest
+		state.LastStartError = ""
+		now := time.Now().UTC()
+		state.LastStartedAt = &now
+		return nil
+	})
+	return err
+}
+
+func (m *Manager) ClearApplication() error {
+	if m == nil || m.store == nil {
+		return errors.New("核心状态存储不可用")
+	}
+	_, err := m.store.Update(func(state *PersistentState) error {
+		state.CurrentProfileID = ""
+		state.AppliedRevision = nil
+		state.ExpectedRunning = false
+		state.ConfigDirectoryDigest = ""
+		state.LastStartError = ""
+		state.LastStartedAt = nil
+		return nil
+	})
+	return err
 }
 
 func (m *Manager) finishExit(process Process, result ProcessResult) {

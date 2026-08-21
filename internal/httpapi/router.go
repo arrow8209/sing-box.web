@@ -18,6 +18,7 @@ type Dependencies struct {
 	ProfileHandler      http.Handler
 	RuleResourceHandler http.Handler
 	ConfigHandler       http.Handler
+	ApplicationHandler  http.Handler
 	CoreHandler         http.Handler
 	Authenticate        Middleware
 	RequireCSRF         Middleware
@@ -32,6 +33,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	profiles := deps.ProfileHandler
 	rules := deps.RuleResourceHandler
 	configuration := deps.ConfigHandler
+	application := deps.ApplicationHandler
 	core := deps.CoreHandler
 	if profiles == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
 		profiles = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -48,6 +50,14 @@ func NewRouter(deps Dependencies) http.Handler {
 	} else {
 		configuration = csrfForWrites(configuration, deps.RequireCSRF)
 		configuration = deps.Authenticate(configuration)
+	}
+	if application == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
+		application = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
+		})
+	} else {
+		application = csrfForWrites(application, deps.RequireCSRF)
+		application = deps.Authenticate(application)
 	}
 	if rules == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
 		rules = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -67,7 +77,9 @@ func NewRouter(deps Dependencies) http.Handler {
 	return SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/profiles" || strings.HasPrefix(r.URL.Path, "/api/v1/profiles/"):
-			if strings.HasSuffix(r.URL.Path, "/preview") || strings.HasSuffix(r.URL.Path, "/validate") {
+			if strings.HasSuffix(r.URL.Path, "/apply") {
+				application.ServeHTTP(w, r)
+			} else if strings.HasSuffix(r.URL.Path, "/preview") || strings.HasSuffix(r.URL.Path, "/validate") {
 				configuration.ServeHTTP(w, r)
 			} else {
 				profiles.ServeHTTP(w, r)

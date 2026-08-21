@@ -12,6 +12,7 @@ import (
 	"sync"
 	"time"
 
+	"singbox-web/internal/application"
 	"singbox-web/internal/auth"
 	"singbox-web/internal/capabilities"
 	"singbox-web/internal/configgen"
@@ -143,11 +144,14 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		return nil, err
 	}
 	coreManager := core.NewManager(layout, coreStore, coreLog, operation)
+	coordinator := application.NewCoordinator(profileService, ruleService, nil, checker, coreManager, operation)
+	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),
 		RuleResourceHandler: rules.NewHandler(ruleService),
 		ConfigHandler:       configHandler,
+		ApplicationHandler:  application.NewHandler(coordinator),
 		CoreHandler:         core.NewHandler(coreManager),
 		Authenticate:        authHandler.Middleware,
 		RequireCSRF:         auth.RequireCSRF,

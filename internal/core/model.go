@@ -53,18 +53,19 @@ type OperationStatus struct {
 
 // Status combines durable metadata with process facts maintained in memory.
 type Status struct {
-	InstalledVersion string          `json:"installedVersion"`
-	InstalledDigest  string          `json:"installedDigest"`
-	State            ProcessState    `json:"state"`
-	PID              int             `json:"pid"`
-	CurrentProfileID string          `json:"currentProfileId"`
-	AppliedRevision  *uint64         `json:"appliedRevision"`
-	ExpectedRunning  bool            `json:"expectedRunning"`
-	StartedAt        *time.Time      `json:"startedAt"`
-	LastError        string          `json:"lastError"`
-	PendingProfileID string          `json:"pendingProfileId,omitempty"`
-	PendingRevision  *uint64         `json:"pendingRevision,omitempty"`
-	Operation        OperationStatus `json:"operation"`
+	InstalledVersion      string          `json:"installedVersion"`
+	InstalledDigest       string          `json:"installedDigest"`
+	State                 ProcessState    `json:"state"`
+	PID                   int             `json:"pid"`
+	CurrentProfileID      string          `json:"currentProfileId"`
+	AppliedRevision       *uint64         `json:"appliedRevision"`
+	ExpectedRunning       bool            `json:"expectedRunning"`
+	ConfigDirectoryDigest string          `json:"configDirectoryDigest"`
+	StartedAt             *time.Time      `json:"startedAt"`
+	LastError             string          `json:"lastError"`
+	PendingProfileID      string          `json:"pendingProfileId,omitempty"`
+	PendingRevision       *uint64         `json:"pendingRevision,omitempty"`
+	Operation             OperationStatus `json:"operation"`
 }
 
 func (s Status) Running() bool {
