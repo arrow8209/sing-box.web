@@ -18,4 +18,8 @@ var PhaseOne = Response{
 	RuleResources: true,
 	Application:   true,
 	CoreUpdate:    true,
+	Runtime:       false,
+	Traffic:       false,
+	Connections:   false,
+	ProxyGroups:   false,
 }

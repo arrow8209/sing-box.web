@@ -10,10 +10,10 @@ onMounted(() => { void profiles.refresh(); });
 
 const links = [
   { to: "/", label: "仪表盘", icon: "◈" },
-  { to: "/workspace", label: "配置工作区", icon: "◇" },
-  { to: "/profiles", label: "配置档案", icon: "▤" },
+  { to: "/profiles", label: "档案配置树", icon: "▤" },
   { to: "/rules", label: "规则资源", icon: "◫" },
   { to: "/core", label: "核心管理", icon: "◉" },
+  { to: "/runtime", label: "运行数据", icon: "◌", phaseTwo: true },
   { to: "/settings", label: "设置", icon: "⚙" }
 ];
 </script>
@@ -23,7 +23,7 @@ const links = [
     <div class="brand"><span class="brand-mark">S</span><span>sing-box</span></div>
     <nav aria-label="主导航">
       <RouterLink v-for="link in links" :key="link.to" :to="link.to" @click="emit('close')">
-        <span aria-hidden="true">{{ link.icon }}</span>{{ link.label }} <small v-if="link.to === '/profiles' && profiles.profiles.value.length">{{ profiles.profiles.value.length }}</small>
+        <span aria-hidden="true">{{ link.icon }}</span>{{ link.label }} <small v-if="link.to === '/profiles' && profiles.profiles.value.length">{{ profiles.profiles.value.length }}</small><small v-else-if="link.phaseTwo">二期</small>
       </RouterLink>
     </nav>
   </aside>

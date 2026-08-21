@@ -9,6 +9,7 @@ import RuleResourcesView from "./features/rule-resources/RuleResourcesView.vue";
 import CoreView from "./features/core/CoreView.vue";
 import DashboardView from "./features/dashboard/DashboardView.vue";
 import SettingsView from "./features/settings/SettingsView.vue";
+import RuntimeUnavailableView from "./features/runtime/RuntimeUnavailableView.vue";
 
 const PlaceholderView = defineComponent({
   setup() {
@@ -32,6 +33,7 @@ const router = createRouter({
         { path: "profiles", name: "profiles", component: ProfileSidebar },
         { path: "rules", name: "rules", component: RuleResourcesView },
         { path: "core", name: "core", component: CoreView },
+        { path: "runtime", name: "runtime", component: RuntimeUnavailableView },
         { path: "settings", name: "settings", component: SettingsView }
       ]
     }

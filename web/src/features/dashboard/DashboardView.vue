@@ -30,7 +30,6 @@ onBeforeUnmount(core.stopPolling);
       <section class="card"><h2>核心</h2><p>版本：{{ core.status.value?.installedVersion || "未安装" }}</p><p>状态：{{ core.status.value?.state || "正在读取" }}</p><p v-if="core.status.value?.pid">PID {{ core.status.value.pid }}</p></section>
       <section class="card"><h2>当前运行</h2><p>当前档案：{{ profileName }}</p><p>最近错误：{{ core.status.value?.lastError || "无" }}</p></section>
     </div>
-    <section class="phase-two"><h2>二期尚未接入</h2><p>运行流量、连接、策略组、测速和完整日志将在二期提供。</p></section>
   </section>
 </template>
 
