@@ -15,6 +15,7 @@ import (
 	"singbox-web/internal/auth"
 	"singbox-web/internal/capabilities"
 	"singbox-web/internal/configgen"
+	"singbox-web/internal/core"
 	"singbox-web/internal/httpapi"
 	"singbox-web/internal/paths"
 	"singbox-web/internal/profile"
@@ -134,12 +135,20 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		return nil, err
 	}
 	checker := configgen.NewChecker(layout.WorkDir, configgen.ExecRunner{Environment: append([]string(nil), deps.CoreEnvironment...)}, 30*time.Second, 64<<10)
-	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, nil, clock, randomSource)
+	operation := core.NewOperationLock()
+	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, operation, clock, randomSource)
+	coreStore := core.NewStore(layout.CoreFile)
+	coreLog, err := core.NewBoundedLog(layout.CoreLog, 1<<20, 16<<10)
+	if err != nil {
+		return nil, err
+	}
+	coreManager := core.NewManager(layout, coreStore, coreLog, operation)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),
 		RuleResourceHandler: rules.NewHandler(ruleService),
 		ConfigHandler:       configHandler,
+		CoreHandler:         core.NewHandler(coreManager),
 		Authenticate:        authHandler.Middleware,
 		RequireCSRF:         auth.RequireCSRF,
 		AuthHandler:         authHandler,

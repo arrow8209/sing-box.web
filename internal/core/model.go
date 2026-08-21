@@ -62,6 +62,8 @@ type Status struct {
 	ExpectedRunning  bool            `json:"expectedRunning"`
 	StartedAt        *time.Time      `json:"startedAt"`
 	LastError        string          `json:"lastError"`
+	PendingProfileID string          `json:"pendingProfileId,omitempty"`
+	PendingRevision  *uint64         `json:"pendingRevision,omitempty"`
 	Operation        OperationStatus `json:"operation"`
 }
 

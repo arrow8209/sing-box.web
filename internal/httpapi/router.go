@@ -18,6 +18,7 @@ type Dependencies struct {
 	ProfileHandler      http.Handler
 	RuleResourceHandler http.Handler
 	ConfigHandler       http.Handler
+	CoreHandler         http.Handler
 	Authenticate        Middleware
 	RequireCSRF         Middleware
 	AuthHandler         http.Handler
@@ -31,6 +32,7 @@ func NewRouter(deps Dependencies) http.Handler {
 	profiles := deps.ProfileHandler
 	rules := deps.RuleResourceHandler
 	configuration := deps.ConfigHandler
+	core := deps.CoreHandler
 	if profiles == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
 		profiles = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
@@ -55,6 +57,13 @@ func NewRouter(deps Dependencies) http.Handler {
 		rules = csrfForWrites(rules, deps.RequireCSRF)
 		rules = deps.Authenticate(rules)
 	}
+	if core == nil || deps.Authenticate == nil {
+		core = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
+		})
+	} else {
+		core = deps.Authenticate(core)
+	}
 	return SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/profiles" || strings.HasPrefix(r.URL.Path, "/api/v1/profiles/"):
@@ -69,6 +78,8 @@ func NewRouter(deps Dependencies) http.Handler {
 			deps.AuthHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/capabilities" && deps.CapabilityHandler != nil:
 			deps.CapabilityHandler.ServeHTTP(w, r)
+		case r.URL.Path == "/api/v1/core":
+			core.ServeHTTP(w, r)
 		case r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/"):
 			apierror.Write(w, http.StatusNotFound, apierror.Error{Code: "not_found", Message: "请求的资源不存在"})
 		case deps.WebUI != nil:
