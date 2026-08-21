@@ -59,8 +59,8 @@ func validatePassword(password []byte) error {
 	if !utf8.Valid(password) {
 		return fmt.Errorf("密码必须是有效的 UTF-8 文本")
 	}
-	if utf8.RuneCount(password) < 12 {
-		return fmt.Errorf("密码至少需要 12 个字符")
+	if utf8.RuneCount(password) < 6 {
+		return fmt.Errorf("密码至少需要 6 个字符")
 	}
 	return nil
 }

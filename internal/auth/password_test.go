@@ -23,10 +23,13 @@ func TestHashAndVerify(t *testing.T) {
 }
 
 func TestHashRejectsInvalidPasswordLength(t *testing.T) {
-	for _, password := range [][]byte{[]byte("too short"), make([]byte, 1025)} {
+	for _, password := range [][]byte{[]byte("short"), make([]byte, 1025)} {
 		if _, err := Hash(password, strings.NewReader(strings.Repeat("x", 32))); err == nil {
 			t.Fatalf("Hash(%d bytes) accepted invalid password", len(password))
 		}
+	}
+	if _, err := Hash([]byte("六个字符测试"), strings.NewReader(strings.Repeat("x", 32))); err != nil {
+		t.Fatalf("Hash() rejected six-rune password: %v", err)
 	}
 }
 
