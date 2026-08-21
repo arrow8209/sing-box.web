@@ -9,10 +9,12 @@ const profiles = useProfileStore();
 onMounted(() => { void profiles.refresh(); });
 
 const links = [
-  { to: "/", label: "概览", icon: "◈" },
+  { to: "/", label: "仪表盘", icon: "◈" },
+  { to: "/workspace", label: "配置工作区", icon: "◇" },
   { to: "/profiles", label: "配置档案", icon: "▤" },
   { to: "/rules", label: "规则资源", icon: "◫" },
-  { to: "/core", label: "核心管理", icon: "◉" }
+  { to: "/core", label: "核心管理", icon: "◉" },
+  { to: "/settings", label: "设置", icon: "⚙" }
 ];
 </script>
 

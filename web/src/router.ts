@@ -6,6 +6,9 @@ import AppShell from "./layout/AppShell.vue";
 import ProfileSidebar from "./features/profiles/ProfileSidebar.vue";
 import ConfigWorkspace from "./features/config-editor/ConfigWorkspace.vue";
 import RuleResourcesView from "./features/rule-resources/RuleResourcesView.vue";
+import CoreView from "./features/core/CoreView.vue";
+import DashboardView from "./features/dashboard/DashboardView.vue";
+import SettingsView from "./features/settings/SettingsView.vue";
 
 const PlaceholderView = defineComponent({
   setup() {
@@ -24,10 +27,12 @@ const router = createRouter({
       path: "/",
       component: AppShell,
       children: [
-        { path: "", name: "overview", component: ConfigWorkspace },
+        { path: "", name: "overview", component: DashboardView },
+        { path: "workspace", name: "workspace", component: ConfigWorkspace },
         { path: "profiles", name: "profiles", component: ProfileSidebar },
         { path: "rules", name: "rules", component: RuleResourcesView },
-        { path: "core", name: "core", component: PlaceholderView }
+        { path: "core", name: "core", component: CoreView },
+        { path: "settings", name: "settings", component: SettingsView }
       ]
     }
   ]
