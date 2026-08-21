@@ -23,7 +23,7 @@ import (
 	"singbox-web/internal/webui"
 )
 
-const defaultListenAddress = "172.16.1.54:50010"
+const defaultListenAddress = "0.0.0.0:50010"
 
 // Dependencies provide deterministic dependencies for server construction.
 type Dependencies struct {

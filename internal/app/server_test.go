@@ -34,7 +34,7 @@ func TestNewServerRefusesMissingPasswordAndReleasesLock(t *testing.T) {
 }
 
 func TestServerCloseReleasesExclusiveLock(t *testing.T) {
-	if defaultListenAddress != "172.16.1.54:50010" {
+	if defaultListenAddress != "0.0.0.0:50010" {
 		t.Fatalf("default listen address=%q", defaultListenAddress)
 	}
 	workDir := t.TempDir()
