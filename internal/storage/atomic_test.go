@@ -2,6 +2,7 @@ package storage_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -14,8 +15,10 @@ func TestWriteJSONReplacesCompleteDocument(t *testing.T) {
 	if err := storage.WriteJSON(path, map[string]int{"revision": 1}, 0o600); err != nil {
 		t.Fatal(err)
 	}
-	state, err := storage.ReadJSON[map[string]int](path)
-	if err != nil || state["revision"] != 1 {
+	state, err := storage.ReadJSON[struct {
+		Revision int `json:"revision"`
+	}](path)
+	if err != nil || state.Revision != 1 {
 		t.Fatalf("state=%v err=%v", state, err)
 	}
 	matches, err := filepath.Glob(filepath.Join(filepath.Dir(path), ".state.json.tmp-*"))
@@ -24,6 +27,29 @@ func TestWriteJSONReplacesCompleteDocument(t *testing.T) {
 	}
 	if len(matches) != 0 {
 		t.Fatalf("temporary files remain: %v", matches)
+	}
+}
+
+func TestWriteFileRejectsSymlinkedDirectory(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.Symlink(outside, filepath.Join(root, "data")); err != nil {
+		t.Fatal(err)
+	}
+	if err := storage.WriteFile(filepath.Join(root, "data", "state.json"), []byte("{}"), 0o600); err == nil {
+		t.Fatal("symlinked write directory was accepted")
+	}
+}
+
+func TestReadJSONRejectsMapAndInterfaceTypes(t *testing.T) {
+	path := filepath.Join(t.TempDir(), "state.json")
+	if err := storage.WriteFile(path, []byte(`{"revision":1}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.ReadJSON[map[string]int](path); err == nil {
+		t.Fatal("map type was accepted")
+	}
+	if _, err := storage.ReadJSON[any](path); err == nil {
+		t.Fatal("interface type was accepted")
 	}
 }
 

@@ -4,6 +4,7 @@ package storage_test
 
 import (
 	"errors"
+	"os"
 	"path/filepath"
 	"testing"
 
@@ -19,5 +20,18 @@ func TestAcquireInstanceLockRejectsSecondOwner(t *testing.T) {
 	defer first.Close()
 	if _, err := storage.AcquireInstanceLock(path); !errors.Is(err, storage.ErrAlreadyLocked) {
 		t.Fatalf("second lock error = %v", err)
+	}
+}
+
+func TestAcquireInstanceLockRejectsSymlinkedLockFile(t *testing.T) {
+	root, outside := t.TempDir(), t.TempDir()
+	if err := os.Mkdir(filepath.Join(root, "data"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Symlink(filepath.Join(outside, "app.lock"), filepath.Join(root, "data", "app.lock")); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := storage.AcquireInstanceLock(filepath.Join(root, "data", "app.lock")); err == nil {
+		t.Fatal("symlinked lock file was accepted")
 	}
 }
