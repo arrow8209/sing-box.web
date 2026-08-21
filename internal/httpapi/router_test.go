@@ -70,12 +70,14 @@ func TestRouterKeepsAPIsOutOfSPAFallback(t *testing.T) {
 	if spa.Code != http.StatusOK || !strings.Contains(spa.Body.String(), "id=\"app\"") {
 		t.Fatalf("spa=%d %s", spa.Code, spa.Body.String())
 	}
-	api := httptest.NewRecorder()
-	router.ServeHTTP(api, httptest.NewRequest(http.MethodGet, "/api/v1/missing", nil))
-	if api.Code != http.StatusNotFound || strings.Contains(api.Body.String(), "<html") {
-		t.Fatalf("api=%d %s", api.Code, api.Body.String())
-	}
-	if api.Header().Get("Cache-Control") != "no-store" {
-		t.Fatalf("api cache=%q", api.Header().Get("Cache-Control"))
+	for _, path := range []string{"/api", "/api/", "/api/v1/missing"} {
+		api := httptest.NewRecorder()
+		router.ServeHTTP(api, httptest.NewRequest(http.MethodGet, path, nil))
+		if api.Code != http.StatusNotFound || strings.Contains(api.Body.String(), "<html") {
+			t.Fatalf("path=%s api=%d %s", path, api.Code, api.Body.String())
+		}
+		if api.Header().Get("Cache-Control") != "no-store" {
+			t.Fatalf("path=%s api cache=%q", path, api.Header().Get("Cache-Control"))
+		}
 	}
 }

@@ -43,7 +43,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			deps.AuthHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/capabilities" && deps.CapabilityHandler != nil:
 			deps.CapabilityHandler.ServeHTTP(w, r)
-		case strings.HasPrefix(r.URL.Path, "/api/"):
+		case r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/"):
 			apierror.Write(w, http.StatusNotFound, apierror.Error{Code: "not_found", Message: "请求的资源不存在"})
 		case deps.WebUI != nil:
 			deps.WebUI.ServeHTTP(w, r)
