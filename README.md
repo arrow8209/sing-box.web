@@ -18,27 +18,29 @@
 ## 本地预览
 
 ```bash
-npm run dev
+npm --prefix prototype run dev
 ```
 
-然后访问 <http://localhost:4173>。也可以直接在浏览器中打开 `index.html`。
+然后访问 <http://localhost:4173>。也可以直接在浏览器中打开 `prototype/index.html`。
 
 如需从局域网中的其他设备访问：
 
 ```bash
-npm run dev -- --bind 0.0.0.0
+npm --prefix prototype run dev -- --bind 0.0.0.0
 ```
 
 ## 项目结构
 
 ```text
 .
-├── index.html       # 页面入口
-├── package.json     # 开发与检查命令
-├── README.md
-└── src/
-    ├── app.js       # 页面数据与交互
-    └── styles.css   # 全局样式与响应式布局
+├── docs/                    # 设计与实施文档
+├── prototype/               # 零依赖交互原型
+│   ├── index.html           # 页面入口
+│   ├── package.json         # 开发与检查命令
+│   └── src/
+│       ├── app.js           # 页面数据与交互
+│       └── styles.css       # 全局样式与响应式布局
+└── README.md
 ```
 
 当前页面使用演示数据，按钮、导航、主题切换、弹窗、配置保存、订阅同步和规则集更新均提供原型交互，不会修改真实的 sing-box 配置。
