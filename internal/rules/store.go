@@ -81,6 +81,9 @@ func validateDocument(data document, layout paths.Layout) error {
 		if resource.Format != FormatBinary && resource.Format != FormatSource {
 			return fmt.Errorf("resources[%d].format 无效", index)
 		}
+		if err := validateInput(resource.Name, resource.URL, resource.Format, resource.UpdateInterval); err != nil {
+			return fmt.Errorf("resources[%d] 无效: %w", index, err)
+		}
 		derived, _, err := layout.RuleSetPath(resource.ID, extension(resource.Format))
 		if err != nil {
 			return fmt.Errorf("resources[%d].id 派生的规则路径无效", index)
@@ -167,3 +170,28 @@ func extension(format Format) string {
 	return ".srs"
 }
 func statErr(path string) error { _, err := os.Stat(path); return err }
+
+func (s *Store) list() ([]Resource, error) {
+	data := document{Resources: []Resource{}}
+	if _, err := os.Stat(s.file); err == nil {
+		var readErr error
+		data, readErr = storage.ReadJSON[document](s.file)
+		if readErr != nil {
+			return nil, readErr
+		}
+		if err := validateDocument(data, s.layout); err != nil {
+			return nil, &storage.CorruptFileError{Path: s.file, Err: err}
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	return append([]Resource(nil), data.Resources...), nil
+}
+
+func (s *Store) write(resources []Resource) error {
+	data := document{Resources: append([]Resource(nil), resources...)}
+	if err := validateDocument(data, s.layout); err != nil {
+		return err
+	}
+	return storage.WriteJSON(s.file, data, 0o600)
+}

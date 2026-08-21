@@ -15,18 +15,20 @@ type Middleware func(http.Handler) http.Handler
 // profile concrete types out of this package prevents an import cycle while
 // still making the top-level route composition explicit.
 type Dependencies struct {
-	ProfileHandler    http.Handler
-	Authenticate      Middleware
-	RequireCSRF       Middleware
-	AuthHandler       http.Handler
-	CapabilityHandler http.Handler
-	WebUI             http.Handler
+	ProfileHandler      http.Handler
+	RuleResourceHandler http.Handler
+	Authenticate        Middleware
+	RequireCSRF         Middleware
+	AuthHandler         http.Handler
+	CapabilityHandler   http.Handler
+	WebUI               http.Handler
 }
 
 // NewRouter exposes API routes and hands all non-API GET/HEAD requests to the
 // embedded SPA. Unknown API paths always receive a JSON error, never HTML.
 func NewRouter(deps Dependencies) http.Handler {
 	profiles := deps.ProfileHandler
+	rules := deps.RuleResourceHandler
 	if profiles == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
 		profiles = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
@@ -35,10 +37,20 @@ func NewRouter(deps Dependencies) http.Handler {
 		profiles = csrfForWrites(profiles, deps.RequireCSRF)
 		profiles = deps.Authenticate(profiles)
 	}
+	if rules == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
+		rules = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
+		})
+	} else {
+		rules = csrfForWrites(rules, deps.RequireCSRF)
+		rules = deps.Authenticate(rules)
+	}
 	return SecurityHeaders(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		switch {
 		case r.URL.Path == "/api/v1/profiles" || strings.HasPrefix(r.URL.Path, "/api/v1/profiles/"):
 			profiles.ServeHTTP(w, r)
+		case r.URL.Path == "/api/v1/rule-resources" || strings.HasPrefix(r.URL.Path, "/api/v1/rule-resources/"):
+			rules.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/api/v1/auth/") && deps.AuthHandler != nil:
 			deps.AuthHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/capabilities" && deps.CapabilityHandler != nil:

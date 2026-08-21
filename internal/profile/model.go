@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"singbox-web/internal/rules"
 )
 
 type Meta struct {
@@ -45,10 +47,7 @@ type AppliedResult struct {
 	Validation      ValidationSummary
 }
 
-type Reference struct {
-	ID   string `json:"id"`
-	Name string `json:"name"`
-}
+type Reference = rules.Reference
 
 type DefaultBindingSource interface {
 	DefaultBindings(ctx context.Context) ([]RuleBinding, error)

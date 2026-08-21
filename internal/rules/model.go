@@ -1,6 +1,10 @@
 package rules
 
-import "time"
+import (
+	"context"
+	"fmt"
+	"time"
+)
 
 type Format string
 
@@ -47,4 +51,42 @@ type PatchInput struct {
 	Format         *Format `json:"format"`
 	UpdateInterval *string `json:"updateInterval"`
 	Disabled       *bool   `json:"disabled"`
+}
+
+// ProfileReferences reports profiles that bind a rule resource. It keeps the
+// rules service independent from profile persistence.
+type ProfileReferences interface {
+	ReferencesForResource(ctx context.Context, resourceID string) ([]Reference, error)
+}
+
+type Reference struct {
+	ID   string `json:"id"`
+	Name string `json:"name"`
+}
+
+// ReferencedError prevents deletion from producing dangling profile bindings.
+type ReferencedError struct {
+	ResourceID string
+	Profiles   []Reference
+}
+
+func (e *ReferencedError) Error() string {
+	return fmt.Sprintf("规则资源仍被 %d 个档案引用", len(e.Profiles))
+}
+
+// ResourceResponse is the public representation. TemplateKey is deliberately
+// absent: it is an installation-only mapping detail.
+type ResourceResponse struct {
+	ID             string     `json:"id"`
+	Name           string     `json:"name"`
+	URL            string     `json:"url"`
+	Format         Format     `json:"format"`
+	UpdateInterval string     `json:"updateInterval"`
+	Disabled       bool       `json:"disabled"`
+	LocalPath      string     `json:"localPath"`
+	LastAttemptAt  *time.Time `json:"lastAttemptAt,omitempty"`
+	LastSuccessAt  *time.Time `json:"lastSuccessAt,omitempty"`
+	LastDigest     string     `json:"lastDigest,omitempty"`
+	LastError      string     `json:"lastError,omitempty"`
+	NextUpdateAt   *time.Time `json:"nextUpdateAt,omitempty"`
 }

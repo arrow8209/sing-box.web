@@ -112,14 +112,19 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	ruleService, err := rules.NewService(ruleStore, layout, profileService, clock, randomSource)
+	if err != nil {
+		return nil, err
+	}
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
-		ProfileHandler:    profile.NewHandler(profileService),
-		Authenticate:      authHandler.Middleware,
-		RequireCSRF:       auth.RequireCSRF,
-		AuthHandler:       authHandler,
-		CapabilityHandler: capabilities.NewHandler(capabilities.PhaseOne),
-		WebUI:             webui.Handler(),
+		ProfileHandler:      profile.NewHandler(profileService),
+		RuleResourceHandler: rules.NewHandler(ruleService),
+		Authenticate:        authHandler.Middleware,
+		RequireCSRF:         auth.RequireCSRF,
+		AuthHandler:         authHandler,
+		CapabilityHandler:   capabilities.NewHandler(capabilities.PhaseOne),
+		WebUI:               webui.Handler(),
 	})
 	keepLock = true
 	return &Server{

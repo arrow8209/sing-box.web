@@ -403,6 +403,13 @@ func (s *Service) MarkResourcesChanged(ctx context.Context, resourceIDs []string
 	return s.store.writeMetas(metas)
 }
 
+// MarkResourceNeedsApply is the narrow cross-service hook used when a rule
+// resource changes format and its previously downloaded local file is no
+// longer usable.
+func (s *Service) MarkResourceNeedsApply(ctx context.Context, resourceID string) error {
+	return s.MarkResourcesChanged(ctx, []string{resourceID})
+}
+
 func (s *Service) MarkApplied(ctx context.Context, result AppliedResult) error {
 	if err := ctx.Err(); err != nil {
 		return err
@@ -449,12 +456,11 @@ func (s *Service) ReferencesForResource(ctx context.Context, resourceID string) 
 	}
 	references := []Reference{}
 	for _, meta := range metas {
-		if meta.QuarantinedError != "" {
-			continue
-		}
 		draft, err := s.store.readDraft(meta.ID)
 		if err != nil {
-			continue
+			// A damaged draft must not turn into permission to delete a resource
+			// whose binding can no longer be inspected.
+			return nil, fmt.Errorf("读取档案规则绑定失败 %s: %w", meta.ID, err)
 		}
 		for _, binding := range draft.Bindings {
 			if binding.ResourceID == resourceID {
