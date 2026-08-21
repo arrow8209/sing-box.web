@@ -12,7 +12,7 @@ go run ./cmd/singbox-web serve
 go test ./...
 ```
 
-服务仅监听 `127.0.0.1:50010`。当前阶段不包含 systemd、Caddy、HTTPS 或公网部署；请不要将它暴露到局域网或互联网。
+服务仅监听 `172.16.1.54:50010`。当前阶段不包含 systemd、Caddy、HTTPS 或公网部署；请仅允许可信网络访问。
 
 ## 视觉原型
 
