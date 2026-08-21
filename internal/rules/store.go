@@ -32,6 +32,13 @@ func OpenStore(file string, layout paths.Layout, clock func() time.Time) (*Store
 	if clock == nil {
 		clock = time.Now
 	}
+	if _, err := os.Stat(file); err == nil {
+		if _, err := storage.ReadJSON[document](file); err != nil {
+			return nil, err
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
 	return &Store{file: file, layout: layout, clock: clock}, nil
 }
 

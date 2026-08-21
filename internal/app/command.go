@@ -38,7 +38,7 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	return runCommand(ctx, command, stdin, stdout, stderr)
 }
 
-func runCommand(_ context.Context, command Command, stdin io.Reader, stdout, stderr io.Writer) int {
+func runCommand(ctx context.Context, command Command, stdin io.Reader, stdout, stderr io.Writer) int {
 	if command == CommandSetPassword {
 		input, ok := stdin.(*os.File)
 		if !ok {
@@ -66,6 +66,19 @@ func runCommand(_ context.Context, command Command, stdin io.Reader, stdout, std
 		}
 		return 0
 	}
-	fmt.Fprintf(stderr, "命令 %s 尚未接通对应服务组件\n", command)
-	return 1
+	workDir, err := os.Getwd()
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	server, err := NewServer(workDir, Dependencies{})
+	if err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	if err := server.Run(ctx); err != nil {
+		fmt.Fprintln(stderr, err)
+		return 1
+	}
+	return 0
 }

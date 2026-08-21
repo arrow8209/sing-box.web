@@ -1,6 +1,22 @@
-# SingBox Control 原型
+# SingBox Control
 
-这是一个零依赖、可直接预览的 sing-box Web 控制台交互原型，包含：
+当前仓库包含本地 Web 服务的基础阶段，以及用于视觉参照的交互原型。服务运行时固定在当前工作目录生成 `data/` 与 `config/`，不会接受数据目录或配置目录覆盖参数。
+
+## 本地服务开发
+
+首次启动前设置管理密码：
+
+```bash
+go run ./cmd/singbox-web admin set-password
+go run ./cmd/singbox-web serve
+go test ./...
+```
+
+服务仅监听 `127.0.0.1:8080`。当前阶段不包含 systemd、Caddy、HTTPS 或公网部署；请不要将它暴露到局域网或互联网。
+
+## 视觉原型
+
+`prototype/` 是零依赖、可直接预览的 sing-box Web 控制台交互原型，包含：
 
 - 仪表盘与核心运行状态
 - 配置概览按官方 JSON Schema 展示全部 14 个顶层模块
@@ -15,7 +31,7 @@
 - 系统与界面设置
 - 紧凑桌面布局、平板抽屉导航、手机横向配置标签、底部保存栏与底部弹窗
 
-## 本地预览
+## 原型本地预览
 
 ```bash
 npm --prefix prototype run dev
@@ -43,6 +59,6 @@ npm --prefix prototype run dev -- --bind 0.0.0.0
 └── README.md
 ```
 
-当前页面使用演示数据，按钮、导航、主题切换、弹窗、配置保存、订阅同步和规则集更新均提供原型交互，不会修改真实的 sing-box 配置。
+当前页面使用演示数据，按钮、导航、主题切换、弹窗、配置保存、订阅同步和规则集更新均提供原型交互，不会修改真实的 sing-box 配置。它只是视觉参照，不是 `singbox-web serve` 的运行依赖。
 
 低频模块的片段编辑器负责 JSON 语法和顶层容器类型校验。不同 sing-box 版本、平台及编译标签支持的字段可能不同，部署前仍需使用目标核心执行 `sing-box check`。

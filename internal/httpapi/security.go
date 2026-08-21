@@ -25,11 +25,17 @@ func IsSameOrigin(r *http.Request) bool {
 	return strings.EqualFold(parsed.Scheme, scheme) && strings.EqualFold(parsed.Host, r.Host)
 }
 
-// SecurityHeaders adds the response headers shared by API endpoints.
+const contentSecurityPolicy = "default-src 'self'; object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+
+// SecurityHeaders adds the response headers shared by every local response.
+// API handlers retain the no-store default; HTML and immutable hashed assets
+// may deliberately replace it with their more specific cache policy.
 func SecurityHeaders(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Cache-Control", "no-store")
 		w.Header().Set("X-Content-Type-Options", "nosniff")
+		w.Header().Set("Referrer-Policy", "no-referrer")
+		w.Header().Set("Content-Security-Policy", contentSecurityPolicy)
 		next.ServeHTTP(w, r)
 	})
 }

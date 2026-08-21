@@ -1,5 +1,7 @@
 package auth
 
+import "errors"
+
 // State is the complete, strict on-disk authentication document.
 type State struct {
 	Version           int    `json:"version"`
@@ -9,3 +11,6 @@ type State struct {
 }
 
 const currentVersion = 1
+
+// ErrNotInitialized means the administrator has not created local credentials.
+var ErrNotInitialized = errors.New("管理密码尚未初始化")

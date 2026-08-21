@@ -47,17 +47,16 @@ func TestRunRejectsInvalidCommand(t *testing.T) {
 	}
 }
 
-func TestRunRecognizedCommandsAreNotConnected(t *testing.T) {
-	for _, args := range [][]string{{"serve"}} {
-		var stderr bytes.Buffer
+func TestRunServeReportsMissingPassword(t *testing.T) {
+	t.Chdir(t.TempDir())
+	var stderr bytes.Buffer
 
-		got := Run(context.Background(), args, nil, nil, &stderr)
+	got := Run(context.Background(), []string{"serve"}, nil, nil, &stderr)
 
-		if got != 1 {
-			t.Fatalf("Run(%v) = %d, want 1", args, got)
-		}
-		if !strings.Contains(stderr.String(), "尚未接通对应服务组件") {
-			t.Fatalf("Run(%v) stderr = %q", args, stderr.String())
-		}
+	if got != 1 {
+		t.Fatalf("Run() = %d, want 1", got)
+	}
+	if !strings.Contains(stderr.String(), "singbox-web admin set-password") {
+		t.Fatalf("stderr = %q", stderr.String())
 	}
 }

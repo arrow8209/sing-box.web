@@ -3,9 +3,12 @@ package httpapi_test
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
+	"singbox-web/internal/capabilities"
 	"singbox-web/internal/httpapi"
+	"singbox-web/internal/webui"
 )
 
 func TestRouterAuthenticatesAllProfileRequestsAndRequiresCSRFWrites(t *testing.T) {
@@ -54,5 +57,25 @@ func TestRouterAuthenticatesAllProfileRequestsAndRequiresCSRFWrites(t *testing.T
 				t.Fatalf("status=%d want=%d", response.Code, test.want)
 			}
 		})
+	}
+}
+
+func TestRouterKeepsAPIsOutOfSPAFallback(t *testing.T) {
+	router := httpapi.NewRouter(httpapi.Dependencies{
+		CapabilityHandler: capabilities.NewHandler(capabilities.PhaseOne),
+		WebUI:             webui.Handler(),
+	})
+	spa := httptest.NewRecorder()
+	router.ServeHTTP(spa, httptest.NewRequest(http.MethodGet, "/profiles/abc/config", nil))
+	if spa.Code != http.StatusOK || !strings.Contains(spa.Body.String(), "id=\"app\"") {
+		t.Fatalf("spa=%d %s", spa.Code, spa.Body.String())
+	}
+	api := httptest.NewRecorder()
+	router.ServeHTTP(api, httptest.NewRequest(http.MethodGet, "/api/v1/missing", nil))
+	if api.Code != http.StatusNotFound || strings.Contains(api.Body.String(), "<html") {
+		t.Fatalf("api=%d %s", api.Code, api.Body.String())
+	}
+	if api.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("api cache=%q", api.Header().Get("Cache-Control"))
 	}
 }
