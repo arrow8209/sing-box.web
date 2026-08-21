@@ -1,0 +1,27 @@
+.card, .panel, .application-bar, .outbound-editor, .structured-panel, .rule-table, .core-card, .settings-card {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.button-secondary, button.secondary { color: var(--text); background: var(--surface-soft); }
+.button-danger, button.danger { background: var(--red); }
+.icon-button { display: inline-grid; width: 40px; min-height: 40px; place-items: center; padding: 0; color: var(--text); background: var(--surface-soft); }
+
+.status-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 1.2; }
+.status-badge::before { width: 6px; height: 6px; border-radius: 50%; content: ""; background: currentColor; }
+.status-badge--success { color: var(--green); background: var(--green-soft); }
+.status-badge--warning { color: #a45d08; background: var(--orange-soft); }
+.status-badge--danger { color: var(--red); background: var(--red-soft); }
+.status-badge--neutral { color: var(--text-soft); background: var(--surface-soft); }
+
+.app-toast-region { position: fixed; z-index: 60; inset: auto 20px 20px auto; display: grid; width: min(380px, calc(100vw - 40px)); gap: 10px; pointer-events: none; }
+.app-toast { padding: 12px 14px; border: 1px solid var(--line); border-radius: var(--radius); color: var(--text); background: var(--surface); box-shadow: var(--shadow-md); }
+.app-toast--error { border-color: color-mix(in srgb, var(--red) 45%, var(--line)); }
+
+.json-editor { display: grid; gap: 8px; }
+.json-editor textarea { width: 100%; min-height: 260px; padding: 12px; border: 1px solid var(--line-strong); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text); font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; resize: vertical; }
+.json-editor__error { margin: 0; color: var(--red); }
+.config-tabs, .tabs { display: flex; gap: 6px; overflow-x: auto; padding-bottom: 4px; border-bottom: 1px solid var(--line); scrollbar-width: thin; }
+.config-tabs button, .tabs button { flex: 0 0 auto; }

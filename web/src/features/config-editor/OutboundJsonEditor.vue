@@ -2,6 +2,7 @@
 import { computed, ref, watch } from "vue";
 import { format, applyEdits } from "jsonc-parser";
 import { validateModuleShape } from "./json";
+import JsonEditor from "@/components/JsonEditor.vue";
 const props = defineProps<{ text: string; error?: string }>();
 const emit = defineEmits<{ save: [text: string]; buffer: [text: string] }>();
 const text = ref(props.text);
@@ -11,8 +12,8 @@ function pretty(): void { if (!validation.value) text.value = applyEdits(text.va
 function save(): void { if (!validation.value) emit("save", text.value); }
 </script>
 <template>
-  <section class="outbound-editor"><h2>手工出站节点</h2><p>手工粘贴或编辑 sing-box <code>outbounds</code> JSON。仅接受数组；内容按原值显示和保存。</p><textarea v-model="text" data-outbound-json aria-label="出站 JSON" spellcheck="false" @input="emit('buffer', text)" /><p v-if="validation || error" class="error" role="alert">{{ validation?.message ?? error }}</p><div><button type="button" class="secondary" @click="pretty">格式化</button><button type="button" data-save-module :disabled="Boolean(validation)" @click="save">保存出站 JSON</button></div></section>
+  <section class="outbound-editor"><h2>手工出站节点</h2><p>手工粘贴或编辑 sing-box <code>outbounds</code> JSON。仅接受数组；内容按原值显示和保存。</p><JsonEditor v-model="text" label="出站 JSON" data-outbound-json :error="validation?.message ?? error" @update:model-value="emit('buffer', text)" /><div><button type="button" class="secondary" @click="pretty">格式化</button><button type="button" data-save-module :disabled="Boolean(validation)" @click="save">保存出站 JSON</button></div></section>
 </template>
 <style scoped>
-.outbound-editor { padding: 18px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); }.outbound-editor h2 { margin: 0; }.outbound-editor p { color: var(--text-soft); }.outbound-editor textarea { width: 100%; min-height: 330px; padding: 12px; border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); color: var(--text); font: 13px/1.55 ui-monospace, SFMono-Regular, Consolas, monospace; }.outbound-editor div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }.outbound-editor .secondary { color: var(--text); background: var(--surface-soft); }.outbound-editor .error { color: var(--red); }
+.outbound-editor { padding: 18px; }.outbound-editor h2 { margin: 0; }.outbound-editor p { color: var(--text-soft); }.outbound-editor div { display: flex; justify-content: flex-end; gap: 8px; margin-top: 12px; }
 </style>

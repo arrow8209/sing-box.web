@@ -9,14 +9,8 @@ const menuOpen = ref(false);
 
 <template>
   <AppSidebar :open="menuOpen" @close="menuOpen = false" />
-  <section class="shell">
+  <section class="app-main">
     <AppTopbar @toggle-menu="menuOpen = !menuOpen" />
-    <main class="content"><RouterView /></main>
+    <main class="app-content"><RouterView /></main>
   </section>
 </template>
-
-<style scoped>
-.shell { min-height: 100vh; margin-left: var(--sidebar-width); }
-.content { padding: 28px; }
-@media (max-width: 760px) { .shell { margin-left: 0; } .content { padding: 20px 16px; } }
-</style>

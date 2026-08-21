@@ -12,7 +12,7 @@ async function logout(): Promise<void> {
 </script>
 
 <template>
-  <header class="topbar">
+  <header class="app-topbar topbar">
     <button class="menu-button" type="button" aria-label="切换导航菜单" @click="$emit('toggle-menu')">☰</button>
     <div class="topbar-title"><span>sing-box</span><small>管理面板</small></div>
     <button class="logout" type="button" @click="logout">退出</button>

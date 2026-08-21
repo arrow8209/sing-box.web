@@ -4,8 +4,8 @@ defineProps<{ active: ConfigTabId }>();
 const emit = defineEmits<{ select: [tab: ConfigTabId] }>();
 </script>
 <template>
-  <nav class="tabs" aria-label="配置模块">
-    <button v-for="tab in configTabs" :key="tab.id" type="button" :class="{ active: active === tab.id }" @click="emit('select', tab.id)">{{ tab.label }}</button>
+  <nav class="config-tabs tabs" aria-label="配置模块" role="tablist">
+    <button v-for="tab in configTabs" :key="tab.id" type="button" role="tab" :aria-selected="active === tab.id" :class="{ active: active === tab.id }" @click="emit('select', tab.id)">{{ tab.label }}</button>
   </nav>
 </template>
 <style scoped>

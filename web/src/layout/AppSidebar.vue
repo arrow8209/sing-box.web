@@ -19,7 +19,7 @@ const links = [
 </script>
 
 <template>
-  <aside class="sidebar" :class="{ open }">
+  <aside class="app-sidebar sidebar" :data-open="open">
     <div class="brand"><span class="brand-mark">S</span><span>sing-box</span></div>
     <nav aria-label="主导航">
       <RouterLink v-for="link in links" :key="link.to" :to="link.to" @click="emit('close')">
