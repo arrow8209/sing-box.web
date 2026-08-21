@@ -33,6 +33,38 @@ func TestTransformRejectsEmbeddedCredentialsOutsideGeneratedFields(t *testing.T)
 	}
 }
 
+func TestTransformRejectsNonStringCredentialValues(t *testing.T) {
+	for _, test := range []struct {
+		name  string
+		input string
+		path  string
+	}{
+		{name: "array", input: `{"token":["real"],"experimental":{"clash_api":{"secret":"old"},"cache_file":{"cache_id":"old"}}}`, path: "token"},
+		{name: "number", input: `{"password":1,"experimental":{"clash_api":{"secret":"old"},"cache_file":{"cache_id":"old"}}}`, path: "password"},
+		{name: "object", input: `{"private_key":{"value":"real"},"experimental":{"clash_api":{"secret":"old"},"cache_file":{"cache_id":"old"}}}`, path: "private_key"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			_, err := Transform([]byte(test.input))
+			if err == nil || !strings.Contains(err.Error(), test.path) {
+				t.Fatalf("err=%v", err)
+			}
+		})
+	}
+}
+
+func TestTransformRejectsUnknownRemoteFormat(t *testing.T) {
+	_, err := Transform([]byte(`{"route":{"rule_set":[{"type":"remote","tag":"x","url":"https://example.test/x","format":"yaml"}]},"experimental":{"clash_api":{"secret":""},"cache_file":{"cache_id":"old"}}}`))
+	if err == nil || !strings.Contains(err.Error(), "route.rule_set[0].format") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestTransformRejectsTopLevelNull(t *testing.T) {
+	if _, err := Transform([]byte("null")); err == nil || !strings.Contains(err.Error(), "顶层 JSON") {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func assertJSONPath(t *testing.T, payload []byte, path, want string) {
 	t.Helper()
 	var values []map[string]any

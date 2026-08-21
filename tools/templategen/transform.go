@@ -33,6 +33,9 @@ func Transform(input []byte) (Result, error) {
 	if err := json.Unmarshal(input, &config); err != nil {
 		return Result{}, err
 	}
+	if config == nil {
+		return Result{}, fmt.Errorf("顶层 JSON 必须是对象")
+	}
 	route := make(map[string]json.RawMessage)
 	if raw, ok := config["route"]; ok {
 		var err error
@@ -103,6 +106,11 @@ func splitRuleSets(raw json.RawMessage) ([]map[string]json.RawMessage, []json.Ra
 				return nil, nil, fmt.Errorf("route.rule_set[%d].%s: 缺失或无效", i, field)
 			}
 		}
+		var format string
+		_ = json.Unmarshal(object["format"], &format)
+		if format != "source" && format != "binary" {
+			return nil, nil, fmt.Errorf("route.rule_set[%d].format: 不支持 %q", i, format)
+		}
 		remote = append(remote, object)
 	}
 	return remote, local, nil
@@ -167,8 +175,7 @@ func rejectNonEmptyCredentialFields(value any, path string) error {
 			if path != "" {
 				childPath = path + "." + key
 			}
-			var stringValue string
-			if isCredentialKey(key) && json.Unmarshal(raw, &stringValue) == nil && stringValue != "" {
+			if isCredentialKey(key) && !isAllowedEmptyCredential(raw) {
 				return fmt.Errorf("%s: 不允许嵌入凭据", childPath)
 			}
 			var child any
@@ -185,8 +192,8 @@ func rejectNonEmptyCredentialFields(value any, path string) error {
 			if path != "" {
 				childPath = path + "." + key
 			}
-			if isCredentialKey(key) {
-				if text, ok := child.(string); ok && text != "" {
+			if isCredentialKey(key) && child != nil {
+				if text, ok := child.(string); !ok || text != "" {
 					return fmt.Errorf("%s: 不允许嵌入凭据", childPath)
 				}
 			}
@@ -210,6 +217,14 @@ func isCredentialKey(key string) bool {
 		return true
 	}
 	return false
+}
+
+func isAllowedEmptyCredential(raw json.RawMessage) bool {
+	if string(raw) == "null" {
+		return true
+	}
+	var value string
+	return json.Unmarshal(raw, &value) == nil && value == ""
 }
 func stableIndent(value any) []byte {
 	result, _ := json.MarshalIndent(value, "", "  ")
