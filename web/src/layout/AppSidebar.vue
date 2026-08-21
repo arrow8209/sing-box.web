@@ -42,7 +42,6 @@ function close(): void { emit("close"); }
       <div class="brand-copy"><strong>SingBox Control</strong><small>Web panel</small></div>
     </div>
     <nav class="sidebar-scroll" aria-label="主导航">
-      <p class="nav-label">概览</p>
       <RouterLink class="nav-item" to="/" @click="close"><AppIcon name="dashboard" /><span>仪表盘</span></RouterLink>
 
       <div class="nav-parent-row">
@@ -56,11 +55,9 @@ function close(): void { emit("close"); }
         </div>
       </div>
 
-      <p class="nav-label">资源</p>
       <RouterLink class="nav-item" to="/rules" @click="close"><AppIcon name="rules" /><span>规则资源</span></RouterLink>
       <RouterLink class="nav-item" to="/core" @click="close"><AppIcon name="cpu" /><span>核心管理</span></RouterLink>
 
-      <p class="nav-label">系统</p>
       <RouterLink class="nav-item" to="/settings" @click="close"><AppIcon name="settings" /><span>设置</span></RouterLink>
     </nav>
     <footer class="sidebar-footer">
