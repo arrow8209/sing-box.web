@@ -48,10 +48,7 @@ func TestRunRejectsInvalidCommand(t *testing.T) {
 }
 
 func TestRunRecognizedCommandsAreNotConnected(t *testing.T) {
-	for _, args := range [][]string{
-		{"serve"},
-		{"admin", "set-password"},
-	} {
+	for _, args := range [][]string{{"serve"}} {
 		var stderr bytes.Buffer
 
 		got := Run(context.Background(), args, nil, nil, &stderr)

@@ -2,9 +2,14 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"os"
 	"slices"
+
+	"singbox-web/internal/paths"
+	"singbox-web/internal/storage"
 )
 
 type Command string
@@ -33,7 +38,34 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 	return runCommand(ctx, command, stdin, stdout, stderr)
 }
 
-func runCommand(_ context.Context, command Command, _ io.Reader, _ io.Writer, stderr io.Writer) int {
+func runCommand(_ context.Context, command Command, stdin io.Reader, stdout, stderr io.Writer) int {
+	if command == CommandSetPassword {
+		input, ok := stdin.(*os.File)
+		if !ok {
+			fmt.Fprintln(stderr, "设置管理密码需要交互式终端")
+			return 1
+		}
+		workDir, err := os.Getwd()
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		layout, err := paths.Resolve(workDir)
+		if err != nil {
+			fmt.Fprintln(stderr, err)
+			return 1
+		}
+		err = runSetPassword(layout, terminalPasswordPrompter{input: input, output: stderr}, stdout)
+		if err != nil {
+			if errors.Is(err, storage.ErrAlreadyLocked) {
+				fmt.Fprintln(stderr, "无法在 Web 服务运行时通过 CLI 修改密码")
+			} else {
+				fmt.Fprintln(stderr, err)
+			}
+			return 1
+		}
+		return 0
+	}
 	fmt.Fprintf(stderr, "命令 %s 尚未接通对应服务组件\n", command)
 	return 1
 }
