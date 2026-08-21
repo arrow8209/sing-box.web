@@ -2,7 +2,6 @@ temp/
 node_modules/
 *.log
 .DS_Store
-.singbox-web/
 data/
 config/
 config.staging-*/
