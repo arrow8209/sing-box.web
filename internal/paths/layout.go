@@ -1,0 +1,97 @@
+package paths
+
+import (
+	"fmt"
+	"os"
+	"path/filepath"
+	"strings"
+)
+
+type Layout struct {
+	WorkDir      string
+	DataDir      string
+	AuthFile     string
+	ProfilesFile string
+	CoreFile     string
+	RulesFile    string
+	DraftsDir    string
+	RuleSetsDir  string
+	BinDir       string
+	CoreBinary   string
+	CoreBackup   string
+	LogsDir      string
+	CoreLog      string
+	AppLock      string
+	ConfigDir    string
+}
+
+func Resolve(workDir string) (Layout, error) {
+	root, err := filepath.Abs(workDir)
+	if err != nil {
+		return Layout{}, err
+	}
+	root, err = filepath.EvalSymlinks(root)
+	if err != nil {
+		return Layout{}, err
+	}
+	data := filepath.Join(root, "data")
+	layout := Layout{
+		WorkDir: root, DataDir: data,
+		AuthFile:     filepath.Join(data, "auth.json"),
+		ProfilesFile: filepath.Join(data, "profiles.json"),
+		CoreFile:     filepath.Join(data, "core.json"),
+		RulesFile:    filepath.Join(data, "rule-resources.json"),
+		DraftsDir:    filepath.Join(data, "drafts"),
+		RuleSetsDir:  filepath.Join(data, "rulesets"),
+		BinDir:       filepath.Join(data, "bin"),
+		CoreBinary:   filepath.Join(data, "bin", "sing-box"),
+		CoreBackup:   filepath.Join(data, "bin", "sing-box.bak"),
+		LogsDir:      filepath.Join(data, "logs"),
+		CoreLog:      filepath.Join(data, "logs", "sing-box.log"),
+		AppLock:      filepath.Join(data, "app.lock"),
+		ConfigDir:    filepath.Join(root, "config"),
+	}
+	for _, path := range layout.allManagedPaths() {
+		if !isWithin(root, path) {
+			return Layout{}, fmt.Errorf("固定路径越出工作目录: %s", path)
+		}
+		if err := rejectExistingSymlinkComponents(root, path); err != nil {
+			return Layout{}, err
+		}
+	}
+	return layout, nil
+}
+
+func (layout Layout) allManagedPaths() []string {
+	return []string{layout.DataDir, layout.AuthFile, layout.ProfilesFile, layout.CoreFile, layout.RulesFile, layout.DraftsDir, layout.RuleSetsDir, layout.BinDir, layout.CoreBinary, layout.CoreBackup, layout.LogsDir, layout.CoreLog, layout.AppLock, layout.ConfigDir}
+}
+
+func isWithin(root, path string) bool {
+	relative, err := filepath.Rel(root, path)
+	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)
+}
+
+func rejectExistingSymlinkComponents(root, path string) error {
+	relative, err := filepath.Rel(root, path)
+	if err != nil || !isWithin(root, path) {
+		return fmt.Errorf("固定路径越出工作目录: %s", path)
+	}
+	current := root
+	for _, component := range strings.Split(relative, string(filepath.Separator)) {
+		if component == "." {
+			continue
+		}
+		current = filepath.Join(current, component)
+		info, err := os.Lstat(current)
+		if os.IsNotExist(err) {
+			return nil
+		}
+		if err != nil {
+			return err
+		}
+		if info.Mode()&os.ModeSymlink != 0 {
+			return fmt.Errorf("受管路径包含符号链接: %s", current)
+		}
+	}
+	return nil
+}
