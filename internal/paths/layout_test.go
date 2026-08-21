@@ -30,6 +30,31 @@ func TestResolveRejectsManagedSymlinkEscape(t *testing.T) {
 	}
 }
 
+func TestRuleSetPathUsesIDAndFormatOnly(t *testing.T) {
+	layout, err := paths.Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	absolute, relative, err := layout.RuleSetPath("0123456789abcdef0123456789abcdef", ".srs")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if relative != "data/rulesets/0123456789abcdef0123456789abcdef.srs" {
+		t.Fatalf("relative=%q", relative)
+	}
+	if absolute != filepath.Join(layout.WorkDir, filepath.FromSlash(relative)) {
+		t.Fatalf("absolute=%q", absolute)
+	}
+	for _, bad := range []string{"../escape", "/absolute", "id/name"} {
+		if _, _, err := layout.RuleSetPath(bad, ".srs"); err == nil {
+			t.Fatalf("accepted id %q", bad)
+		}
+	}
+	if _, _, err := layout.RuleSetPath("0123456789abcdef0123456789abcdef", ".exe"); err == nil {
+		t.Fatal("accepted non-ruleset extension")
+	}
+}
+
 func assertPath(t *testing.T, actual, expected string) {
 	t.Helper()
 	if actual != expected {

@@ -50,12 +50,12 @@ func TestValidateManagedStateRejectsInvalidIDsDuplicatesAndDerivedPaths(t *testi
 			return `{"resources":[{"id":"../escape","name":"x","url":"https://example.test/x","format":"binary","updateInterval":"","disabled":false,"localPath":"` + filepath.Join(layout.RuleSetsDir, "escape.srs") + `"}]}`
 		}},
 		{name: "duplicate", body: func(layout paths.Layout) string {
-			id := "ID_" + strings.Repeat("a", 32)
+			id := strings.Repeat("a", 32)
 			path := filepath.Join(layout.RuleSetsDir, id+".srs")
 			return `{"resources":[{"id":"` + id + `","name":"x","url":"https://example.test/x","format":"binary","updateInterval":"","disabled":false,"localPath":"` + path + `"},{"id":"` + id + `","name":"y","url":"https://example.test/y","format":"binary","updateInterval":"","disabled":false,"localPath":"` + path + `"}]}`
 		}},
 		{name: "forged path", body: func(layout paths.Layout) string {
-			id := "ID_" + strings.Repeat("b", 32)
+			id := strings.Repeat("b", 32)
 			return `{"resources":[{"id":"` + id + `","name":"x","url":"https://example.test/x","format":"binary","updateInterval":"","disabled":false,"localPath":"` + filepath.Join(layout.DataDir, "elsewhere.srs") + `"}]}`
 		}},
 	} {

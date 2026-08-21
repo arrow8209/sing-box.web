@@ -66,6 +66,28 @@ func (layout Layout) allManagedPaths() []string {
 	return []string{layout.DataDir, layout.AuthFile, layout.ProfilesFile, layout.CoreFile, layout.RulesFile, layout.DraftsDir, layout.RuleSetsDir, layout.BinDir, layout.CoreBinary, layout.CoreBackup, layout.LogsDir, layout.CoreLog, layout.AppLock, layout.ConfigDir}
 }
 
+// RuleSetPath derives the sole permitted local rule-set location from a
+// server-generated resource ID and a supported ruleset extension.
+func (layout Layout) RuleSetPath(resourceID, extension string) (string, string, error) {
+	if len(resourceID) != 32 {
+		return "", "", fmt.Errorf("规则资源 ID 无效")
+	}
+	for _, character := range resourceID {
+		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
+			return "", "", fmt.Errorf("规则资源 ID 无效")
+		}
+	}
+	if extension != ".json" && extension != ".srs" {
+		return "", "", fmt.Errorf("规则文件扩展名无效")
+	}
+	relative := filepath.ToSlash(filepath.Join("data", "rulesets", resourceID+extension))
+	absolute := filepath.Join(layout.WorkDir, filepath.FromSlash(relative))
+	if !isWithin(layout.WorkDir, absolute) {
+		return "", "", fmt.Errorf("规则文件路径越出工作目录")
+	}
+	return absolute, relative, nil
+}
+
 func isWithin(root, path string) bool {
 	relative, err := filepath.Rel(root, path)
 	return err == nil && relative != ".." && !strings.HasPrefix(relative, ".."+string(filepath.Separator)) && !filepath.IsAbs(relative)

@@ -20,7 +20,7 @@ type document struct {
 	Resources []Resource `json:"resources"`
 }
 
-var resourceIDPattern = regexp.MustCompile(`^ID_[0-9a-f]{32}$`)
+var resourceIDPattern = regexp.MustCompile(`^[0-9a-f]{32}$`)
 
 type Store struct {
 	file   string
@@ -81,9 +81,8 @@ func validateDocument(data document, layout paths.Layout) error {
 		if resource.Format != FormatBinary && resource.Format != FormatSource {
 			return fmt.Errorf("resources[%d].format 无效", index)
 		}
-		derived := filepath.Join(layout.RuleSetsDir, resource.ID+".srs")
-		relative, err := filepath.Rel(layout.RuleSetsDir, derived)
-		if err != nil || relative != resource.ID+".srs" || filepath.IsAbs(relative) {
+		derived, _, err := layout.RuleSetPath(resource.ID, extension(resource.Format))
+		if err != nil {
 			return fmt.Errorf("resources[%d].id 派生的规则路径无效", index)
 		}
 		if filepath.Clean(resource.LocalPath) != filepath.Clean(derived) {
@@ -134,7 +133,11 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 		if err != nil {
 			return nil, err
 		}
-		data.Resources = append(data.Resources, Resource{ID: id, TemplateKey: template.TemplateKey, Name: template.Name, URL: template.URL, Format: template.Format, UpdateInterval: template.UpdateInterval, LocalPath: filepath.Join(s.layout.RuleSetsDir, id+".srs")})
+		localPath, _, err := s.layout.RuleSetPath(id, extension(template.Format))
+		if err != nil {
+			return nil, err
+		}
+		data.Resources = append(data.Resources, Resource{ID: id, TemplateKey: template.TemplateKey, Name: template.Name, URL: template.URL, Format: template.Format, UpdateInterval: template.UpdateInterval, LocalPath: localPath})
 		ids[template.TemplateKey] = id
 		changed = true
 	}
@@ -154,6 +157,13 @@ func randomID(source io.Reader) (string, error) {
 	if _, err := io.ReadFull(source, bytes); err != nil {
 		return "", err
 	}
-	return "ID_" + hex.EncodeToString(bytes), nil
+	return hex.EncodeToString(bytes), nil
+}
+
+func extension(format Format) string {
+	if format == FormatSource {
+		return ".json"
+	}
+	return ".srs"
 }
 func statErr(path string) error { _, err := os.Stat(path); return err }
