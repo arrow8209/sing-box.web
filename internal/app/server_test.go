@@ -108,6 +108,7 @@ func TestNewServerRejectsSemanticManagedJSONWithPath(t *testing.T) {
 		{name: "profiles null", target: func(layout paths.Layout) string { return layout.ProfilesFile }, contents: `{"version":1,"profiles":null}`},
 		{name: "profiles invalid id", target: func(layout paths.Layout) string { return layout.ProfilesFile }, contents: `{"version":1,"profiles":[{"id":"../escape","name":"x","draftRevision":1,"appliedRevision":null,"appliedDigest":"","appliedResourceDigests":{},"appliedAt":null,"needsApply":true,"lastValidation":null}]}`},
 		{name: "rules null", target: func(layout paths.Layout) string { return layout.RulesFile }, contents: `{"resources":null}`},
+		{name: "subscriptions null", target: func(layout paths.Layout) string { return layout.SubscriptionsFile }, contents: `{"version":1,"subscriptions":null}`},
 		{name: "core syntax", target: func(layout paths.Layout) string { return layout.CoreFile }, contents: `{`},
 		{name: "settings invalid proxy", target: func(layout paths.Layout) string { return layout.SettingsFile }, contents: `{"version":1,"proxyUrl":"socks5://127.0.0.1:1080"}`},
 	}

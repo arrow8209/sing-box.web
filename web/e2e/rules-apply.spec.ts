@@ -17,11 +17,10 @@ async function deleteRule(page: import("@playwright/test").Page, name: string): 
   await expect(page.getByText(name, { exact: true })).toHaveCount(0);
 }
 
-test("规则页使用真实受认证 API，未提供订阅或配置导出入口", async ({ page }) => {
+test("规则页使用真实受认证 API，未提供配置导出入口", async ({ page }) => {
   await login(page);
   await page.goto("/rules");
   await expect(page.getByRole("heading", { name: "规则集中心" })).toBeVisible();
-  await expect(page.getByText("订阅", { exact: true })).toHaveCount(0);
   await expect(page.getByText("导出配置", { exact: true })).toHaveCount(0);
 });
 

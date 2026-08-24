@@ -39,6 +39,27 @@ async function ensureVisualProfile(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "视觉基准档案" })).toBeVisible();
 }
 
+async function ensureVisualSubscription(page: Page): Promise<void> {
+  await page.goto("/subscriptions");
+  await expect(page.getByRole("heading", { name: "订阅配置" })).toBeVisible();
+  if (await page.locator(".subscription-card").count()) return;
+  await page.getByRole("button", { name: "导入 JSON 订阅" }).click();
+  const dialog = page.getByRole("dialog", { name: "导入 JSON 订阅" });
+  await dialog.getByLabel("订阅 JSON").fill(JSON.stringify({
+    name: "Visual Route",
+    outbounds: [
+      { type: "shadowsocks", tag: "香港 01", server: "hk01.example.test", server_port: 8388, password: "visual-only" },
+      { type: "trojan", tag: "新加坡 01", server: "sg01.example.test", server_port: 443, password: "visual-only" },
+      { type: "vless", tag: "日本 01", server: "jp01.example.test", server_port: 443, uuid: "00000000-0000-0000-0000-000000000000" },
+      { type: "hysteria2", tag: "美国 01", server: "us01.example.test", server_port: 8443, password: "visual-only" }
+    ]
+  }));
+  await dialog.getByRole("button", { name: "导入全部节点" }).click();
+  await expect(page.locator(".subscription-card")).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(".subscription-card")).toHaveCount(1);
+}
+
 for (const scenario of scenarios) {
   test(`${scenario.name} configuration and rules workspace`, async ({ page }) => {
     await page.setViewportSize({ width: scenario.width, height: scenario.height });
@@ -68,5 +89,11 @@ for (const scenario of scenarios) {
     });
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-rules.png`, { fullPage: true });
+
+    await ensureVisualSubscription(page);
+    await setTheme(page, scenario.theme);
+    await expect(page.locator(".subscription-card")).toBeVisible();
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
+    await expect(page).toHaveScreenshot(`${scenario.name}-subscriptions.png`, { fullPage: true });
   });
 }

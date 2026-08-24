@@ -9,7 +9,7 @@ function mockCapabilities(value: Record<string, boolean>): void {
 
 describe("一期运行能力边界", () => {
   it("将二期运行能力显示为不可用", async () => {
-    mockCapabilities({ configuration: true, ruleResources: true, application: true, coreUpdate: true, runtime: false, traffic: false, connections: false, proxyGroups: false });
+    mockCapabilities({ configuration: true, subscriptions: true, ruleResources: true, application: true, coreUpdate: true, runtime: false, traffic: false, connections: false, proxyGroups: false });
     const wrapper = mount(RuntimeUnavailableView);
     await flushPromises();
     expect(wrapper.text()).toContain("二期尚未接入");

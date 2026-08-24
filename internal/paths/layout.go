@@ -8,23 +8,24 @@ import (
 )
 
 type Layout struct {
-	WorkDir         string
-	DataDir         string
-	AuthFile        string
-	ProfilesFile    string
-	CoreFile        string
-	SettingsFile    string
-	RulesFile       string
-	RuleCatalogFile string
-	DraftsDir       string
-	RuleSetsDir     string
-	BinDir          string
-	CoreBinary      string
-	CoreBackup      string
-	LogsDir         string
-	CoreLog         string
-	AppLock         string
-	ConfigDir       string
+	WorkDir           string
+	DataDir           string
+	AuthFile          string
+	ProfilesFile      string
+	CoreFile          string
+	SettingsFile      string
+	SubscriptionsFile string
+	RulesFile         string
+	RuleCatalogFile   string
+	DraftsDir         string
+	RuleSetsDir       string
+	BinDir            string
+	CoreBinary        string
+	CoreBackup        string
+	LogsDir           string
+	CoreLog           string
+	AppLock           string
+	ConfigDir         string
 }
 
 // StagingConfigDir returns a new, fixed-name staging directory directly below
@@ -58,21 +59,22 @@ func Resolve(workDir string) (Layout, error) {
 	data := filepath.Join(root, "data")
 	layout := Layout{
 		WorkDir: root, DataDir: data,
-		AuthFile:        filepath.Join(data, "auth.json"),
-		ProfilesFile:    filepath.Join(data, "profiles.json"),
-		CoreFile:        filepath.Join(data, "core.json"),
-		SettingsFile:    filepath.Join(data, "settings.json"),
-		RulesFile:       filepath.Join(data, "rule-resources.json"),
-		RuleCatalogFile: filepath.Join(data, "rule-catalog.json"),
-		DraftsDir:       filepath.Join(data, "drafts"),
-		RuleSetsDir:     filepath.Join(data, "rulesets"),
-		BinDir:          filepath.Join(data, "bin"),
-		CoreBinary:      filepath.Join(data, "bin", "sing-box"),
-		CoreBackup:      filepath.Join(data, "bin", "sing-box.bak"),
-		LogsDir:         filepath.Join(data, "logs"),
-		CoreLog:         filepath.Join(data, "logs", "sing-box.log"),
-		AppLock:         filepath.Join(data, "app.lock"),
-		ConfigDir:       filepath.Join(root, "config"),
+		AuthFile:          filepath.Join(data, "auth.json"),
+		ProfilesFile:      filepath.Join(data, "profiles.json"),
+		CoreFile:          filepath.Join(data, "core.json"),
+		SettingsFile:      filepath.Join(data, "settings.json"),
+		SubscriptionsFile: filepath.Join(data, "subscriptions.json"),
+		RulesFile:         filepath.Join(data, "rule-resources.json"),
+		RuleCatalogFile:   filepath.Join(data, "rule-catalog.json"),
+		DraftsDir:         filepath.Join(data, "drafts"),
+		RuleSetsDir:       filepath.Join(data, "rulesets"),
+		BinDir:            filepath.Join(data, "bin"),
+		CoreBinary:        filepath.Join(data, "bin", "sing-box"),
+		CoreBackup:        filepath.Join(data, "bin", "sing-box.bak"),
+		LogsDir:           filepath.Join(data, "logs"),
+		CoreLog:           filepath.Join(data, "logs", "sing-box.log"),
+		AppLock:           filepath.Join(data, "app.lock"),
+		ConfigDir:         filepath.Join(root, "config"),
 	}
 	for _, path := range layout.allManagedPaths() {
 		if !isWithin(root, path) {
@@ -86,7 +88,7 @@ func Resolve(workDir string) (Layout, error) {
 }
 
 func (layout Layout) allManagedPaths() []string {
-	return []string{layout.DataDir, layout.AuthFile, layout.ProfilesFile, layout.CoreFile, layout.SettingsFile, layout.RulesFile, layout.RuleCatalogFile, layout.DraftsDir, layout.RuleSetsDir, layout.BinDir, layout.CoreBinary, layout.CoreBackup, layout.LogsDir, layout.CoreLog, layout.AppLock, layout.ConfigDir}
+	return []string{layout.DataDir, layout.AuthFile, layout.ProfilesFile, layout.CoreFile, layout.SettingsFile, layout.SubscriptionsFile, layout.RulesFile, layout.RuleCatalogFile, layout.DraftsDir, layout.RuleSetsDir, layout.BinDir, layout.CoreBinary, layout.CoreBackup, layout.LogsDir, layout.CoreLog, layout.AppLock, layout.ConfigDir}
 }
 
 // RuleSetPath derives the sole permitted local rule-set location from a

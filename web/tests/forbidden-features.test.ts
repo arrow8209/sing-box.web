@@ -11,11 +11,11 @@ function readAllSourceFiles(directory: string): Array<{ path: string; content: s
   });
 }
 
-describe("一期禁止功能守卫", () => {
+describe("未开放功能守卫", () => {
   it("不包含被禁止的产品路由或调用", () => {
     const sources = readAllSourceFiles(sourceRoot);
     const joined = sources.map((source) => source.content).join("\n");
-    for (const value of ["/subscriptions", "/subscription", "/config/export", "downloadConfig", "copyFullConfig", "mockTraffic", "mockLatency"]) {
+    for (const value of ["/config/export", "downloadConfig", "copyFullConfig", "mockTraffic", "mockLatency"]) {
       expect(joined).not.toContain(value);
     }
   });
@@ -24,7 +24,7 @@ describe("一期禁止功能守卫", () => {
     const sources = readAllSourceFiles(sourceRoot);
     for (const source of sources) {
       if (source.path.endsWith("RuntimeUnavailableView.vue")) continue;
-      for (const value of ["订阅配置", "导出配置", "复制完整配置", "测速", "切换模式"]) expect(source.content).not.toContain(value);
+      for (const value of ["导出配置", "复制完整配置", "测速", "切换模式"]) expect(source.content).not.toContain(value);
     }
   });
 });

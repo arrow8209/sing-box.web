@@ -34,6 +34,12 @@ sh scripts/build.sh
 
 代理地址必须是完整的 `http://` 或 `https://` URL，例如 `http://127.0.0.1:7890`，当前不接受 URL 内账号密码。该设置保存在权限为 `0600` 的 `data/settings.json`，只影响管理服务自身的下载，不修改浏览器请求或 sing-box 核心流量。
 
+## JSON 订阅
+
+“订阅配置”用于将一组完整的 sing-box `outbounds` 作为本地 JSON 节点集合导入、查看和整体编辑。编辑器接受包含 `outbounds`（或 `nodes`）数组的对象，也接受直接的节点数组；每个节点必须包含唯一的非空 `type` 和 `tag`。节点中的其他字段会由服务端完整保存到权限为 `0600` 的 `data/subscriptions.json`。
+
+当前订阅功能不接受 URL，不执行网络拉取、解析、同步或定时刷新，也尚未把订阅节点自动合并进配置档案。订阅列表接口只返回数量和协议摘要，管理员打开查看或编辑对话框时才读取完整节点内容。
+
 ## 开发与验证
 
 ```bash
@@ -74,4 +80,4 @@ npm --prefix prototype run dev
 └── README.md
 ```
 
-一期不包含 systemd、Caddy、HTTPS/公网部署、订阅、配置导出、自动核心更新或高级运行控制。低频模块的片段编辑器负责 JSON 语法和顶层容器类型校验；部署前仍需使用目标核心执行 `sing-box check`。
+当前版本不包含 systemd、Caddy、HTTPS/公网部署、远程订阅拉取、配置导出、自动核心更新或高级运行控制。低频模块的片段编辑器负责 JSON 语法和顶层容器类型校验；部署前仍需使用目标核心执行 `sing-box check`。

@@ -23,6 +23,7 @@ import (
 	"singbox-web/internal/rules"
 	"singbox-web/internal/settings"
 	"singbox-web/internal/storage"
+	"singbox-web/internal/subscriptions"
 	"singbox-web/internal/templates"
 	"singbox-web/internal/updater"
 	"singbox-web/internal/webui"
@@ -117,6 +118,9 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
+	if err := subscriptions.ValidateManagedState(layout); err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(layout.CoreFile); err == nil {
 		if err := storage.ValidateJSON(layout.CoreFile); err != nil {
 			return nil, err
@@ -129,6 +133,10 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		return nil, err
 	}
 	if err := profile.RecoverDeletingDrafts(layout); err != nil {
+		return nil, err
+	}
+	subscriptionService, err := subscriptions.Open(layout, clock, randomSource)
+	if err != nil {
 		return nil, err
 	}
 	ruleStore, err := rules.OpenStore(layout.RulesFile, layout, clock)
@@ -217,6 +225,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),
+		SubscriptionHandler: subscriptions.NewHandler(subscriptionService),
 		RuleResourceHandler: rules.NewHandler(ruleService, ruleCatalog),
 		ConfigHandler:       configHandler,
 		ApplicationHandler:  application.NewHandler(coordinator),

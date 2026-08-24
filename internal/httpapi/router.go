@@ -16,6 +16,7 @@ type Middleware func(http.Handler) http.Handler
 // still making the top-level route composition explicit.
 type Dependencies struct {
 	ProfileHandler      http.Handler
+	SubscriptionHandler http.Handler
 	RuleResourceHandler http.Handler
 	ConfigHandler       http.Handler
 	ApplicationHandler  http.Handler
@@ -33,6 +34,7 @@ type Dependencies struct {
 // embedded SPA. Unknown API paths always receive a JSON error, never HTML.
 func NewRouter(deps Dependencies) http.Handler {
 	profiles := deps.ProfileHandler
+	subscriptions := deps.SubscriptionHandler
 	rules := deps.RuleResourceHandler
 	configuration := deps.ConfigHandler
 	application := deps.ApplicationHandler
@@ -54,6 +56,14 @@ func NewRouter(deps Dependencies) http.Handler {
 	} else {
 		configuration = csrfForWrites(configuration, deps.RequireCSRF)
 		configuration = deps.Authenticate(configuration)
+	}
+	if subscriptions == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
+		subscriptions = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
+		})
+	} else {
+		subscriptions = csrfForWrites(subscriptions, deps.RequireCSRF)
+		subscriptions = deps.Authenticate(subscriptions)
 	}
 	if application == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
 		application = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -106,6 +116,8 @@ func NewRouter(deps Dependencies) http.Handler {
 			}
 		case r.URL.Path == "/api/v1/rule-resources" || strings.HasPrefix(r.URL.Path, "/api/v1/rule-resources/"):
 			rules.ServeHTTP(w, r)
+		case r.URL.Path == "/api/v1/subscriptions" || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/"):
+			subscriptions.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/api/v1/auth/") && deps.AuthHandler != nil:
 			deps.AuthHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/capabilities" && deps.CapabilityHandler != nil:

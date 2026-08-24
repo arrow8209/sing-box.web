@@ -60,6 +60,51 @@ func TestRouterAuthenticatesAllProfileRequestsAndRequiresCSRFWrites(t *testing.T
 	}
 }
 
+func TestRouterAuthenticatesSubscriptionRequestsAndRequiresCSRFWrites(t *testing.T) {
+	subscriptions := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	authenticated := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Test-Session") != "ok" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	csrf := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Test-CSRF") != "ok" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	router := httpapi.NewRouter(httpapi.Dependencies{SubscriptionHandler: subscriptions, Authenticate: authenticated, RequireCSRF: csrf})
+	for _, test := range []struct {
+		method  string
+		session string
+		csrf    string
+		want    int
+	}{
+		{method: http.MethodGet, want: http.StatusUnauthorized},
+		{method: http.MethodGet, session: "ok", want: http.StatusNoContent},
+		{method: http.MethodPost, session: "ok", want: http.StatusForbidden},
+		{method: http.MethodPost, session: "ok", csrf: "ok", want: http.StatusNoContent},
+	} {
+		request := httptest.NewRequest(test.method, "/api/v1/subscriptions", nil)
+		request.Header.Set("X-Test-Session", test.session)
+		request.Header.Set("X-Test-CSRF", test.csrf)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("method=%s status=%d want=%d", test.method, response.Code, test.want)
+		}
+	}
+}
+
 func TestRouterKeepsAPIsOutOfSPAFallback(t *testing.T) {
 	router := httpapi.NewRouter(httpapi.Dependencies{
 		CapabilityHandler: capabilities.NewHandler(capabilities.PhaseOne),

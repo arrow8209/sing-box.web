@@ -3,6 +3,7 @@ package capabilities
 // Response declares which API domains the embedded Web UI may use.
 type Response struct {
 	Configuration bool `json:"configuration"`
+	Subscriptions bool `json:"subscriptions"`
 	RuleResources bool `json:"ruleResources"`
 	Application   bool `json:"application"`
 	CoreUpdate    bool `json:"coreUpdate"`
@@ -15,6 +16,7 @@ type Response struct {
 // PhaseOne contains only the domains implemented by the first delivery.
 var PhaseOne = Response{
 	Configuration: true,
+	Subscriptions: true,
 	RuleResources: true,
 	Application:   true,
 	CoreUpdate:    true,
