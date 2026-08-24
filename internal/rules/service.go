@@ -27,15 +27,16 @@ var (
 
 // Service owns resource metadata and the fixed local-file lifecycle.
 type Service struct {
-	store      *Store
-	layout     paths.Layout
-	profiles   ProfileReferences
-	clock      func() time.Time
-	random     io.Reader
-	locks      ResourceLocker
-	downloader Downloader
-	audit      *audit.Logger
-	mu         sync.Mutex
+	store       *Store
+	layout      paths.Layout
+	profiles    ProfileReferences
+	clock       func() time.Time
+	random      io.Reader
+	locks       ResourceLocker
+	downloader  Downloader
+	audit       *audit.Logger
+	mu          sync.Mutex
+	reconcileMu sync.Mutex
 }
 
 // SetResourceLocker is intended for deterministic lock-order tests.
@@ -100,14 +101,14 @@ func (s *Service) UpdateNow(ctx context.Context, id string) (result UpdateResult
 		} else {
 			resource := resources[index]
 			s.mu.Unlock()
-			return s.updateLocked(ctx, resources, index, resource, started, &stage, &digest)
+			return s.updateLocked(ctx, resource, started, &stage, &digest)
 		}
 	}
 	s.mu.Unlock()
 	return result, err
 }
 
-func (s *Service) updateLocked(ctx context.Context, resources []Resource, index int, resource Resource, now time.Time, stage, digest *string) (UpdateResult, error) {
+func (s *Service) updateLocked(ctx context.Context, resource Resource, now time.Time, stage, digest *string) (UpdateResult, error) {
 	if resource.Disabled {
 		return UpdateResult{}, errors.New("已禁用的规则资源不能更新")
 	}
@@ -117,18 +118,18 @@ func (s *Service) updateLocked(ctx context.Context, resources []Resource, index 
 	*stage = "download"
 	downloaded, err := s.downloader.Fetch(ctx, resource)
 	if err != nil {
-		return UpdateResult{}, s.recordUpdateFailure(resources, index, now, err)
+		return UpdateResult{}, s.recordUpdateFailure(resource.ID, now, err)
 	}
 	defer os.Remove(downloaded.Path)
 	*digest = downloaded.Digest
 	*stage = "validate"
 	if err := ValidateDownloaded(resource.Format, downloaded.Payload); err != nil {
-		return UpdateResult{}, s.recordUpdateFailure(resources, index, now, err)
+		return UpdateResult{}, s.recordUpdateFailure(resource.ID, now, err)
 	}
 	*stage = "install"
 	replacement, err := storage.BeginFileReplacement(downloaded.Path, resource.LocalPath, 0o600)
 	if err != nil {
-		return UpdateResult{}, s.recordUpdateFailure(resources, index, now, err)
+		return UpdateResult{}, s.recordUpdateFailure(resource.ID, now, err)
 	}
 	changed := resource.LastDigest != downloaded.Digest
 	next := resource
@@ -138,17 +139,20 @@ func (s *Service) updateLocked(ctx context.Context, resources []Resource, index 
 		count, countErr := SourceRuleCount(downloaded.Payload)
 		if countErr != nil {
 			_ = replacement.Restore()
-			return UpdateResult{}, s.recordUpdateFailure(resources, index, now, countErr)
+			return UpdateResult{}, s.recordUpdateFailure(resource.ID, now, countErr)
 		}
 		next.RuleCount = &count
 	} else {
 		next.RuleCount = nil
 	}
-	resources[index] = next
 	*stage = "save_status"
-	s.mu.Lock()
-	err = s.store.write(resources)
-	s.mu.Unlock()
+	err = s.mutateResource(resource.ID, func(current *Resource) {
+		current.LastAttemptAt = next.LastAttemptAt
+		current.LastSuccessAt = next.LastSuccessAt
+		current.LastDigest = next.LastDigest
+		current.LastError = next.LastError
+		current.RuleCount = next.RuleCount
+	})
 	if err != nil {
 		if restoreErr := replacement.Restore(); restoreErr != nil {
 			return UpdateResult{}, errors.Join(err, restoreErr)
@@ -168,27 +172,43 @@ func (s *Service) updateLocked(ctx context.Context, resources []Resource, index 
 			}
 		}
 	}
-	if reconciler, ok := s.profiles.(interface {
-		ReconcileResourceDigests(context.Context, map[string]string) error
-	}); ok {
-		if err := reconciler.ReconcileResourceDigests(ctx, s.resourceDigests(resources)); err != nil {
-			return UpdateResult{}, err
-		}
+	if err := s.reconcileCurrentResourceDigests(ctx); err != nil {
+		return UpdateResult{}, err
 	}
 	*stage = "completed"
 	return UpdateResult{Changed: changed, Digest: downloaded.Digest, Message: updateMessage(changed)}, nil
 }
 
-func (s *Service) recordUpdateFailure(resources []Resource, index int, now time.Time, cause error) error {
-	resources[index].LastAttemptAt = ptrTime(now)
-	resources[index].LastError = safeUpdateError(cause)
-	s.mu.Lock()
-	err := s.store.write(resources)
-	s.mu.Unlock()
+func (s *Service) recordUpdateFailure(id string, now time.Time, cause error) error {
+	err := s.mutateResource(id, func(resource *Resource) {
+		resource.LastAttemptAt = ptrTime(now)
+		resource.LastError = safeUpdateError(cause)
+	})
 	if err != nil {
 		return errors.Join(cause, err)
 	}
 	return cause
+}
+
+// mutateResource reloads the managed document immediately before committing
+// one resource's fields. Downloads for different resources run concurrently,
+// so writing the snapshot captured before a download would lose newer states.
+func (s *Service) mutateResource(id string, mutate func(*Resource)) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	resources, err := s.store.list()
+	if err != nil {
+		return err
+	}
+	index := indexOf(resources, id)
+	if index < 0 {
+		return ErrNotFound
+	}
+	mutate(&resources[index])
+	if err := s.store.write(resources); err != nil {
+		return err
+	}
+	return nil
 }
 func ptrTime(value time.Time) *time.Time { value = value.UTC(); return &value }
 func safeUpdateError(err error) string {
@@ -415,7 +435,7 @@ func (s *Service) Patch(ctx context.Context, id string, input PatchInput) (Resou
 			}
 			s.mu.Unlock()
 			if disabledChanged {
-				if err := s.markResourceChanged(ctx, id, resources); err != nil {
+				if err := s.markResourceChanged(ctx, id); err != nil {
 					return ResourceResponse{}, err
 				}
 			}
@@ -472,7 +492,7 @@ func (s *Service) Patch(ctx context.Context, id string, input PatchInput) (Resou
 			return ResourceResponse{}, err
 		}
 		if changed {
-			if err := s.markResourceChanged(ctx, id, resources); err != nil {
+			if err := s.markResourceChanged(ctx, id); err != nil {
 				return ResourceResponse{}, err
 			}
 		}
@@ -516,7 +536,7 @@ func (s *Service) Patch(ctx context.Context, id string, input PatchInput) (Resou
 		if err := staged.delete(); err != nil {
 			return ResourceResponse{}, err
 		}
-		if err := s.markResourceChanged(ctx, id, resources); err != nil {
+		if err := s.markResourceChanged(ctx, id); err != nil {
 			return ResourceResponse{}, err
 		}
 		return s.response(next), nil
@@ -531,7 +551,7 @@ func (s *Service) Patch(ctx context.Context, id string, input PatchInput) (Resou
 	}
 	s.mu.Unlock()
 	if disabledChanged {
-		if err := s.markResourceChanged(ctx, id, resources); err != nil {
+		if err := s.markResourceChanged(ctx, id); err != nil {
 			return ResourceResponse{}, err
 		}
 	}
@@ -627,7 +647,7 @@ func (s *Service) markReferencedNeedsApply(ctx context.Context, id string) error
 	return marker.MarkResourceNeedsApply(ctx, id)
 }
 
-func (s *Service) markResourceChanged(ctx context.Context, id string, resources []Resource) error {
+func (s *Service) markResourceChanged(ctx context.Context, id string) error {
 	if marker, ok := s.profiles.(interface {
 		MarkResourcesChanged(context.Context, []string) error
 	}); ok {
@@ -637,12 +657,25 @@ func (s *Service) markResourceChanged(ctx context.Context, id string, resources 
 	} else if err := s.markReferencedNeedsApply(ctx, id); err != nil {
 		return err
 	}
-	if reconciler, ok := s.profiles.(interface {
+	return s.reconcileCurrentResourceDigests(ctx)
+}
+
+func (s *Service) reconcileCurrentResourceDigests(ctx context.Context) error {
+	reconciler, ok := s.profiles.(interface {
 		ReconcileResourceDigests(context.Context, map[string]string) error
-	}); ok {
-		return reconciler.ReconcileResourceDigests(ctx, s.resourceDigests(resources))
+	})
+	if !ok {
+		return nil
 	}
-	return nil
+	// Serialize the fresh read and reconciliation so a slower update cannot
+	// publish a digest map captured before a newer update committed.
+	s.reconcileMu.Lock()
+	defer s.reconcileMu.Unlock()
+	digests, err := s.CurrentDigests(ctx)
+	if err != nil {
+		return err
+	}
+	return reconciler.ReconcileResourceDigests(ctx, digests)
 }
 
 func validateName(name string) error {

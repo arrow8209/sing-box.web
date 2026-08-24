@@ -20,6 +20,115 @@ func (d failingRuleDownloader) Fetch(context.Context, Resource) (DownloadedFile,
 	return DownloadedFile{}, d.err
 }
 
+type controlledRuleDownloader struct {
+	started  chan<- string
+	release  map[string]<-chan struct{}
+	failures map[string]error
+}
+
+func (d controlledRuleDownloader) Fetch(ctx context.Context, resource Resource) (DownloadedFile, error) {
+	d.started <- resource.ID
+	select {
+	case <-ctx.Done():
+		return DownloadedFile{}, ctx.Err()
+	case <-d.release[resource.ID]:
+	}
+	if err := d.failures[resource.ID]; err != nil {
+		return DownloadedFile{}, err
+	}
+	payload := []byte("binary-" + resource.ID)
+	path, err := stageRulePayload(resource.LocalPath, payload)
+	if err != nil {
+		return DownloadedFile{}, err
+	}
+	digest := fmt.Sprintf("%x", sha256.Sum256(payload))
+	return DownloadedFile{Path: path, Digest: digest, Payload: payload}, nil
+}
+
+func TestConcurrentUpdatesMergeLatestResourceStates(t *testing.T) {
+	for _, test := range []struct {
+		name          string
+		secondFailure error
+	}{
+		{name: "both updates succeed"},
+		{name: "later update fails", secondFailure: errors.New("download failed")},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			service, layout := newRuleService(t, nil)
+			first, err := service.Create(context.Background(), CreateInput{Name: "first", URL: "https://example.test/first.srs", Format: FormatBinary})
+			if err != nil {
+				t.Fatal(err)
+			}
+			service.random = bytes.NewReader(bytes.Repeat([]byte{0x22}, 16))
+			second, err := service.Create(context.Background(), CreateInput{Name: "second", URL: "https://example.test/second.srs", Format: FormatBinary})
+			if err != nil {
+				t.Fatal(err)
+			}
+			started := make(chan string, 2)
+			firstRelease, secondRelease := make(chan struct{}), make(chan struct{})
+			service.SetDownloader(controlledRuleDownloader{
+				started:  started,
+				release:  map[string]<-chan struct{}{first.ID: firstRelease, second.ID: secondRelease},
+				failures: map[string]error{second.ID: test.secondFailure},
+			})
+			type outcome struct {
+				id  string
+				err error
+			}
+			completed := make(chan outcome, 2)
+			for _, id := range []string{first.ID, second.ID} {
+				go func() {
+					_, updateErr := service.UpdateNow(context.Background(), id)
+					completed <- outcome{id: id, err: updateErr}
+				}()
+			}
+			for range 2 {
+				select {
+				case <-started:
+				case <-time.After(2 * time.Second):
+					t.Fatal("concurrent updates did not both reach the downloader")
+				}
+			}
+			close(firstRelease)
+			select {
+			case result := <-completed:
+				if result.id != first.ID || result.err != nil {
+					t.Fatalf("first update result=%+v", result)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("first update did not complete")
+			}
+			close(secondRelease)
+			select {
+			case result := <-completed:
+				if result.id != second.ID || !errors.Is(result.err, test.secondFailure) {
+					t.Fatalf("second update result=%+v", result)
+				}
+			case <-time.After(2 * time.Second):
+				t.Fatal("second update did not complete")
+			}
+
+			resources, err := service.store.list()
+			if err != nil {
+				t.Fatal(err)
+			}
+			firstIndex, secondIndex := indexOf(resources, first.ID), indexOf(resources, second.ID)
+			if firstIndex < 0 || resources[firstIndex].LastSuccessAt == nil || resources[firstIndex].LastDigest == "" {
+				t.Fatalf("first resource lost its successful update state: %+v", resources)
+			}
+			if test.secondFailure == nil && (secondIndex < 0 || resources[secondIndex].LastSuccessAt == nil || resources[secondIndex].LastDigest == "") {
+				t.Fatalf("second resource lost its successful update state: %+v", resources)
+			}
+			if test.secondFailure != nil && (secondIndex < 0 || resources[secondIndex].LastError == "") {
+				t.Fatalf("second resource lost its failed update state: %+v", resources)
+			}
+			if err := RecoverRuleTransactions(service.store, layout); err != nil {
+				t.Fatalf("concurrent updates left an unrecoverable state: %v", err)
+			}
+		})
+	}
+}
+
 func TestFailedUpdatePreservesCurrentFile(t *testing.T) {
 	service, layout := newRuleService(t, nil)
 	resource, err := service.Create(context.Background(), CreateInput{Name: "CN", URL: "https://example.test/cn.srs", Format: FormatBinary})
