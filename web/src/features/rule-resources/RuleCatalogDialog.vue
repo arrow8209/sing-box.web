@@ -3,7 +3,7 @@ import { computed, ref, watch } from "vue";
 import AppDialog from "@/components/AppDialog.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import { useRuleResourceStore } from "./store";
-import type { RuleCatalogItem, RuleCatalogPreview, RuleFormat } from "./types";
+import type { RuleCatalogItem, RuleCatalogPreview } from "./types";
 
 const props = defineProps<{ open: boolean }>();
 const emit = defineEmits<{ close: []; notice: [message: string]; error: [message: string] }>();
@@ -24,7 +24,7 @@ const filtered = computed(() => {
 });
 const pageCount = computed(() => Math.max(1, Math.ceil(filtered.value.length / pageSize)));
 const pageItems = computed(() => filtered.value.slice((page.value - 1) * pageSize, page.value * pageSize));
-const importedCount = computed(() => new Set(store.resources.value.map((item) => item.catalogKey).filter(Boolean)).size);
+const importedCount = computed(() => new Set(store.resources.value.filter((item) => item.sourceType === "remote" && item.format === "binary").map((item) => item.catalogKey).filter(Boolean)).size);
 const filterOptions = computed(() => [
   { value: "all" as const, label: "全部", count: store.catalog.value?.total ?? 0 },
   { value: "geosite" as const, label: "GeoSite", count: store.catalog.value?.geositeCount ?? 0 },
@@ -38,11 +38,11 @@ async function load(force: boolean): Promise<void> {
   try { await store.loadCatalog(force); }
   catch (cause) { localError.value = cause instanceof Error ? cause.message : "规则集目录加载失败"; }
 }
-function installed(item: RuleCatalogItem, format: RuleFormat): boolean {
+function installed(item: RuleCatalogItem): boolean {
   const catalog = store.catalog.value;
   const base = item.type === "geoip" ? catalog?.geoip : catalog?.geosite;
-  const endpoint = base ? `${base}${item.name}.${format === "source" ? "json" : "srs"}` : "";
-  return store.resources.value.some((resource) => resource.format === format && (resource.catalogKey === item.key || (!resource.catalogKey && Boolean(endpoint) && resource.url === endpoint)));
+  const endpoint = base ? `${base}${item.name}.srs` : "";
+  return store.resources.value.some((resource) => resource.sourceType === "remote" && resource.format === "binary" && (resource.catalogKey === item.key || (!resource.catalogKey && Boolean(endpoint) && resource.url === endpoint)));
 }
 async function showPreview(item: RuleCatalogItem): Promise<void> {
   previewLoading.value = true; localError.value = ""; previewItem.value = item;
@@ -50,11 +50,11 @@ async function showPreview(item: RuleCatalogItem): Promise<void> {
   catch (cause) { localError.value = cause instanceof Error ? cause.message : "预览失败"; previewItem.value = null; }
   finally { previewLoading.value = false; }
 }
-async function importItem(item: RuleCatalogItem, format: RuleFormat): Promise<void> {
-  importing.value = `${item.key}:${format}`; localError.value = "";
+async function importItem(item: RuleCatalogItem): Promise<void> {
+  importing.value = `${item.key}:binary`; localError.value = "";
   try {
-    const result = await store.importCatalog(item.key, format);
-    emit("notice", result.warning || `${item.name} 的 ${format} 格式已导入并完成首次更新。`);
+    const result = await store.importCatalog(item.key);
+    emit("notice", result.warning || `${item.name} 已以 Binary 格式导入并完成首次更新。`);
   } catch (cause) { emit("error", cause instanceof Error ? cause.message : "导入规则集失败"); }
   finally { importing.value = ""; }
 }
@@ -80,13 +80,8 @@ function setCategory(value: "all" | "geosite" | "geoip"): void { category.value 
             <button class="preview-button" type="button" :aria-label="`预览 ${item.name} 规则`" title="预览规则" :disabled="previewLoading" @click="showPreview(item)"><AppIcon name="eye" :size="16" /></button>
           </div>
           <div class="catalog-card__actions">
-            <details class="more-actions" name="catalog-more-actions">
-              <summary>更多</summary>
-              <div class="more-actions__menu">
-                <button class="source-action" type="button" :class="{ added: installed(item, 'source') }" :disabled="installed(item, 'source') || Boolean(importing)" @click="importItem(item, 'source')"><AppIcon :name="installed(item, 'source') ? 'check' : 'plus'" :size="13" />{{ installed(item, "source") ? "已添加 Source" : "添加 Source" }}</button>
-              </div>
-            </details>
-            <button class="add-config-button" type="button" :class="{ added: installed(item, 'binary') }" :disabled="installed(item, 'binary') || Boolean(importing)" @click="importItem(item, 'binary')">{{ installed(item, "binary") ? "已添加到配置" : "添加到配置" }}</button>
+            <button class="more-actions" type="button" :disabled="previewLoading" @click="showPreview(item)">更多</button>
+            <button class="add-config-button" type="button" :class="{ added: installed(item) }" :disabled="installed(item) || Boolean(importing)" @click="importItem(item)">{{ installed(item) ? "已添加到配置" : "添加到配置" }}</button>
           </div>
         </article>
       </div>
@@ -96,10 +91,10 @@ function setCategory(value: "all" | "geosite" | "geoip"): void { category.value 
     </template>
     <template v-else>
       <div class="preview-summary"><span class="item-icon" :class="previewItem?.type"><AppIcon :name="previewItem?.type === 'geoip' ? 'globe' : 'rules'" :size="17" /></span><div><strong>{{ previewItem?.name }}</strong><span>{{ preview.ruleBlocks }} 个规则块 · {{ preview.ruleCount.toLocaleString("zh-CN") }} 条规则信息</span></div><b>{{ previewItem?.type }}</b></div>
-      <div class="preview-editor"><header><b>JSON</b><span>真实 Source 内容结构预览</span></header><pre>{{ JSON.stringify(preview.content, null, 2) }}</pre></div>
-      <p v-if="preview.truncated" class="preview-note"><AppIcon name="info" :size="14" />规则内容较大，页面仅展示部分结构；导入时仍会下载完整文件。</p>
+      <div class="preview-editor"><header><b>JSON</b><span>Source 内容结构预览（仅预览）</span></header><pre>{{ JSON.stringify(preview.content, null, 2) }}</pre></div>
+      <p v-if="preview.truncated" class="preview-note"><AppIcon name="info" :size="14" />规则内容较大，页面仅展示部分结构；导入时仍会下载完整 Binary 文件。</p>
     </template>
-    <template #footer><template v-if="preview"><button type="button" class="back-button" @click="back">返回中心</button><span class="footer-spacer" /><button v-if="previewItem" type="button" :disabled="installed(previewItem, 'source') || Boolean(importing)" @click="importItem(previewItem, 'source')">添加 Source</button><button v-if="previewItem" type="button" class="primary-footer" :disabled="installed(previewItem, 'binary') || Boolean(importing)" @click="importItem(previewItem, 'binary')">添加 Binary</button></template><template v-else><span class="footer-note"><AppIcon name="code" :size="13" />Source 可读、便于审查　<AppIcon name="lightning" :size="13" />Binary 更小、加载更快</span><button type="button" class="primary-footer" @click="emit('close')">完成</button></template></template>
+    <template #footer><template v-if="preview"><button type="button" class="back-button" @click="back">返回中心</button><span class="footer-spacer" /><button v-if="previewItem" type="button" class="primary-footer" :disabled="installed(previewItem) || Boolean(importing)" @click="importItem(previewItem)">{{ installed(previewItem) ? "已添加到配置" : "添加到配置" }}</button></template><template v-else><span class="footer-note"><AppIcon name="lightning" :size="13" />网络规则统一以 Binary 格式导入</span><button type="button" class="primary-footer" @click="emit('close')">完成</button></template></template>
   </AppDialog>
 </template>
 
@@ -119,14 +114,8 @@ function setCategory(value: "all" | "geosite" | "geoip"): void { category.value 
 .catalog-card__meta .preview-button { display: inline-grid; width: 23px; min-height: 23px; flex: 0 0 auto; place-items: center; padding: 2px; border-radius: 5px; color: var(--text); background: transparent; }
 .catalog-card__meta .preview-button:hover { color: var(--primary); background: var(--primary-soft); }
 .catalog-card__actions { display: flex; align-items: end; justify-content: space-between; gap: 10px; margin-top: auto; }
-.more-actions { position: relative; color: var(--text); }
-.more-actions summary { min-height: 22px; padding: 2px 0; list-style: none; cursor: pointer; font-size: 12px; font-weight: 680; line-height: 18px; }
-.more-actions summary::-webkit-details-marker { display: none; }
-.more-actions summary:focus-visible { border-radius: 3px; outline: 3px solid color-mix(in srgb, var(--primary) 45%, transparent); outline-offset: 2px; }
-.more-actions__menu { position: absolute; z-index: 5; inset: auto auto calc(100% + 6px) 0; width: max-content; min-width: 132px; padding: 5px; border: 1px solid var(--line); border-radius: 8px; background: var(--surface); box-shadow: var(--shadow-md); }
-.more-actions__menu .source-action { display: flex; width: 100%; min-height: 30px; align-items: center; gap: 6px; padding: 5px 8px; color: var(--text-soft); background: transparent; font-size: 10px; text-align: left; }
-.more-actions__menu .source-action:hover:not(:disabled) { color: var(--primary); background: var(--primary-soft); }
-.more-actions__menu .source-action.added:disabled { color: var(--green); opacity: 1; }
+.catalog-card__actions .more-actions { min-height: 22px; padding: 2px 0; color: var(--text); background: transparent; font-size: 12px; line-height: 18px; }
+.catalog-card__actions .more-actions:hover:not(:disabled) { color: var(--primary); }
 .catalog-card__actions .add-config-button { min-height: 22px; padding: 2px 0; color: var(--primary-strong); background: transparent; font-size: 12px; line-height: 18px; }
 .catalog-card__actions .add-config-button:hover:not(:disabled) { color: var(--primary); text-decoration: underline; text-underline-offset: 2px; }
 .catalog-card__actions .add-config-button.added:disabled { color: var(--green); cursor: default; opacity: 1; }

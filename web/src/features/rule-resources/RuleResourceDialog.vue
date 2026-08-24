@@ -2,7 +2,7 @@
 import { computed, reactive, watch } from "vue";
 import AppDialog from "@/components/AppDialog.vue";
 import AppIcon from "@/layout/AppIcon.vue";
-import type { RuleFormat, RuleResourceDetail, RuleResourceInput, RuleSourceType } from "./types";
+import type { RuleResourceDetail, RuleResourceInput, RuleSourceType } from "./types";
 
 const props = withDefaults(defineProps<{ open: boolean; resource?: RuleResourceDetail | null; busy?: boolean }>(), { resource: null, busy: false });
 const emit = defineEmits<{ close: []; submit: [input: RuleResourceInput]; delete: [resource: RuleResourceDetail] }>();
@@ -18,7 +18,7 @@ const manualExample = `{
     }
   ]
 }`;
-const form = reactive({ sourceType: "remote" as RuleSourceType, name: "", url: "", format: "binary" as RuleFormat, updateInterval: "24h", disabled: false, content: manualExample });
+const form = reactive({ sourceType: "remote" as RuleSourceType, name: "", url: "", updateInterval: "24h", disabled: false, content: manualExample });
 
 function reset(): void {
   const resource = props.resource;
@@ -26,14 +26,12 @@ function reset(): void {
     sourceType: resource.sourceType,
     name: resource.name,
     url: resource.url,
-    format: resource.format,
     updateInterval: resource.updateInterval,
     disabled: resource.disabled,
     content: resource.sourceType === "manual" ? JSON.stringify(resource.content, null, 2) : manualExample
-  } : { sourceType: "remote", name: "", url: "", format: "binary", updateInterval: "24h", disabled: false, content: manualExample });
+  } : { sourceType: "remote", name: "", url: "", updateInterval: "24h", disabled: false, content: manualExample });
 }
 watch(() => [props.open, props.resource] as const, reset, { immediate: true });
-watch(() => form.sourceType, (value) => { if (value === "manual") form.format = "source"; });
 
 const manualValidation = computed(() => {
   if (form.sourceType !== "manual") return { valid: true, message: "" };
@@ -62,7 +60,7 @@ function submit(): void {
     emit("submit", { sourceType: "manual", name: form.name.trim(), url: "", format: "source", updateInterval: "", disabled: form.disabled, content: JSON.parse(form.content) });
     return;
   }
-  emit("submit", { sourceType: "remote", name: form.name.trim(), url: form.url.trim(), format: form.format, updateInterval: form.updateInterval, disabled: form.disabled });
+  emit("submit", { sourceType: "remote", name: form.name.trim(), url: form.url.trim(), format: "binary", updateInterval: form.updateInterval, disabled: form.disabled });
 }
 </script>
 
@@ -87,7 +85,7 @@ function submit(): void {
       <label class="form-row"><span class="field-label">规则集名称<small>name</small></span><input v-model.trim="form.name" required maxlength="80" placeholder="例如 geosite-cn" /></label>
 
       <template v-if="form.sourceType === 'remote'">
-        <div class="form-row"><span class="field-label">保存格式<small>format</small></span><div class="segmented two"><label :class="{ active: form.format === 'source' }"><input v-model="form.format" type="radio" value="source" /><AppIcon name="code" :size="14" />Source</label><label :class="{ active: form.format === 'binary' }"><input v-model="form.format" type="radio" value="binary" /><AppIcon name="database" :size="14" />Binary</label></div></div>
+        <div class="form-row"><span class="field-label">保存格式<small>format</small></span><span class="fixed-format"><AppIcon name="database" :size="14" /><strong>Binary</strong><small>.srs · 网络规则固定格式</small></span></div>
         <label class="form-row"><span class="field-label">网络地址<small>url</small></span><input v-model.trim="form.url" type="url" required placeholder="https://example.com/rules.srs" /></label>
         <label class="form-row"><span class="field-label">定时更新<small>update interval</small></span><select v-model="form.updateInterval"><option value="">仅手动更新</option><option value="15m">每 15 分钟</option><option value="1h">每 1 小时</option><option value="6h">每 6 小时</option><option value="12h">每 12 小时</option><option value="24h">每天</option><option value="168h">每 7 天</option></select></label>
         <div class="automation-callout"><AppIcon name="clock" :size="16" /><div><strong>服务端自动更新</strong><span>浏览器关闭后计划仍会继续执行；内容变化后需要重新应用相关档案。</span></div></div>
@@ -99,7 +97,7 @@ function submit(): void {
           <textarea v-model="form.content" :aria-invalid="!manualValidation.valid" spellcheck="false" />
         </div>
         <p class="validation" :class="manualValidation.valid ? 'valid' : 'invalid'"><AppIcon :name="manualValidation.valid ? 'check' : 'info'" :size="14" />{{ manualValidation.message }}</p>
-        <div class="manual-help"><AppIcon name="info" :size="15" /><span>内容由服务端校验并保存到固定本地文件，不访问任意文件路径。</span></div>
+        <div class="manual-help"><AppIcon name="info" :size="15" /><span>手工规则固定使用 Source JSON；内容由服务端校验并保存到固定本地文件。</span></div>
       </template>
 
       <label class="disabled-row"><input v-model="form.disabled" type="checkbox" />暂时禁用此规则集</label>
@@ -116,5 +114,6 @@ function submit(): void {
 
 <style scoped>
 :global(.rule-resource-dialog) { width: min(700px, calc(100vw - 32px)); }.resource-form { display: grid; gap: 14px; }.kind-section { padding-bottom: 14px; border-bottom: 1px solid var(--line); }.field-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; color: var(--text); font-size: 11px; font-weight: 680; }.field-label small { color: var(--text-faint); font: 8px ui-monospace, monospace; }.kind-section > .field-label { margin-bottom: 8px; }.segmented { display: grid; gap: 3px; padding: 3px; border: 1px solid var(--line); border-radius: 10px; background: var(--surface-soft); }.segmented.two { grid-template-columns: repeat(2, minmax(0, 1fr)); }.segmented label { display: flex; min-height: 39px; align-items: center; justify-content: center; gap: 7px; border-radius: 7px; color: var(--text-soft); font-size: 10px; font-weight: 670; cursor: pointer; }.segmented label.active { color: var(--primary); background: var(--surface); box-shadow: 0 3px 10px rgb(30 45 80 / 8%); }.segmented input { position: absolute; opacity: 0; pointer-events: none; }.form-row { display: grid; grid-template-columns: 145px minmax(0, 1fr); align-items: center; gap: 14px; }.form-row > input, .form-row > select { width: 100%; min-height: 40px; background: var(--surface-soft); font-size: 11px; }.automation-callout, .manual-help { display: flex; align-items: flex-start; gap: 9px; padding: 10px 12px; border: 1px solid color-mix(in srgb, var(--cyan) 18%, var(--line)); border-radius: 10px; color: var(--cyan); background: var(--cyan-soft); }.automation-callout strong, .automation-callout span { display: block; }.automation-callout strong { color: var(--text); font-size: 10px; }.automation-callout span, .manual-help span { margin-top: 2px; color: var(--text-soft); font-size: 9px; }.manual-editor { overflow: hidden; border: 1px solid var(--line); border-radius: 11px; background: #10182a; }.editor-toolbar { display: flex; min-height: 39px; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 10px; border-bottom: 1px solid rgb(255 255 255 / 9%); color: #91a0bb; font-size: 9px; }.editor-toolbar b { margin-right: 7px; color: #8aa2ff; font-size: 9px; }.editor-toolbar button { min-height: 27px; padding: 4px 7px; color: #b8c4d9; background: transparent; font-size: 9px; }.editor-toolbar button + button { margin-left: 3px; }.editor-toolbar button:hover { background: rgb(255 255 255 / 8%); }.manual-editor textarea { width: 100%; min-height: 300px; padding: 14px 16px; border: 0; border-radius: 0; color: #d4def0; background: #10182a; font: 11px/1.65 ui-monospace, SFMono-Regular, Consolas, monospace; resize: vertical; }.validation { display: flex; align-items: center; gap: 7px; margin: -5px 0 0; padding: 8px 10px; border-radius: 8px; font-size: 9px; }.validation.valid { color: var(--green); background: var(--green-soft); }.validation.invalid { color: var(--red); background: var(--red-soft); }.disabled-row { display: flex; align-items: center; gap: 8px; color: var(--text-soft); font-size: 10px; }.disabled-row input { width: 15px; min-height: 15px; }.resource-path { margin: -3px 0 0; color: var(--text-faint); font-size: 9px; }.resource-path code { color: var(--primary-strong); }.footer-spacer { flex: 1; }.secondary-button, .danger-button, .primary-button { display: inline-flex; min-height: 36px; align-items: center; gap: 6px; padding: 7px 11px; border: 1px solid var(--line); font-size: 10px; }.secondary-button { color: var(--text-soft); background: var(--surface); }.danger-button { color: var(--red); border-color: color-mix(in srgb, var(--red) 20%, var(--line)); background: var(--red-soft); }.primary-button { color: #fff; border-color: var(--primary); background: var(--primary); }
+.fixed-format { display: flex; min-height: 40px; align-items: center; gap: 7px; padding: 8px 11px; border: 1px solid var(--line); border-radius: 8px; color: var(--primary); background: var(--primary-soft); font-size: 10px; }.fixed-format strong { color: var(--text); }.fixed-format small { margin-left: auto; color: var(--text-faint); font-size: 8px; }
 @media (max-width: 680px) { :global(.rule-resource-dialog) { width: 100%; }.form-row { grid-template-columns: 1fr; gap: 6px; }.manual-editor textarea { min-height: 42dvh; }.footer-spacer { display: none; }.danger-button { margin-right: auto; } }
 </style>

@@ -4,7 +4,6 @@ import type {
   RuleCatalog,
   RuleCatalogImportResult,
   RuleCatalogPreview,
-  RuleFormat,
   RuleResource,
   RuleResourceDetail,
   RuleResourceInput,
@@ -23,7 +22,7 @@ export interface RuleResourceApi {
   catalog(): Promise<RuleCatalog>;
   refreshCatalog(): Promise<RuleCatalog>;
   previewCatalog(key: string): Promise<RuleCatalogPreview>;
-  importCatalog(key: string, format: RuleFormat, updateInterval: string): Promise<RuleCatalogImportResult>;
+  importCatalog(key: string, updateInterval: string): Promise<RuleCatalogImportResult>;
 }
 
 export const ruleResourceApi: RuleResourceApi = {
@@ -37,5 +36,5 @@ export const ruleResourceApi: RuleResourceApi = {
   async catalog() { return (await request<RuleCatalog>("/rule-resources/catalog")).data; },
   async refreshCatalog() { return (await request<RuleCatalog>("/rule-resources/catalog/refresh", { method: "POST" })).data; },
   async previewCatalog(key) { return (await request<RuleCatalogPreview>(`/rule-resources/catalog/preview?key=${encodeURIComponent(key)}`)).data; },
-  async importCatalog(key, format, updateInterval) { return (await request<RuleCatalogImportResult>("/rule-resources/catalog/import", { method: "POST", body: { key, format, updateInterval } })).data; }
+  async importCatalog(key, updateInterval) { return (await request<RuleCatalogImportResult>("/rule-resources/catalog/import", { method: "POST", body: { key, format: "binary", updateInterval } })).data; }
 };

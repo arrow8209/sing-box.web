@@ -102,7 +102,7 @@ func TestCatalogRefreshCachesFullDirectoryAndPreservesItOnFailure(t *testing.T) 
 	}
 }
 
-func TestCatalogImportDownloadsRealResourceAndRejectsDuplicateFormat(t *testing.T) {
+func TestCatalogImportOnlyDownloadsBinaryAndRejectsDuplicates(t *testing.T) {
 	resourceService, layout := newRuleService(t, nil)
 	resourceService.random = bytes.NewReader(append(bytes.Repeat([]byte{0x11}, 16), bytes.Repeat([]byte{0x22}, 16)...))
 	resourceService.SetDownloader(catalogRuleDownloader{})
@@ -111,23 +111,23 @@ func TestCatalogImportDownloadsRealResourceAndRejectsDuplicateFormat(t *testing.
 	if _, err := service.Refresh(context.Background()); err != nil {
 		t.Fatal(err)
 	}
-	result, err := service.Import(context.Background(), CatalogImportInput{Key: "geosite:cn", Format: FormatSource})
+	if _, err := service.Import(context.Background(), CatalogImportInput{Key: "geosite:cn", Format: FormatSource}); err == nil {
+		t.Fatal("source import succeeded")
+	}
+	result, err := service.Import(context.Background(), CatalogImportInput{Key: "geosite:cn"})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Warning != "" || result.Update == nil || result.Resource.CatalogKey != "geosite:cn" || result.Resource.RuleCount == nil || *result.Resource.RuleCount != 2 || result.Resource.UpdateInterval != "24h" {
+	if result.Warning != "" || result.Update == nil || result.Resource.CatalogKey != "geosite:cn" || result.Resource.Format != FormatBinary || result.Resource.URL != geositeBaseURL+"cn.srs" || result.Resource.RuleCount != nil || result.Resource.UpdateInterval != "24h" {
 		t.Fatalf("result=%+v", result)
 	}
-	if _, err := service.Import(context.Background(), CatalogImportInput{Key: "geosite:cn", Format: FormatSource}); err == nil {
+	if _, err := service.Import(context.Background(), CatalogImportInput{Key: "geosite:cn", Format: FormatBinary}); err == nil {
 		t.Fatal("duplicate import succeeded")
 	} else {
 		var duplicate *CatalogAlreadyImportedError
 		if !errors.As(err, &duplicate) {
 			t.Fatalf("err=%v", err)
 		}
-	}
-	if _, err := service.Import(context.Background(), CatalogImportInput{Key: "geosite:cn", Format: FormatBinary}); err != nil {
-		t.Fatalf("binary companion import failed: %v", err)
 	}
 }
 

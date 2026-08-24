@@ -18,6 +18,9 @@ describe("规则资源", () => {
     await wrapper.get("form").trigger("submit");
     const submitted = wrapper.emitted("submit")?.[0]?.[0] as RuleResourceInput;
     expect(submitted).toEqual({ sourceType: "remote", name: "GeoSite CN", url: "https://example.test/cn.srs", format: "binary", updateInterval: "24h", disabled: false });
+    expect(wrapper.get(".fixed-format").text()).toContain("Binary");
+    expect(wrapper.find('input[value="binary"]').exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("Source");
     expect(JSON.stringify(submitted)).not.toContain("localPath");
   });
 
@@ -42,6 +45,7 @@ describe("规则资源", () => {
       disabled: false,
       content: { version: 3, rules: [{ domain_suffix: ["example.com", "example.org"] }] }
     });
+    expect(wrapper.text()).toContain("手工规则固定使用 Source JSON");
     expect(JSON.stringify(submitted)).not.toContain("localPath");
   });
 
@@ -126,8 +130,8 @@ describe("规则资源", () => {
     await expect(store.loadCatalog()).resolves.toEqual(available);
     expect(api.catalog).toHaveBeenCalledOnce();
     expect(api.refreshCatalog).toHaveBeenCalledOnce();
-    await store.importCatalog("geosite:cn", "binary");
-    expect(api.importCatalog).toHaveBeenCalledWith("geosite:cn", "binary", "24h");
+    await store.importCatalog("geosite:cn");
+    expect(api.importCatalog).toHaveBeenCalledWith("geosite:cn", "24h");
     expect(store.resources.value).toEqual([imported]);
   });
 });

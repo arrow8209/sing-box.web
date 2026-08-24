@@ -26,7 +26,7 @@ export interface RemoteRuleResourceInput {
   sourceType: "remote";
   name: string;
   url: string;
-  format: RuleFormat;
+  format: "binary";
   updateInterval: string;
   disabled: boolean;
 }

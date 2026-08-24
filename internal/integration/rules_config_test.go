@@ -101,7 +101,7 @@ func (e *integrationEnvironment) InstallFakeCore(t *testing.T, behavior fakeCore
 
 func (e *integrationEnvironment) CreateRuleResource(t *testing.T, url string) string {
 	t.Helper()
-	resource, err := e.rules.Create(context.Background(), rules.CreateInput{Name: "source", URL: url, Format: rules.FormatSource, UpdateInterval: "1h"})
+	resource, err := e.rules.Create(context.Background(), rules.CreateInput{Name: "binary", URL: url, Format: rules.FormatBinary, UpdateInterval: "1h"})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -165,7 +165,7 @@ func TestRuleDownloadPreviewAndValidateFlow(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	assertPreviewLocalRule(t, preview, "GeoSite-Test", "data/rulesets/"+resourceID+".json")
+	assertPreviewLocalRule(t, preview, "GeoSite-Test", "data/rulesets/"+resourceID+".srs")
 	validated, err := env.config.Validate(context.Background(), profileID, revision)
 	if err != nil {
 		t.Fatal(err)

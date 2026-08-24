@@ -5,7 +5,6 @@ import type {
   RuleCatalog,
   RuleCatalogImportResult,
   RuleCatalogPreview,
-  RuleFormat,
   RuleResource,
   RuleResourceDetail,
   RuleResourceInput,
@@ -28,7 +27,7 @@ export interface RuleResourceStore {
   remove(id: string): Promise<void>;
   loadCatalog(force?: boolean): Promise<RuleCatalog>;
   previewCatalog(key: string): Promise<RuleCatalogPreview>;
-  importCatalog(key: string, format: RuleFormat, updateInterval?: string): Promise<RuleCatalogImportResult>;
+  importCatalog(key: string, updateInterval?: string): Promise<RuleCatalogImportResult>;
 }
 
 export function createRuleResourceStore(api: RuleResourceApi = ruleResourceApi): RuleResourceStore {
@@ -109,8 +108,8 @@ export function createRuleResourceStore(api: RuleResourceApi = ruleResourceApi):
       }
     },
     async previewCatalog(key) { return await api.previewCatalog(key); },
-    async importCatalog(key, format, updateInterval = "24h") {
-      const result = await api.importCatalog(key, format, updateInterval);
+    async importCatalog(key, updateInterval = "24h") {
+      const result = await api.importCatalog(key, updateInterval);
       replace(result.resource);
       return result;
     }

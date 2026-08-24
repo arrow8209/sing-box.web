@@ -309,8 +309,11 @@ func (s *CatalogService) Import(ctx context.Context, input CatalogImportInput) (
 	if err != nil {
 		return CatalogImportResult{}, err
 	}
-	if input.Format != FormatSource && input.Format != FormatBinary {
-		return CatalogImportResult{}, errors.New("规则集格式无效")
+	if input.Format == "" {
+		input.Format = FormatBinary
+	}
+	if input.Format != FormatBinary {
+		return CatalogImportResult{}, errors.New("网络规则只能使用 binary 格式")
 	}
 	if input.UpdateInterval == "" {
 		input.UpdateInterval = "24h"

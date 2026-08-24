@@ -31,7 +31,11 @@ test("可创建手工规则，并从完整 Ruleset-Hub 目录预览和导入", a
 
   await page.getByRole("button", { name: "添加规则集" }).click();
   const create = page.getByRole("dialog", { name: "添加规则集" });
+  await expect(create.getByText("Binary", { exact: true })).toBeVisible();
+  await expect(create.getByText(".srs · 网络规则固定格式", { exact: true })).toBeVisible();
+  await expect(create.getByText("Source", { exact: true })).toHaveCount(0);
   await create.getByText("纯手工规则", { exact: true }).click();
+  await expect(create.getByText("手工规则固定使用 Source JSON", { exact: false })).toBeVisible();
   await create.getByPlaceholder("例如 geosite-cn").fill("E2E 手工规则");
   await create.locator("textarea").fill(`{"version":3,"rules":[{"domain_suffix":["e2e.example"]}]}`);
   await expect(create.getByText("JSON 有效 · 1 个规则块")).toBeVisible();
@@ -63,13 +67,13 @@ test("可创建手工规则，并从完整 Ruleset-Hub 目录预览和导入", a
   expect((await catalog.locator(".catalog-card").boundingBox())!.height).toBeLessThan(110);
 
   await catalog.getByRole("button", { name: "预览 cloudflare 规则" }).click();
-  await expect(catalog.getByText("真实 Source 内容结构预览")).toBeVisible();
+  await expect(catalog.getByText("Source 内容结构预览（仅预览）")).toBeVisible();
   await expect(catalog.locator("pre")).toContainText("192.0.2.0/24");
   await catalog.getByRole("button", { name: "返回中心" }).click();
-  const more = catalog.locator(".more-actions summary");
-  await more.press("Enter");
-  await expect(catalog.getByRole("button", { name: "添加 Source" })).toBeVisible();
-  await more.press("Enter");
+  await catalog.getByRole("button", { name: "更多", exact: true }).click();
+  await expect(catalog.getByText("Source 内容结构预览（仅预览）")).toBeVisible();
+  await catalog.getByRole("button", { name: "返回中心" }).click();
+  await expect(catalog.getByRole("button", { name: /添加 Source|添加 Binary/ })).toHaveCount(0);
   await catalog.getByRole("button", { name: "添加到配置" }).click();
   await expect(catalog.getByRole("button", { name: "已添加到配置" })).toBeVisible();
   await catalog.getByRole("button", { name: "刷新" }).click();

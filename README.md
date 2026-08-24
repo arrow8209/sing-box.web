@@ -26,7 +26,7 @@ sh scripts/build.sh
 - GeoSite：`https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geosite/`
 - GeoIP：`https://testingcf.jsdelivr.net/gh/MetaCubeX/meta-rules-dat@sing/geo/geoip/`
 
-服务端会校验目录 SHA-256 并缓存最近一次成功结果；刷新失败不会覆盖可用缓存。目录项目可分别以 Source（`.json`）或 Binary（`.srs`）格式导入并首次下载。除网络规则外，也可以在页面中直接维护 Source JSON 手工规则；手工内容只会写入服务端派生的固定文件，不接受任意本地路径。
+服务端会校验目录 SHA-256 并缓存最近一次成功结果；刷新失败不会覆盖可用缓存。网络规则统一以 Binary（`.srs`）格式保存，规则集目录导入也固定使用 Binary。页面中直接维护的手工规则统一使用 Source JSON（`.json`）；手工内容只会写入服务端派生的固定文件，不接受任意本地路径。目录的 Source JSON 仅用于结构预览，不会保存为网络规则资源。
 
 ## 开发与验证
 

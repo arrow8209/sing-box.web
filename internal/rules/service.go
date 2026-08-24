@@ -262,6 +262,12 @@ func (s *Service) create(ctx context.Context, input CreateInput, catalogKey stri
 		if len(input.Content) != 0 {
 			return ResourceResponse{}, errors.New("网络规则不能提交手工内容")
 		}
+		if input.Format == "" {
+			input.Format = FormatBinary
+		}
+		if input.Format != FormatBinary {
+			return ResourceResponse{}, errors.New("网络规则只能使用 binary 格式")
+		}
 		if err := validateRemoteInput(input.Name, input.URL, input.Format, input.UpdateInterval); err != nil {
 			return ResourceResponse{}, err
 		}
@@ -505,6 +511,10 @@ func (s *Service) Patch(ctx context.Context, id string, input PatchInput) (Resou
 	if input.Content != nil {
 		s.mu.Unlock()
 		return ResourceResponse{}, errors.New("网络规则不能提交手工内容")
+	}
+	if next.Format != FormatBinary {
+		s.mu.Unlock()
+		return ResourceResponse{}, errors.New("网络规则只能使用 binary 格式")
 	}
 	if err := validateRemoteInput(next.Name, next.URL, next.Format, next.UpdateInterval); err != nil {
 		s.mu.Unlock()

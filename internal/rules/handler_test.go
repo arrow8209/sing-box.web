@@ -121,6 +121,12 @@ func TestCatalogAPIRefreshesPreviewsImportsAndRejectsDuplicates(t *testing.T) {
 		t.Fatalf("preview=%d %s", preview.Code, preview.Body.String())
 	}
 
+	source := httptest.NewRecorder()
+	api.ServeHTTP(source, httptest.NewRequest(http.MethodPost, "/api/v1/rule-resources/catalog/import", bytes.NewBufferString(`{"key":"geosite:cn","format":"source","updateInterval":"24h"}`)))
+	if source.Code != http.StatusBadRequest || !bytes.Contains(source.Body.Bytes(), []byte("网络规则只能使用 binary 格式")) {
+		t.Fatalf("source import=%d %s", source.Code, source.Body.String())
+	}
+
 	input := `{"key":"geosite:cn","format":"binary","updateInterval":"24h"}`
 	imported := httptest.NewRecorder()
 	api.ServeHTTP(imported, httptest.NewRequest(http.MethodPost, "/api/v1/rule-resources/catalog/import", bytes.NewBufferString(input)))

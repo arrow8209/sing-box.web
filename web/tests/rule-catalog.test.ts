@@ -36,8 +36,8 @@ describe("规则集目录", () => {
     mocked.store.catalogLoading.value = false;
     mocked.store.loadCatalog.mockReset().mockResolvedValue(mocked.store.catalog.value);
     mocked.store.previewCatalog.mockReset().mockResolvedValue({ key: items[0].key, ruleBlocks: 1, ruleCount: 2, truncated: false, content: { version: 3, rules: [{ domain_suffix: ["example.com"] }] } });
-    mocked.store.importCatalog.mockReset().mockImplementation(async (key: string, format: "source" | "binary") => {
-      const imported = { id: "a".repeat(32), catalogKey: key, sourceType: "remote", name: "site-000-geosite", url: `https://example.test/site-000.${format === "source" ? "json" : "srs"}`, format, updateInterval: "24h", disabled: false, localPath: `data/rulesets/${"a".repeat(32)}.${format === "source" ? "json" : "srs"}` };
+    mocked.store.importCatalog.mockReset().mockImplementation(async (key: string) => {
+      const imported = { id: "a".repeat(32), catalogKey: key, sourceType: "remote", name: "site-000-geosite", url: "https://example.test/site-000.srs", format: "binary", updateInterval: "24h", disabled: false, localPath: `data/rulesets/${"a".repeat(32)}.srs` };
       mocked.store.resources.value = [...mocked.store.resources.value, imported];
       return { resource: imported, update: { changed: true, digest: "b".repeat(64), message: "done" } };
     });
@@ -66,7 +66,7 @@ describe("规则集目录", () => {
     expect(wrapper.text()).toContain("第 1 / 2 页");
   });
 
-  it("可预览真实 Source 结构并在导入后显示已添加状态", async () => {
+  it("可预览 Source 结构并只以 Binary 格式导入", async () => {
     const wrapper = mount(RuleCatalogDialog, { props: { open: false } });
     await wrapper.setProps({ open: true });
     await flushPromises();
@@ -76,19 +76,20 @@ describe("规则集目录", () => {
     expect(wrapper.find(".preview-editor").text()).toContain("example.com");
 
     await wrapper.get(".back-button").trigger("click");
-    await wrapper.find(".source-action").trigger("click");
+    await wrapper.find(".more-actions").trigger("click");
     await flushPromises();
-    expect(mocked.store.importCatalog).toHaveBeenCalledWith("geosite:site-000", "source");
-    expect(wrapper.emitted("notice")?.[0]?.[0]).toContain("site-000 的 source 格式已导入");
-    expect(wrapper.find(".source-action").text()).toContain("已添加 Source");
+    expect(mocked.store.previewCatalog).toHaveBeenCalledTimes(2);
 
+    await wrapper.get(".back-button").trigger("click");
     await wrapper.find(".add-config-button").trigger("click");
     await flushPromises();
-    expect(mocked.store.importCatalog).toHaveBeenLastCalledWith("geosite:site-000", "binary");
+    expect(mocked.store.importCatalog).toHaveBeenCalledWith("geosite:site-000");
+    expect(wrapper.emitted("notice")?.[0]?.[0]).toContain("已以 Binary 格式导入");
     expect(wrapper.find(".add-config-button").text()).toBe("已添加到配置");
+    expect(wrapper.text()).not.toContain("添加 Source");
   });
 
-  it("旧资源只按完整类型地址匹配，不混淆同名 GeoSite 和 GeoIP", async () => {
+  it("旧 Source 网络资源不被视为已添加的 Binary", async () => {
     mocked.store.catalog.value = {
       available: true,
       source: "Ruleset-Hub",
@@ -107,8 +108,7 @@ describe("规则集目录", () => {
     await wrapper.setProps({ open: true });
     await flushPromises();
     const cards = wrapper.findAll(".catalog-card");
-    expect(cards[0].find(".source-action").text()).toContain("已添加 Source");
-    expect(cards[1].find(".source-action").text()).toContain("添加 Source");
-    expect(cards[1].find(".source-action").text()).not.toContain("已添加");
+    expect(cards[0].find(".add-config-button").text()).toBe("添加到配置");
+    expect(cards[1].find(".add-config-button").text()).toBe("添加到配置");
   });
 });

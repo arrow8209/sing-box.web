@@ -141,7 +141,7 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 	ids := make(map[string]string, len(templates))
 	changed := false
 	for _, template := range templates {
-		if template.TemplateKey == "" || template.Name == "" || template.URL == "" || (template.Format != FormatBinary && template.Format != FormatSource) {
+		if template.TemplateKey == "" || template.Name == "" || template.URL == "" || template.Format != FormatBinary {
 			return nil, fmt.Errorf("无效默认规则模板: %s", template.TemplateKey)
 		}
 		for index := range data.Resources {

@@ -248,7 +248,7 @@ func TestDeleteLastResourcePersistsEmptyArray(t *testing.T) {
 	}
 }
 
-func TestPatchFormatMovesFixedPathAndResetsDownloadState(t *testing.T) {
+func TestNetworkResourceRejectsSourceFormat(t *testing.T) {
 	service, layout := newRuleService(t, nil)
 	resource, err := service.Create(context.Background(), CreateInput{Name: "CN", URL: "https://example.test/cn.srs", Format: FormatBinary})
 	if err != nil {
@@ -265,15 +265,11 @@ func TestPatchFormatMovesFixedPathAndResetsDownloadState(t *testing.T) {
 		t.Fatal(err)
 	}
 	format := FormatSource
-	updated, err := service.Patch(context.Background(), resource.ID, PatchInput{Format: &format})
-	if err != nil {
-		t.Fatal(err)
+	if _, err := service.Patch(context.Background(), resource.ID, PatchInput{Format: &format}); err == nil {
+		t.Fatal("patched network resource to source")
 	}
-	if updated.LocalPath != "data/rulesets/"+resource.ID+".json" || updated.LastSuccessAt != nil || updated.LastDigest != "" {
-		t.Fatalf("updated=%+v", updated)
-	}
-	if _, err := os.Stat(old); !os.IsNotExist(err) {
-		t.Fatalf("old remains: %v", err)
+	if _, err := os.Stat(old); err != nil {
+		t.Fatalf("binary file was changed: %v", err)
 	}
 }
 
@@ -329,6 +325,16 @@ func TestCreateRejectsInvalidFields(t *testing.T) {
 	if _, err := service.Create(context.Background(), CreateInput{Name: "a", URL: "file:///etc/passwd", Format: FormatBinary}); err == nil {
 		t.Fatal("accepted file URL")
 	}
+	if _, err := service.Create(context.Background(), CreateInput{Name: "source", URL: "https://example.test/a.json", Format: FormatSource}); err == nil {
+		t.Fatal("accepted source network resource")
+	}
+	if _, err := service.Create(context.Background(), CreateInput{SourceType: SourceManual, Name: "manual", Format: FormatBinary, Content: json.RawMessage(`{"version":3,"rules":[{"domain_suffix":["example.com"]}]}`)}); err == nil {
+		t.Fatal("accepted binary manual resource")
+	}
+	resource, err := service.Create(context.Background(), CreateInput{Name: "binary", URL: "https://example.test/a.srs"})
+	if err != nil || resource.Format != FormatBinary {
+		t.Fatalf("default resource=%+v err=%v", resource, err)
+	}
 }
 
 func TestManualResourcePersistsValidatedContentAndSkipsNetworkUpdate(t *testing.T) {
@@ -376,13 +382,13 @@ func TestResourceCanConvertBetweenRemoteAndManualWithoutChangingID(t *testing.T)
 		t.Fatalf("manual=%+v", converted)
 	}
 	remote := SourceRemote
-	url := "https://example.test/cn.json"
-	format := FormatSource
+	url := "https://example.test/cn.srs"
+	format := FormatBinary
 	converted, err = service.Patch(context.Background(), resource.ID, PatchInput{SourceType: &remote, URL: &url, Format: &format})
 	if err != nil {
 		t.Fatal(err)
 	}
-	if converted.SourceType != SourceRemote || converted.URL != url || converted.LastDigest != "" || converted.SizeBytes != nil {
+	if converted.SourceType != SourceRemote || converted.URL != url || converted.Format != FormatBinary || converted.LastDigest != "" || converted.SizeBytes != nil {
 		t.Fatalf("remote=%+v", converted)
 	}
 }
