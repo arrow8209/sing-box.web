@@ -2552,6 +2552,128 @@ svg {
 
 .inbound-base-fields {
   align-items: end;
+  margin-top: 16px;
+}
+
+.inbound-base-fields.is-hidden {
+  display: none;
+}
+
+.inbound-kind-section {
+  display: grid;
+  gap: 8px;
+}
+
+.inbound-type-control {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.inbound-type-control label {
+  min-width: 0;
+}
+
+.inbound-type-control input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.inbound-type-control label > span {
+  position: relative;
+  display: grid;
+  min-height: 66px;
+  grid-template-columns: auto minmax(0, 1fr);
+  grid-template-rows: auto auto;
+  align-content: center;
+  gap: 2px 9px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.inbound-type-control label > span:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
+  transform: translateY(-1px);
+}
+
+.inbound-type-control .icon {
+  width: 22px;
+  height: 22px;
+  grid-row: 1 / 3;
+  align-self: center;
+  color: var(--primary);
+}
+
+.inbound-type-control strong,
+.inbound-type-control small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbound-type-control strong {
+  color: var(--text);
+  font-size: 10px;
+  font-weight: 680;
+}
+
+.inbound-type-control small {
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.inbound-type-control input:checked + span {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--line));
+  background: var(--primary-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.inbound-type-control input:focus-visible + span {
+  outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  outline-offset: 1px;
+}
+
+.inbound-status-control {
+  display: flex;
+  min-height: 42px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 7px 11px;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-sm);
+  background: var(--surface-soft);
+}
+
+.inbound-status-control > div {
+  min-width: 0;
+}
+
+.inbound-status-control strong,
+.inbound-status-control > div > span {
+  display: block;
+}
+
+.inbound-status-control strong {
+  color: var(--text);
+  font-size: 9px;
+}
+
+.inbound-status-control > div > span {
+  overflow: hidden;
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .inbound-type-divider {
@@ -2594,6 +2716,12 @@ svg {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 9px;
+}
+
+.inbound-listen-toggles,
+.inbound-tun-toggles {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 13px;
 }
 
 .tun-toggle-card {
@@ -4343,6 +4471,10 @@ svg {
 
 .modal.modal-wide {
   width: min(700px, 100%);
+}
+
+.modal.modal-inbound {
+  width: min(760px, 100%);
 }
 
 .modal.modal-outbound {
@@ -6675,6 +6807,10 @@ svg {
 
   .tun-toggle-grid {
     grid-template-columns: 1fr;
+  }
+
+  .inbound-type-control {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 
   .modal.modal-outbound {

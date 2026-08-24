@@ -137,6 +137,14 @@
 
   const endpointTypes = ["wireguard", "tailscale", "openconnect", "openvpn-client", "openvpn-server"];
   const serviceTypes = ["api", "derp", "resolved", "ssm-api", "ccm", "ocm", "oom-killer", "hysteria-realm", "usbip-client", "usbip-server"];
+  const inboundTypes = [
+    { type: "mixed", label: "Mixed", icon: "inbound", description: "HTTP 与 SOCKS 复合代理" },
+    { type: "http", label: "HTTP", icon: "globe", description: "HTTP 与 CONNECT 代理" },
+    { type: "socks", label: "SOCKS", icon: "route", description: "SOCKS4 / SOCKS5 代理" },
+    { type: "tun", label: "TUN", icon: "shield", description: "虚拟网卡与自动路由" },
+    { type: "direct", label: "Direct", icon: "lightning", description: "透明流量直连入口" },
+    { type: "custom", label: "完整 JSON", icon: "code", description: "任意 Schema 入站类型" },
+  ];
 
   const customInboundExample = `{
   "type": "mixed",
@@ -428,7 +436,7 @@
     customInbounds: [],
     formInbounds: [],
     editingProfileId: null,
-    editingCustomInboundId: null,
+    editingInboundId: null,
     editingOutboundId: null,
     editingSubscriptionId: null,
     outbounds: [
@@ -769,7 +777,7 @@
       : [];
     config.inbounds = [
       ...builtIn,
-      ...state.formInbounds.map((item) => cloneData(item.config)),
+      ...state.formInbounds.filter((item) => item.enabled !== false).map((item) => cloneData(item.config)),
       ...state.customInbounds.map((item) => cloneData(item.config)),
     ];
     config.outbounds = state.outbounds.map(outboundConfigForExport);
@@ -864,6 +872,30 @@
 
   function inboundCount() {
     return (state.builtInInbounds ? 3 : 0) + state.customInbounds.length + state.formInbounds.length;
+  }
+
+  function inboundTags(excludeId = null) {
+    const tags = state.builtInInbounds ? ["mixed-in", "tun-in", "dns-in"] : [];
+    state.formInbounds.forEach((item) => {
+      if (item.id !== excludeId && item.config.tag) tags.push(item.config.tag);
+    });
+    state.customInbounds.forEach((item) => {
+      if (item.id !== excludeId && item.config.tag) tags.push(item.config.tag);
+    });
+    return new Set(tags);
+  }
+
+  function uniqueInboundTag(seed, excludeId = null) {
+    const base = String(seed || "inbound").trim() || "inbound";
+    const tags = inboundTags(excludeId);
+    if (!tags.has(base)) return base;
+    let suffix = 2;
+    while (tags.has(`${base}-${suffix}`)) suffix += 1;
+    return `${base}-${suffix}`;
+  }
+
+  function defaultInboundTag(type, excludeId = null) {
+    return uniqueInboundTag(`${type === "custom" ? "custom" : type}-in`, excludeId);
   }
 
   function routeRuleCount() {
@@ -1366,19 +1398,16 @@
   function formInboundCard(item) {
     const config = item.config;
     const enabled = item.enabled !== false;
-    const listener = config.interface_name || config.listen || "由类型配置定义";
-    const endpoint = config.listen_port ? `${listener}:${config.listen_port}` : listener;
-    const descriptions = {
-      mixed: "HTTP 与 SOCKS 复合代理",
-      tun: "虚拟网卡与自动路由",
-      socks: "SOCKS4 / SOCKS5 代理",
-      http: "HTTP 代理服务",
-      direct: "透明流量直连入口",
-    };
+    const listener = config.interface_name || config.listen || (config.type === "tun" ? "自动命名" : "由类型配置定义");
+    const endpoint = config.type === "tun" && config.address?.length
+      ? `${listener} · ${config.address[0]}`
+      : config.listen_port ? `${listener}:${config.listen_port}` : listener;
+    const typeMeta = inboundTypes.find((candidate) => candidate.type === config.type);
+    const description = enabled ? typeMeta?.description || "表单配置" : "已停用 · 不写入生成配置";
     return `<div class="entry-card" data-entry="${item.id}">
-      <span class="entry-drag">${icon("grip")}</span><div class="entry-icon">${icon(config.type === "tun" ? "shield" : "inbound")}</div>
-      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(config.tag || `${config.type} 入站`)}</span><span class="type-badge">${escapeHtml(config.type)}</span><span class="status-badge ${enabled ? "status-online" : "badge-orange"}">${enabled ? "启用" : "停用"}</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>${descriptions[config.type] || "表单配置"}</span></div></div>
-      <div class="entry-actions"><button class="entry-action" data-action="edit-entry" title="编辑">${icon("edit")}</button><button class="entry-action" data-action="duplicate-entry" title="复制">${icon("copy")}</button><button class="entry-action danger" data-action="remove-form-inbound" data-id="${item.id}" title="删除">${icon("trash")}</button></div>
+      <span class="entry-drag">${icon("grip")}</span><div class="entry-icon">${icon(typeMeta?.icon || "inbound")}</div>
+      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(config.tag || `${config.type} 入站`)}</span><span class="type-badge">${escapeHtml(config.type)}</span><span class="status-badge ${enabled ? "status-online" : "badge-orange"}">${enabled ? "启用" : "停用"}</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>${description}</span></div></div>
+      <div class="entry-actions"><button class="entry-action" data-modal="inbound" data-id="${item.id}" title="编辑">${icon("edit")}</button><button class="entry-action" data-action="duplicate-form-inbound" data-id="${item.id}" title="复制">${icon("copy")}</button><button class="entry-action danger" data-action="remove-form-inbound" data-id="${item.id}" title="删除">${icon("trash")}</button></div>
     </div>`;
   }
 
@@ -1895,7 +1924,7 @@
   function openModal(type, itemId = null) {
     let content = "";
     state.editingProfileId = ["profile-manage", "profile-delete"].includes(type) ? itemId : null;
-    state.editingCustomInboundId = type === "inbound" ? itemId : null;
+    state.editingInboundId = type === "inbound" ? itemId : null;
     state.editingOutboundId = type === "outbound" ? itemId : null;
     state.editingRouteRuleId = type === "route" ? itemId : null;
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
@@ -2032,10 +2061,13 @@
       if (typeof config.type !== "string" || !config.type.trim()) {
         return { valid: false, message: "入站配置必须包含非空的 type 字段。" };
       }
+      if (typeof config.tag !== "string" || !config.tag.trim()) {
+        return { valid: false, message: "入站配置必须包含非空的 tag 字段。" };
+      }
       return {
         valid: true,
         config,
-        message: `JSON 有效 · ${config.tag ? `标签 ${config.tag}` : "未设置 tag"} · 类型 ${config.type}`,
+        message: `JSON 有效 · 标签 ${config.tag} · 类型 ${config.type}`,
       };
     } catch (error) {
       return { valid: false, message: `JSON 语法错误：${error.message}` };
@@ -2088,8 +2120,16 @@
     return `<label class="form-field ${options.full ? "full" : ""}"><span class="field-label">${label}${options.hint ? `<small>${options.hint}</small>` : ""}</span><select class="field-select" name="${name}" ${options.dataAttribute || ""}>${items.map(([itemValue, itemLabel]) => `<option value="${itemValue}" ${String(itemValue) === String(value) ? "selected" : ""}>${itemLabel}</option>`).join("")}</select></label>`;
   }
 
+  function inboundTypeControl(value) {
+    return `<div class="inbound-type-control">${inboundTypes.map((item) => `<label><input type="radio" name="inbound-type" value="${item.type}" data-inbound-type ${item.type === value ? "checked" : ""} /><span>${icon(item.icon)}<strong>${item.label}</strong><small>${item.description}</small></span></label>`).join("")}</div>`;
+  }
+
+  function inboundStatusControl(enabled) {
+    return `<div class="inbound-status-control" data-inbound-status-field><div><strong>启用此入站</strong><span>停用后保留参数，但不会写入生成配置</span></div><label class="form-switch"><input type="checkbox" name="enabled" value="true" aria-label="启用此入站" ${enabled ? "checked" : ""} /><span class="switch"></span></label></div>`;
+  }
+
   function inboundToggle(label, description, name, checked = false) {
-    return `<div class="tun-toggle-card"><div class="tun-toggle-copy"><strong>${label}</strong><span>${description}</span></div><label class="form-switch"><input type="checkbox" name="${name}" value="true" ${checked ? "checked" : ""} /><span class="switch"></span></label></div>`;
+    return `<div class="tun-toggle-card"><div class="tun-toggle-copy"><strong>${label}</strong><span>${description}</span></div><label class="form-switch"><input type="checkbox" name="${name}" value="true" aria-label="${escapeHtml(label)}" ${checked ? "checked" : ""} /><span class="switch"></span></label></div>`;
   }
 
   function inboundStackControl(value = "mixed") {
@@ -2104,6 +2144,23 @@
     return `<div class="form-field full tun-list-field" data-tun-list-field data-list-name="${name}"><span class="field-label">${label}<small>${hint}</small></span><div class="tun-list-items" data-tun-list-items>${values.map((value) => tunListItem(name, value)).join("")}</div><div class="tun-list-add"><input class="field-input" data-tun-list-input placeholder="${escapeHtml(placeholder)}" /><button type="button" data-action="add-tun-list-item" title="添加">${icon("plus")}</button></div></div>`;
   }
 
+  function inboundBoolean(config, key, fallback = false) {
+    return config[key] === undefined ? fallback : Boolean(config[key]);
+  }
+
+  function inboundUsersField(users = []) {
+    const values = users.map((user) => `${String(user?.username || "")}:${String(user?.password || "")}`);
+    return tunListField("认证用户", "user", values, "用户名:密码", "users");
+  }
+
+  function inboundListenToggles(config) {
+    return `<div class="tun-toggle-grid inbound-listen-toggles">
+      ${inboundToggle("TCP Fast Open", "减少 TCP 握手延迟", "tcp_fast_open", inboundBoolean(config, "tcp_fast_open"))}
+      ${inboundToggle("TCP Multi Path", "允许单连接使用多条路径", "tcp_multi_path", inboundBoolean(config, "tcp_multi_path"))}
+      ${inboundToggle("UDP 分片", "需要时发送分片 UDP 数据报", "udp_fragment", inboundBoolean(config, "udp_fragment"))}
+    </div>`;
+  }
+
   function renderCustomInboundEditor(json = customInboundExample) {
     const validation = validateCustomInboundJson(json);
     return `<div class="custom-json-editor">
@@ -2111,85 +2168,90 @@
       <textarea class="custom-json-textarea" name="inbound-json" data-custom-inbound-json aria-describedby="custom-json-validation" aria-invalid="${!validation.valid}" spellcheck="false">${escapeHtml(json)}</textarea>
     </div>
     ${customValidationMarkup(validation)}
-    <div class="info-callout custom-json-help">${icon("info")}<span>请输入一个完整的 sing-box 入站对象，而不是整个配置文件或 inbounds 数组。原型会检查 JSON 语法和必需的 <code>type</code> 字段。</span></div>`;
+    <div class="info-callout custom-json-help">${icon("info")}<span>请输入一个完整的 sing-box 入站对象，而不是整个配置文件或 inbounds 数组。原型会检查 JSON 语法以及必需的 <code>type</code>、<code>tag</code> 字段。</span></div>`;
   }
 
-  function renderInboundTypeFields(type, customJson = customInboundExample) {
+  function renderInboundTypeFields(type, values = {}) {
+    const source = typeof values === "string" ? { customJson: values } : values;
+    const config = source.config || {};
     const booleanOptions = [["true", "启用"], ["false", "关闭"]];
-    if (type === "custom") return renderCustomInboundEditor(customJson);
+    const booleanValue = (key, fallback = false) => String(inboundBoolean(config, key, fallback));
+    if (type === "custom") return renderCustomInboundEditor(source.customJson || customInboundExample);
     if (type === "tun") {
+      const address = Array.isArray(config.address) ? config.address : ["172.18.0.1/30", "fdfe:dcba:9876::1/126"];
+      const routeAddress = Array.isArray(config.route_address) ? config.route_address : [];
+      const routeExcludeAddress = Array.isArray(config.route_exclude_address) ? config.route_exclude_address : [];
       return `<div class="tun-settings">
-        <div class="tun-toggle-grid">
-          ${inboundToggle("启用", "允许此入站监听并接管流量", "enabled", true)}
-          ${inboundToggle("自动设置全局路由", "由 sing-box 自动写入系统路由", "auto_route", true)}
-          ${inboundToggle("严格路由", "减少流量泄漏并强化路由约束", "strict_route", false)}
-          ${inboundToggle("独立于端点的 NAT", "为 UDP 使用 endpoint-independent NAT", "endpoint_independent_nat", false)}
+        <div class="tun-toggle-grid inbound-tun-toggles">
+          ${inboundToggle("自动设置全局路由", "由 sing-box 自动写入系统路由", "auto_route", inboundBoolean(config, "auto_route", true))}
+          ${inboundToggle("严格路由", "减少流量泄漏并强化路由约束", "strict_route", inboundBoolean(config, "strict_route", true))}
+          ${inboundToggle("独立于端点的 NAT", "为 UDP 使用 endpoint-independent NAT", "endpoint_independent_nat", inboundBoolean(config, "endpoint_independent_nat"))}
         </div>
         <div class="form-grid tun-basic-grid">
-          ${inboundInput("TUN 网卡名称", "interface_name", "", { hint: "无", placeholder: "留空由系统自动命名" })}
-          ${inboundInput("最大传输单元", "mtu", "9000", { type: "number", hint: "MTU" })}
-          ${inboundStackControl("mixed")}
-          ${tunListField("IPv4 和 IPv6 前缀", "address", ["11.11.11.1/30"], "例如 fd00::1/126", "address")}
-          ${tunListField("自定义路由", "route_address", [], "例如 0.0.0.0/1 或 ::/1", "route_address")}
-          ${tunListField("排除自定义路由", "route_exclude_address", ["172.100.0.0/16", "192.168.0.0/16", "172.17.0.0/16", "172.22.0.0/16"], "例如 fc00::/7", "route_exclude_address")}
+          ${inboundInput("TUN 网卡名称", "interface_name", config.interface_name || "", { hint: "interface_name", placeholder: "留空由系统自动命名" })}
+          ${inboundInput("最大传输单元", "mtu", config.mtu ?? 9000, { type: "number", hint: "MTU" })}
+          ${inboundStackControl(config.stack || "mixed")}
+          ${tunListField("IPv4 和 IPv6 前缀", "address", address, "例如 fd00::1/126", "address")}
+          ${tunListField("自定义路由", "route_address", routeAddress, "例如 0.0.0.0/1 或 ::/1", "route_address")}
+          ${tunListField("排除自定义路由", "route_exclude_address", routeExcludeAddress, "例如 fc00::/7", "route_exclude_address")}
         </div>
       </div><div class="info-callout inbound-type-note">${icon("shield")}<span>TUN 地址与路由字段支持多个 IPv4/IPv6 CIDR；点击加号添加，列表中的值可直接编辑或删除。</span></div>`;
     }
+
+    const defaultPorts = { mixed: 7891, http: 8080, socks: 1080, direct: 5353 };
+    const commonFields = `${inboundListenToggles(config)}<div class="form-grid inbound-listen-fields">
+      ${inboundInput("监听地址", "listen", config.listen ?? "127.0.0.1", { required: true, hint: "listen" })}
+      ${inboundInput("监听端口", "listen_port", config.listen_port ?? defaultPorts[type] ?? 7891, { type: "number", required: true, hint: "listen_port" })}`;
+
     if (type === "socks") {
-      return `<div class="form-grid">
-        ${inboundInput("监听地址", "listen", "127.0.0.1", { required: true })}
-        ${inboundInput("监听端口", "listen_port", "1080", { type: "number", required: true })}
-        ${inboundInput("用户名", "username", "", { hint: "可选" })}
-        ${inboundInput("密码", "password", "", { type: "password", hint: "可选" })}
-        ${inboundInput("UDP 超时", "udp_timeout", "5m", { hint: "例如 5m" })}
-        ${inboundSelect("协议嗅探", "sniff", "true", booleanOptions)}
-      </div><div class="info-callout inbound-type-note">${icon("info")}<span>SOCKS 入站支持 SOCKS4、SOCKS4a 与 SOCKS5；填写用户名后会生成 users 认证配置。</span></div>`;
+      return `${commonFields}
+        ${inboundInput("UDP 超时", "udp_timeout", config.udp_timeout || "5m", { hint: "例如 5m" })}
+        ${inboundSelect("协议嗅探", "sniff", booleanValue("sniff", true), booleanOptions)}
+        ${inboundUsersField(config.users)}
+      </div><div class="info-callout inbound-type-note">${icon("info")}<span>SOCKS 入站支持 SOCKS4、SOCKS4a 与 SOCKS5；认证用户使用“用户名:密码”格式，可添加多组。</span></div>`;
     }
     if (type === "http") {
-      return `<div class="form-grid">
-        ${inboundInput("监听地址", "listen", "127.0.0.1", { required: true })}
-        ${inboundInput("监听端口", "listen_port", "8080", { type: "number", required: true })}
-        ${inboundInput("用户名", "username", "", { hint: "可选" })}
-        ${inboundInput("密码", "password", "", { type: "password", hint: "可选" })}
-        ${inboundSelect("协议嗅探", "sniff", "true", booleanOptions)}
-        ${inboundSelect("覆盖目标地址", "sniff_override_destination", "false", booleanOptions)}
-      </div><div class="info-callout inbound-type-note">${icon("globe")}<span>HTTP 入站接收标准 HTTP 代理与 CONNECT 请求，可选择启用用户认证。</span></div>`;
+      return `${commonFields}
+        ${inboundSelect("协议嗅探", "sniff", booleanValue("sniff", true), booleanOptions)}
+        ${inboundSelect("覆盖目标地址", "sniff_override_destination", booleanValue("sniff_override_destination"), booleanOptions)}
+        ${inboundUsersField(config.users)}
+      </div><div class="info-callout inbound-type-note">${icon("globe")}<span>HTTP 入站接收标准 HTTP 代理与 CONNECT 请求，可按需添加多组用户认证。</span></div>`;
     }
     if (type === "direct") {
-      return `<div class="form-grid">
-        ${inboundInput("监听地址", "listen", "127.0.0.1", { required: true })}
-        ${inboundInput("监听端口", "listen_port", "5353", { type: "number", required: true })}
-        ${inboundSelect("网络协议", "network", "udp", [["", "TCP + UDP"], ["tcp", "TCP"], ["udp", "UDP"]])}
-        ${inboundInput("覆盖目标地址", "override_address", "", { hint: "可选" })}
-        ${inboundInput("覆盖目标端口", "override_port", "", { type: "number", hint: "可选" })}
-        ${inboundSelect("协议嗅探", "sniff", "false", booleanOptions)}
+      return `${commonFields}
+        ${inboundSelect("网络协议", "network", config.network || "", [["", "TCP + UDP"], ["tcp", "TCP"], ["udp", "UDP"]])}
+        ${inboundSelect("协议嗅探", "sniff", booleanValue("sniff"), booleanOptions)}
+        ${inboundInput("覆盖目标地址", "override_address", config.override_address || "", { hint: "可选" })}
+        ${inboundInput("覆盖目标端口", "override_port", config.override_port ?? "", { type: "number", hint: "可选" })}
       </div><div class="info-callout inbound-type-note">${icon("route")}<span>Direct 入站适合透明转发或 DNS 劫持，可按需覆盖原始目标地址和端口。</span></div>`;
     }
-    return `<div class="form-grid">
-      ${inboundInput("监听地址", "listen", "127.0.0.1", { required: true })}
-      ${inboundInput("监听端口", "listen_port", "7891", { type: "number", required: true })}
-      ${inboundInput("用户名", "username", "", { hint: "可选" })}
-      ${inboundInput("密码", "password", "", { type: "password", hint: "可选" })}
-      ${inboundSelect("协议嗅探", "sniff", "true", booleanOptions)}
-      ${inboundSelect("覆盖目标地址", "sniff_override_destination", "false", booleanOptions)}
+    return `${commonFields}
+      ${inboundSelect("协议嗅探", "sniff", booleanValue("sniff", true), booleanOptions)}
+      ${inboundSelect("覆盖目标地址", "sniff_override_destination", booleanValue("sniff_override_destination"), booleanOptions)}
+      ${inboundUsersField(config.users)}
     </div><div class="info-callout inbound-type-note">${icon("inbound")}<span>Mixed 入站在同一端口同时提供 HTTP 与 SOCKS 代理，适合本机通用代理入口。</span></div>`;
   }
 
   function inboundModal(itemId) {
-    const item = state.customInbounds.find((inbound) => inbound.id === itemId);
-    const json = item?.json || customInboundExample;
-    const selectedType = item ? "custom" : "mixed";
+    const customItem = state.customInbounds.find((inbound) => inbound.id === itemId);
+    const formItem = state.formInbounds.find((inbound) => inbound.id === itemId);
+    const item = customItem || formItem;
+    const json = customItem?.json || customInboundExample;
+    const selectedType = customItem ? "custom" : formItem?.config.type || "mixed";
+    const defaultTag = formItem?.config.tag || customItem?.config.tag || defaultInboundTag(selectedType, itemId);
+    const enabled = formItem?.enabled !== false;
     const validation = selectedType === "custom" ? validateCustomInboundJson(json) : { valid: true };
-    const body = `<form class="modal-body" id="inbound-form" data-form="inbound">
-      <div class="form-grid inbound-base-fields">
-        <label class="form-field ${selectedType === "custom" ? "is-hidden" : ""}" data-inbound-name-field><span class="field-label">入站名称<small>对应 tag</small></span><input class="field-input" name="tag" value="${escapeHtml(item?.config.tag || "Mixed Proxy 2")}" required ${selectedType === "custom" ? "disabled" : ""} /></label>
-        ${inboundSelect("入站类型", "inbound-type", selectedType, [["mixed", "mixed"], ["tun", "tun"], ["socks", "socks"], ["http", "http"], ["direct", "direct"], ["custom", "自定义"]], { dataAttribute: "data-inbound-type", full: selectedType === "custom" })}
+    const body = `<form class="modal-body inbound-editor-body" id="inbound-form" data-form="inbound" data-default-tag="${escapeHtml(defaultTag)}" data-new="${item ? "false" : "true"}">
+      <div class="inbound-kind-section"><span class="field-label">入站类型<small>选择常用模板或完整 JSON</small></span>${inboundTypeControl(selectedType)}</div>
+      <div class="form-grid inbound-base-fields ${selectedType === "custom" ? "is-hidden" : ""}" data-inbound-base-fields>
+        <label class="form-field" data-inbound-name-field><span class="field-label">入站名称<small>对应 tag</small></span><input class="field-input" name="tag" value="${escapeHtml(defaultTag)}" required ${selectedType === "custom" ? "disabled" : ""} /></label>
+        ${inboundStatusControl(enabled)}
       </div>
       <div class="inbound-type-divider"><span>类型专属配置</span></div>
-      <div class="inbound-type-fields" data-inbound-type-fields>${renderInboundTypeFields(selectedType, json)}</div>
+      <div class="inbound-type-fields" data-inbound-type-fields>${renderInboundTypeFields(selectedType, { config: formItem?.config || {}, customJson: json })}</div>
     </form>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="inbound-submit" type="submit" form="inbound-form" ${validation.valid ? "" : "disabled"}>${icon(item ? "save" : "check")}${item ? "保存入站" : "确认添加"}</button></div>`;
-    return modalFrame(item ? "编辑入站" : "新增入站", "不同入站类型使用各自对应的配置参数", body, footer, "modal-wide");
+    return modalFrame(item ? "编辑入站" : "新增入站", "参考 GUI.for.SingBox 的常用入站参数，并保留完整 JSON 入口", body, footer, "modal-wide modal-inbound");
   }
 
   function updateCustomInboundValidation(textarea) {
@@ -2233,6 +2295,9 @@
 
     config.listen = read("listen");
     config.listen_port = asNumber("listen_port");
+    config.tcp_fast_open = asBoolean("tcp_fast_open");
+    config.tcp_multi_path = asBoolean("tcp_multi_path");
+    config.udp_fragment = asBoolean("udp_fragment");
     if (type === "direct") {
       const network = read("network");
       const overrideAddress = read("override_address");
@@ -2244,10 +2309,14 @@
       return config;
     }
 
-    const username = read("username");
-    const password = read("password");
-    if (username || password) config.users = [{ username, password }];
-    if (type === "socks") config.udp_timeout = read("udp_timeout");
+    const users = readList("user").map((credential) => {
+      const separator = credential.indexOf(":");
+      return separator < 0
+        ? { username: credential, password: "" }
+        : { username: credential.slice(0, separator), password: credential.slice(separator + 1) };
+    });
+    if (users.length) config.users = users;
+    if (type === "socks" && read("udp_timeout")) config.udp_timeout = read("udp_timeout");
     config.sniff = asBoolean("sniff");
     if (type !== "socks") config.sniff_override_destination = asBoolean("sniff_override_destination");
     return config;
@@ -3039,7 +3108,7 @@
   function closeModal() {
     modalRoot.innerHTML = "";
     state.editingProfileId = null;
-    state.editingCustomInboundId = null;
+    state.editingInboundId = null;
     state.editingOutboundId = null;
     state.editingRouteRuleId = null;
     state.editingRouteRulesetId = null;
@@ -3456,6 +3525,17 @@
       state.dirty = true;
       render();
       showToast("已移除自定义入站", `${item?.config.tag || "自定义入站"} 已从配置草稿移除。`, "info");
+    } else if (action === "duplicate-form-inbound") {
+      const index = state.formInbounds.findIndex((inbound) => inbound.id === actionTarget.dataset.id);
+      if (index < 0) return;
+      const source = state.formInbounds[index];
+      const duplicate = cloneData(source);
+      duplicate.id = `form-in-${Date.now()}`;
+      duplicate.config.tag = uniqueInboundTag(`${source.config.tag || source.config.type}-copy`);
+      state.formInbounds.splice(index + 1, 0, duplicate);
+      state.dirty = true;
+      render();
+      showToast("入站已复制", `${duplicate.config.tag} 已添加到当前配置草稿。`, "success");
     } else if (action === "remove-form-inbound") {
       const item = state.formInbounds.find((inbound) => inbound.id === actionTarget.dataset.id);
       state.formInbounds = state.formInbounds.filter((inbound) => inbound.id !== actionTarget.dataset.id);
@@ -3709,18 +3789,22 @@
     }
     if (event.target.matches("[data-inbound-type]")) {
       const selectedType = event.target.value;
-      const fields = document.querySelector("[data-inbound-type-fields]");
+      const form = event.target.closest("#inbound-form");
+      const fields = form?.querySelector("[data-inbound-type-fields]");
       const currentEditor = fields?.querySelector("[data-custom-inbound-json]");
       if (currentEditor) fields.dataset.customJson = currentEditor.value;
-      if (fields) fields.innerHTML = renderInboundTypeFields(selectedType, fields.dataset.customJson || customInboundExample);
+      if (fields) fields.innerHTML = renderInboundTypeFields(selectedType, { customJson: fields.dataset.customJson || customInboundExample });
 
-      const nameField = document.querySelector("[data-inbound-name-field]");
+      const baseFields = form?.querySelector("[data-inbound-base-fields]");
+      const nameField = form?.querySelector("[data-inbound-name-field]");
       const nameInput = nameField?.querySelector("input");
-      const typeField = event.target.closest(".form-field");
       const isCustom = selectedType === "custom";
-      nameField?.classList.toggle("is-hidden", isCustom);
-      typeField?.classList.toggle("full", isCustom);
+      baseFields?.classList.toggle("is-hidden", isCustom);
       if (nameInput) {
+        const previousDefault = form.dataset.defaultTag;
+        const nextDefault = defaultInboundTag(selectedType, state.editingInboundId);
+        if (form.dataset.new === "true" && nameInput.value === previousDefault) nameInput.value = nextDefault;
+        form.dataset.defaultTag = nextDefault;
         nameInput.disabled = isCustom;
         nameInput.required = !isCustom;
       }
@@ -3842,39 +3926,56 @@
       render();
       showToast("配置片段已保存", `${section.label}已写入当前草稿，请保存后应用。`, "success");
     } else if (type === "inbound") {
-      const inboundType = form.querySelector("[data-inbound-type]").value;
+      const inboundType = form.querySelector("[data-inbound-type]:checked")?.value || "mixed";
+      const editingId = state.editingInboundId;
+      const wasExisting = Boolean(editingId);
       if (inboundType === "custom") {
         const textarea = form.querySelector("[data-custom-inbound-json]");
         const result = updateCustomInboundValidation(textarea);
         if (!result.valid) return;
+        if (inboundTags(editingId).has(result.config.tag)) {
+          showToast("入站名称已存在", `“${result.config.tag}”已被其他入站使用。`, "info");
+          textarea.focus();
+          return;
+        }
         const json = JSON.stringify(result.config, null, 2);
-        const existing = state.customInbounds.find((inbound) => inbound.id === state.editingCustomInboundId);
+        const existing = state.customInbounds.find((inbound) => inbound.id === editingId);
         if (existing) {
           existing.json = json;
           existing.config = result.config;
         } else {
-          state.customInbounds.push({ id: `custom-in-${Date.now()}`, json, config: result.config });
+          if (editingId) state.formInbounds = state.formInbounds.filter((inbound) => inbound.id !== editingId);
+          state.customInbounds.push({ id: editingId || `custom-in-${Date.now()}`, json, config: result.config });
         }
         state.dirty = true;
         closeModal();
         render();
-        showToast(existing ? "自定义入站已更新" : "自定义入站已添加", `${result.config.tag || result.config.type} 已加入当前配置草稿，请保存后应用。`, "success");
+        showToast(wasExisting ? "入站已更新" : "自定义入站已添加", `${result.config.tag} 已写入当前配置草稿，请保存后应用。`, "success");
       } else {
         const config = buildInboundConfig(form, inboundType);
+        if (inboundTags(editingId).has(config.tag)) {
+          showToast("入站名称已存在", `“${config.tag}”已被其他入站使用。`, "info");
+          form.querySelector('[name="tag"]')?.focus();
+          return;
+        }
         if (inboundType === "tun" && !config.address.length) {
           showToast("缺少 TUN 地址", "请至少添加一个 IPv4 或 IPv6 前缀。", "info");
           form.querySelector('[data-list-name="address"] [data-tun-list-input]')?.focus();
           return;
         }
-        if (state.editingCustomInboundId) {
-          state.customInbounds = state.customInbounds.filter((inbound) => inbound.id !== state.editingCustomInboundId);
+        const enabled = new FormData(form).get("enabled") === "true";
+        const next = { id: editingId || `form-in-${Date.now()}`, config, enabled };
+        const existingIndex = state.formInbounds.findIndex((inbound) => inbound.id === editingId);
+        if (existingIndex >= 0) {
+          state.formInbounds.splice(existingIndex, 1, next);
+        } else {
+          if (editingId) state.customInbounds = state.customInbounds.filter((inbound) => inbound.id !== editingId);
+          state.formInbounds.push(next);
         }
-        const enabled = inboundType !== "tun" || new FormData(form).get("enabled") === "true";
-        state.formInbounds.push({ id: `form-in-${Date.now()}`, config, enabled });
         state.dirty = true;
         closeModal();
         render();
-        showToast("入站已添加", `${config.tag}（${config.type}）已加入当前配置草稿，请保存后应用。`, "success");
+        showToast(wasExisting ? "入站已更新" : "入站已添加", `${config.tag}（${config.type}）已写入当前配置草稿，请保存后应用。`, "success");
       }
     } else if (type === "outbound") {
       const selectedType = form.querySelector('[name="outbound-type"]:checked')?.value || "selector";
