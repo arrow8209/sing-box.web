@@ -30,7 +30,22 @@ const deleteBusy = ref(false);
 const referencesLoading = ref(false);
 const references = ref<ProfileReference[]>([]);
 
-const resources = computed(() => store.resources.value);
+const catalogRuleCounts = computed(() => {
+  const counts = new Map<string, number>();
+  const catalog = store.catalog.value;
+  if (!catalog) return counts;
+  for (const item of catalog.items) {
+    const base = item.type === "geoip" ? catalog.geoip : catalog.geosite;
+    counts.set(item.key, item.count);
+    counts.set(`${base}${item.name}.srs`, item.count);
+  }
+  return counts;
+});
+const resources = computed(() => store.resources.value.map((resource) => {
+  if (resource.ruleCount != null) return resource;
+  const count = catalogRuleCounts.value.get(resource.catalogKey ?? "") ?? catalogRuleCounts.value.get(resource.url);
+  return count === undefined ? resource : { ...resource, ruleCount: count };
+}));
 const filtered = computed(() => {
   const keyword = query.value.trim().toLowerCase();
   return resources.value.filter((item) => (sourceFilter.value === "all" || item.sourceType === sourceFilter.value) && (!keyword || `${item.name} ${item.url} ${item.catalogKey ?? ""} ${item.localPath}`.toLowerCase().includes(keyword)));
@@ -43,7 +58,10 @@ const knownRules = computed(() => resources.value.reduce((total, item) => total 
 const nextScheduled = computed(() => [...scheduled.value].filter((item) => item.nextUpdateAt).sort((a, b) => String(a.nextUpdateAt).localeCompare(String(b.nextUpdateAt)))[0]);
 const hasFilter = computed(() => Boolean(query.value) || sourceFilter.value !== "all");
 
-onMounted(() => { void store.refresh().catch((cause: unknown) => { loadError.value = cause instanceof Error ? cause.message : "加载规则集失败"; }); });
+onMounted(() => {
+  void store.refresh().catch((cause: unknown) => { loadError.value = cause instanceof Error ? cause.message : "加载规则集失败"; });
+  void store.loadCatalog(false).catch(() => { /* 目录不可用时仍可管理已有规则。 */ });
+});
 
 function show(message: string, tone: "info" | "error" | "success" = "info"): void { notice.value = ""; toastTone.value = tone; queueMicrotask(() => { notice.value = message; }); }
 function openCreate(): void { editing.value = null; dialogOpen.value = true; }

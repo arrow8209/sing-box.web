@@ -130,7 +130,7 @@ func TestCatalogAPIRefreshesPreviewsImportsAndRejectsDuplicates(t *testing.T) {
 	input := `{"key":"geosite:cn","format":"binary","updateInterval":"24h"}`
 	imported := httptest.NewRecorder()
 	api.ServeHTTP(imported, httptest.NewRequest(http.MethodPost, "/api/v1/rule-resources/catalog/import", bytes.NewBufferString(input)))
-	if imported.Code != http.StatusCreated || !bytes.Contains(imported.Body.Bytes(), []byte(geositeBaseURL+"cn.srs")) || !bytes.Contains(imported.Body.Bytes(), []byte(`"catalogKey":"geosite:cn"`)) {
+	if imported.Code != http.StatusCreated || !bytes.Contains(imported.Body.Bytes(), []byte(geositeBaseURL+"cn.srs")) || !bytes.Contains(imported.Body.Bytes(), []byte(`"catalogKey":"geosite:cn"`)) || !bytes.Contains(imported.Body.Bytes(), []byte(`"ruleCount":10`)) {
 		t.Fatalf("import=%d %s", imported.Code, imported.Body.String())
 	}
 

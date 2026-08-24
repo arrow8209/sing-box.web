@@ -81,6 +81,8 @@ test("可创建手工规则，并从完整 Ruleset-Hub 目录预览和导入", a
   await catalog.getByRole("button", { name: "完成" }).click();
 
   await expect(page.getByText("cloudflare-geoip", { exact: true })).toBeVisible();
+  const importedRow = page.locator(".ruleset-data-table tbody tr").filter({ hasText: "cloudflare-geoip" });
+  await expect(importedRow.locator(".rule-count")).toHaveText("711");
   await deleteRule(page, "cloudflare-geoip");
   await deleteRule(page, "E2E 手工规则");
 });

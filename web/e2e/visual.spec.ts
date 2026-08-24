@@ -55,6 +55,7 @@ for (const scenario of scenarios) {
     await setTheme(page, scenario.theme);
     await expect(page.getByRole("heading", { name: "规则集中心" })).toBeVisible();
     await expect(page.locator(".ruleset-table-card")).toBeVisible();
+    await expect(page.locator(".rule-count").first()).toHaveText("905");
     const ruleSetColumn = await page.locator(".ruleset-data-table th").nth(0).boundingBox();
     const formatColumn = await page.locator(".ruleset-data-table th").nth(2).boundingBox();
     expect(formatColumn!.width).toBeGreaterThan(ruleSetColumn!.width);

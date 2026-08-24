@@ -142,7 +142,7 @@ func (s *Service) updateLocked(ctx context.Context, resource Resource, now time.
 			return UpdateResult{}, s.recordUpdateFailure(resource.ID, now, countErr)
 		}
 		next.RuleCount = &count
-	} else {
+	} else if resource.CatalogKey == "" {
 		next.RuleCount = nil
 	}
 	*stage = "save_status"
@@ -250,10 +250,10 @@ func (s *Service) List(ctx context.Context) ([]ResourceResponse, error) {
 }
 
 func (s *Service) Create(ctx context.Context, input CreateInput) (ResourceResponse, error) {
-	return s.create(ctx, input, "")
+	return s.create(ctx, input, "", nil)
 }
 
-func (s *Service) create(ctx context.Context, input CreateInput, catalogKey string) (ResourceResponse, error) {
+func (s *Service) create(ctx context.Context, input CreateInput, catalogKey string, catalogRuleCount *int) (ResourceResponse, error) {
 	sourceType := effectiveSourceType(input.SourceType)
 	var manualPayload []byte
 	var manualCount int
@@ -305,7 +305,7 @@ func (s *Service) create(ctx context.Context, input CreateInput, catalogKey stri
 	if err != nil {
 		return ResourceResponse{}, err
 	}
-	resource := Resource{ID: id, CatalogKey: catalogKey, SourceType: sourceType, Name: input.Name, URL: input.URL, Format: input.Format, UpdateInterval: input.UpdateInterval, Disabled: input.Disabled, LocalPath: absolute}
+	resource := Resource{ID: id, CatalogKey: catalogKey, SourceType: sourceType, Name: input.Name, URL: input.URL, Format: input.Format, UpdateInterval: input.UpdateInterval, Disabled: input.Disabled, LocalPath: absolute, RuleCount: catalogRuleCount}
 	if sourceType == SourceManual {
 		now := s.clock().UTC()
 		digest := fmt.Sprintf("%x", sha256.Sum256(manualPayload))

@@ -328,7 +328,8 @@ func (s *CatalogService) Import(ctx context.Context, input CatalogImportInput) (
 			return CatalogImportResult{}, &CatalogAlreadyImportedError{Key: input.Key, Format: input.Format}
 		}
 	}
-	resource, err := s.resources.create(ctx, CreateInput{SourceType: SourceRemote, Name: item.Name + "-" + item.Type, URL: endpoint, Format: input.Format, UpdateInterval: input.UpdateInterval}, input.Key)
+	ruleCount := item.Count
+	resource, err := s.resources.create(ctx, CreateInput{SourceType: SourceRemote, Name: item.Name + "-" + item.Type, URL: endpoint, Format: input.Format, UpdateInterval: input.UpdateInterval}, input.Key, &ruleCount)
 	if err != nil {
 		return CatalogImportResult{}, err
 	}

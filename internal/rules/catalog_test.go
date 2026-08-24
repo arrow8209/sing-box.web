@@ -118,7 +118,7 @@ func TestCatalogImportOnlyDownloadsBinaryAndRejectsDuplicates(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if result.Warning != "" || result.Update == nil || result.Resource.CatalogKey != "geosite:cn" || result.Resource.Format != FormatBinary || result.Resource.URL != geositeBaseURL+"cn.srs" || result.Resource.RuleCount != nil || result.Resource.UpdateInterval != "24h" {
+	if result.Warning != "" || result.Update == nil || result.Resource.CatalogKey != "geosite:cn" || result.Resource.Format != FormatBinary || result.Resource.URL != geositeBaseURL+"cn.srs" || result.Resource.RuleCount == nil || *result.Resource.RuleCount != 10 || result.Resource.UpdateInterval != "24h" {
 		t.Fatalf("result=%+v", result)
 	}
 	if _, err := service.Import(context.Background(), CatalogImportInput{Key: "geosite:cn", Format: FormatBinary}); err == nil {
