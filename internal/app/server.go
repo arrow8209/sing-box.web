@@ -21,6 +21,7 @@ import (
 	"singbox-web/internal/paths"
 	"singbox-web/internal/profile"
 	"singbox-web/internal/rules"
+	"singbox-web/internal/settings"
 	"singbox-web/internal/storage"
 	"singbox-web/internal/templates"
 	"singbox-web/internal/updater"
@@ -123,6 +124,10 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
+	settingsStore, err := settings.OpenStore(layout.SettingsFile)
+	if err != nil {
+		return nil, err
+	}
 	if err := profile.RecoverDeletingDrafts(layout); err != nil {
 		return nil, err
 	}
@@ -139,12 +144,14 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	catalogFetcher := rules.NewCatalogFetcher()
+	downloadTransport := settings.NewDownloadTransport(settingsStore)
+	ruleTransport := http.RoundTripper(downloadTransport)
 	if deps.RuleHTTPTransport != nil {
-		policy := rules.DownloadPolicyForTest(deps.RuleHTTPTransport)
-		ruleService.SetDownloader(rules.NewDownloader(policy))
-		catalogFetcher = rules.NewCatalogFetcher(policy)
+		ruleTransport = deps.RuleHTTPTransport
 	}
+	ruleDownloadPolicy := rules.DownloadPolicy{Transport: ruleTransport}
+	ruleService.SetDownloader(rules.NewDownloader(ruleDownloadPolicy))
+	catalogFetcher := rules.NewCatalogFetcher(ruleDownloadPolicy)
 	ruleCatalog := rules.NewCatalogService(layout.RuleCatalogFile, layout, ruleService, catalogFetcher, clock)
 	if err := rules.RecoverRuleTransactions(ruleStore, layout); err != nil {
 		return nil, err
@@ -196,7 +203,15 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 			coreManager.RecordRecoveryFailure(err)
 		}
 	}
-	updateService := updater.NewService(layout, updater.NewReleaseClient(), updater.NewFetcher(layout), coreManager, coreStore, checker, operation)
+	updateService := updater.NewService(
+		layout,
+		updater.NewReleaseClient(updater.ReleaseClientPolicy{Transport: downloadTransport}),
+		updater.NewFetcher(layout, updater.FetcherPolicy{Transport: downloadTransport}),
+		coreManager,
+		coreStore,
+		checker,
+		operation,
+	)
 	coordinator := application.NewCoordinator(profileService, ruleService, nil, checker, coreManager, operation)
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
@@ -207,6 +222,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		ApplicationHandler:  application.NewHandler(coordinator),
 		CoreHandler:         core.NewHandler(coreManager),
 		UpdaterHandler:      updater.NewHandler(updateService),
+		SettingsHandler:     settings.NewHandler(settingsStore),
 		Authenticate:        authHandler.Middleware,
 		RequireCSRF:         auth.RequireCSRF,
 		AuthHandler:         authHandler,

@@ -120,3 +120,48 @@ func TestRouterAuthenticatesCoreStatusWithoutControlEndpoint(t *testing.T) {
 		t.Fatalf("status=%d", response.Code)
 	}
 }
+
+func TestRouterAuthenticatesProxySettingsAndRequiresCSRFWrites(t *testing.T) {
+	settings := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusNoContent)
+	})
+	authenticated := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Test-Session") != "ok" {
+				w.WriteHeader(http.StatusUnauthorized)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	csrf := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Test-CSRF") != "ok" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	router := httpapi.NewRouter(httpapi.Dependencies{SettingsHandler: settings, Authenticate: authenticated, RequireCSRF: csrf})
+	for _, test := range []struct {
+		method  string
+		session string
+		csrf    string
+		want    int
+	}{
+		{method: http.MethodGet, want: http.StatusUnauthorized},
+		{method: http.MethodGet, session: "ok", want: http.StatusNoContent},
+		{method: http.MethodPut, session: "ok", want: http.StatusForbidden},
+		{method: http.MethodPut, session: "ok", csrf: "ok", want: http.StatusNoContent},
+	} {
+		request := httptest.NewRequest(test.method, "/api/v1/settings/proxy", nil)
+		request.Header.Set("X-Test-Session", test.session)
+		request.Header.Set("X-Test-CSRF", test.csrf)
+		response := httptest.NewRecorder()
+		router.ServeHTTP(response, request)
+		if response.Code != test.want {
+			t.Fatalf("method=%s status=%d want=%d", test.method, response.Code, test.want)
+		}
+	}
+}

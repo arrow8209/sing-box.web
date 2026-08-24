@@ -13,6 +13,7 @@ type Layout struct {
 	AuthFile        string
 	ProfilesFile    string
 	CoreFile        string
+	SettingsFile    string
 	RulesFile       string
 	RuleCatalogFile string
 	DraftsDir       string
@@ -60,6 +61,7 @@ func Resolve(workDir string) (Layout, error) {
 		AuthFile:        filepath.Join(data, "auth.json"),
 		ProfilesFile:    filepath.Join(data, "profiles.json"),
 		CoreFile:        filepath.Join(data, "core.json"),
+		SettingsFile:    filepath.Join(data, "settings.json"),
 		RulesFile:       filepath.Join(data, "rule-resources.json"),
 		RuleCatalogFile: filepath.Join(data, "rule-catalog.json"),
 		DraftsDir:       filepath.Join(data, "drafts"),
@@ -84,7 +86,7 @@ func Resolve(workDir string) (Layout, error) {
 }
 
 func (layout Layout) allManagedPaths() []string {
-	return []string{layout.DataDir, layout.AuthFile, layout.ProfilesFile, layout.CoreFile, layout.RulesFile, layout.RuleCatalogFile, layout.DraftsDir, layout.RuleSetsDir, layout.BinDir, layout.CoreBinary, layout.CoreBackup, layout.LogsDir, layout.CoreLog, layout.AppLock, layout.ConfigDir}
+	return []string{layout.DataDir, layout.AuthFile, layout.ProfilesFile, layout.CoreFile, layout.SettingsFile, layout.RulesFile, layout.RuleCatalogFile, layout.DraftsDir, layout.RuleSetsDir, layout.BinDir, layout.CoreBinary, layout.CoreBackup, layout.LogsDir, layout.CoreLog, layout.AppLock, layout.ConfigDir}
 }
 
 // RuleSetPath derives the sole permitted local rule-set location from a

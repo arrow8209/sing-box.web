@@ -4,6 +4,7 @@ import { routerKey } from "vue-router";
 import DashboardView from "@/features/dashboard/DashboardView.vue";
 import AppearanceSettings from "@/features/settings/AppearanceSettings.vue";
 import PasswordSettings from "@/features/settings/PasswordSettings.vue";
+import ProxySettings from "@/features/settings/ProxySettings.vue";
 
 describe("仪表盘与设置", () => {
   afterEach(() => localStorage.clear());
@@ -17,6 +18,23 @@ describe("仪表盘与设置", () => {
     const wrapper = mount(PasswordSettings, { global: { provide: { [routerKey as symbol]: { replace: vi.fn() } } } });
     const inputs = wrapper.findAll("input"); await inputs[0].setValue("current"); await inputs[1].setValue("abcdef"); await inputs[2].setValue("xxxxxx"); await wrapper.get("form").trigger("submit");
     expect(fetchMock).not.toHaveBeenCalled(); expect(wrapper.text()).toContain("两次输入的新密码不一致");
+  });
+  it("读取并保存服务端下载代理设置", async () => {
+    const api = {
+      get: vi.fn(async () => ({ proxyUrl: "" })),
+      update: vi.fn(async (input: { proxyUrl: string }) => input)
+    };
+    const wrapper = mount(ProxySettings, { props: { api } });
+    await flushPromises();
+    const input = wrapper.get("input[type=url]");
+    expect((input.element as HTMLInputElement).value).toBe("");
+    expect(wrapper.text()).toContain("直连");
+    await input.setValue("  http://127.0.0.1:7890  ");
+    await wrapper.get("form").trigger("submit");
+    await flushPromises();
+    expect(api.update).toHaveBeenCalledWith({ proxyUrl: "http://127.0.0.1:7890" });
+    expect(wrapper.text()).toContain("代理设置已保存并即时生效");
+    expect(wrapper.text()).toContain("使用代理");
   });
   it("仪表盘只渲染服务端摘要，不含模拟运行指标", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };

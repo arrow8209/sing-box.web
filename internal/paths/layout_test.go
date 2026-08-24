@@ -17,6 +17,7 @@ func TestResolveUsesOnlyFixedRelativePaths(t *testing.T) {
 	assertPath(t, layout.DataDir, filepath.Join(root, "data"))
 	assertPath(t, layout.ConfigDir, filepath.Join(root, "config"))
 	assertPath(t, layout.CoreBinary, filepath.Join(root, "data", "bin", "sing-box"))
+	assertPath(t, layout.SettingsFile, filepath.Join(root, "data", "settings.json"))
 	assertPath(t, layout.AppLock, filepath.Join(root, "data", "app.lock"))
 }
 
