@@ -59,13 +59,19 @@ test("可创建手工规则，并从完整 Ruleset-Hub 目录预览和导入", a
   await catalog.getByRole("button", { name: /GeoIP/ }).click();
   await expect(catalog.locator(".catalog-card")).toHaveCount(1);
   await expect(catalog.locator(".catalog-card")).toContainText("cloudflare");
+  await expect(catalog.getByText("规则数量：711", { exact: true })).toBeVisible();
+  expect((await catalog.locator(".catalog-card").boundingBox())!.height).toBeLessThan(110);
 
-  await catalog.getByRole("button", { name: "预览结构" }).click();
+  await catalog.getByRole("button", { name: "预览 cloudflare 规则" }).click();
   await expect(catalog.getByText("真实 Source 内容结构预览")).toBeVisible();
   await expect(catalog.locator("pre")).toContainText("192.0.2.0/24");
   await catalog.getByRole("button", { name: "返回中心" }).click();
-  await catalog.getByRole("button", { name: "添加 Binary" }).click();
-  await expect(catalog.getByRole("button", { name: "已添加 Binary" })).toBeVisible();
+  const more = catalog.locator(".more-actions summary");
+  await more.press("Enter");
+  await expect(catalog.getByRole("button", { name: "添加 Source" })).toBeVisible();
+  await more.press("Enter");
+  await catalog.getByRole("button", { name: "添加到配置" }).click();
+  await expect(catalog.getByRole("button", { name: "已添加到配置" })).toBeVisible();
   await catalog.getByRole("button", { name: "刷新" }).click();
   await expect(catalog.getByText("2139", { exact: true }).first()).toBeVisible();
   await catalog.getByRole("button", { name: "完成" }).click();

@@ -49,6 +49,9 @@ describe("规则集目录", () => {
     await flushPromises();
     expect(mocked.store.loadCatalog).toHaveBeenCalledWith(false);
     expect(wrapper.findAll(".catalog-card")).toHaveLength(27);
+    expect(wrapper.find(".catalog-card").text()).toContain("规则数量：1");
+    expect(wrapper.find(".catalog-card__type").text()).toBe("geosite");
+    expect(wrapper.find(".add-config-button").text()).toBe("添加到配置");
 
     await wrapper.findAll(".pagination button")[1].trigger("click");
     expect(wrapper.find(".catalog-card").text()).toContain("site-027");
@@ -67,17 +70,22 @@ describe("规则集目录", () => {
     const wrapper = mount(RuleCatalogDialog, { props: { open: false } });
     await wrapper.setProps({ open: true });
     await flushPromises();
-    await wrapper.find(".item-meta button").trigger("click");
+    await wrapper.find(".preview-button").trigger("click");
     await flushPromises();
     expect(mocked.store.previewCatalog).toHaveBeenCalledWith("geosite:site-000");
     expect(wrapper.find(".preview-editor").text()).toContain("example.com");
 
     await wrapper.get(".back-button").trigger("click");
-    await wrapper.find(".item-actions button").trigger("click");
+    await wrapper.find(".source-action").trigger("click");
     await flushPromises();
     expect(mocked.store.importCatalog).toHaveBeenCalledWith("geosite:site-000", "source");
     expect(wrapper.emitted("notice")?.[0]?.[0]).toContain("site-000 的 source 格式已导入");
-    expect(wrapper.find(".item-actions button").text()).toContain("已添加 Source");
+    expect(wrapper.find(".source-action").text()).toContain("已添加 Source");
+
+    await wrapper.find(".add-config-button").trigger("click");
+    await flushPromises();
+    expect(mocked.store.importCatalog).toHaveBeenLastCalledWith("geosite:site-000", "binary");
+    expect(wrapper.find(".add-config-button").text()).toBe("已添加到配置");
   });
 
   it("旧资源只按完整类型地址匹配，不混淆同名 GeoSite 和 GeoIP", async () => {
@@ -99,8 +107,8 @@ describe("规则集目录", () => {
     await wrapper.setProps({ open: true });
     await flushPromises();
     const cards = wrapper.findAll(".catalog-card");
-    expect(cards[0].find(".item-actions button").text()).toContain("已添加 Source");
-    expect(cards[1].find(".item-actions button").text()).toContain("添加 Source");
-    expect(cards[1].find(".item-actions button").text()).not.toContain("已添加");
+    expect(cards[0].find(".source-action").text()).toContain("已添加 Source");
+    expect(cards[1].find(".source-action").text()).toContain("添加 Source");
+    expect(cards[1].find(".source-action").text()).not.toContain("已添加");
   });
 });
