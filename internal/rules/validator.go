@@ -15,6 +15,9 @@ func ValidateDownloaded(format Format, payload []byte) error {
 		return ErrEmptyRuleSet
 	}
 	if format == FormatBinary {
+		if json.Valid(bytes.TrimSpace(payload)) {
+			return errors.New("binary 规则不能使用 Source JSON 内容")
+		}
 		return nil
 	}
 	if format != FormatSource {

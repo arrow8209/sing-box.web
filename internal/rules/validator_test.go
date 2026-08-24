@@ -18,6 +18,15 @@ func TestValidateSourceRequiresRuleSetObject(t *testing.T) {
 	}
 }
 
+func TestValidateDownloadedBinaryRejectsSourceJSON(t *testing.T) {
+	if err := ValidateDownloaded(FormatBinary, []byte(`{"version":3,"rules":[]}`)); err == nil {
+		t.Fatal("accepted Source JSON as binary")
+	}
+	if err := ValidateDownloaded(FormatBinary, []byte("binary-rule-data")); err != nil {
+		t.Fatalf("binary rejected: %v", err)
+	}
+}
+
 func TestNormalizeManualSourceRequiresContentAndCountsValues(t *testing.T) {
 	payload, count, err := NormalizeManualSource([]byte(`{"version":3,"rules":[{"domain_suffix":["example.com","example.org"]},{"ip_is_private":true}]}`))
 	if err != nil {

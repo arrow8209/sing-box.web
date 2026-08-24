@@ -41,6 +41,45 @@ func TestEnsureTemplateResourcesAssignsRandomStableIDs(t *testing.T) {
 	}
 }
 
+func TestOpenStoreMigratesRemoteSourceToBinaryAndDeletesPayload(t *testing.T) {
+	layout, err := paths.Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	id := strings.Repeat("c", 32)
+	sourcePath, _, err := layout.RuleSetPath(id, ".json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Unix(10, 0)
+	count := 2
+	legacy := &Store{file: layout.RulesFile, layout: layout, clock: fixedClock(now)}
+	if err := legacy.write([]Resource{{ID: id, SourceType: SourceRemote, Name: "legacy", URL: "https://example.test/legacy.srs", Format: FormatSource, UpdateInterval: "24h", LocalPath: sourcePath, LastAttemptAt: &now, LastSuccessAt: &now, LastDigest: strings.Repeat("a", 64), LastError: "old", NextUpdateAt: &now, RuleCount: &count}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(layout.RuleSetsDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(sourcePath, []byte(`{"version":3,"rules":[]}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(layout.RulesFile, layout, fixedClock(now))
+	if err != nil {
+		t.Fatal(err)
+	}
+	resources, err := store.list()
+	if err != nil || len(resources) != 1 {
+		t.Fatalf("resources=%+v err=%v", resources, err)
+	}
+	resource := resources[0]
+	if resource.Format != FormatBinary || resource.LocalPath != filepath.Join(layout.RuleSetsDir, id+".srs") || resource.LastAttemptAt != nil || resource.LastSuccessAt != nil || resource.LastDigest != "" || resource.LastError != "" || resource.NextUpdateAt != nil || resource.RuleCount != nil {
+		t.Fatalf("resource=%+v", resource)
+	}
+	if _, err := os.Stat(sourcePath); !os.IsNotExist(err) {
+		t.Fatalf("old source remains: %v", err)
+	}
+}
+
 func TestValidateManagedStateRejectsInvalidIDsDuplicatesAndDerivedPaths(t *testing.T) {
 	for _, test := range []struct {
 		name string

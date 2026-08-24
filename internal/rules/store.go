@@ -40,10 +40,61 @@ func OpenStore(file string, layout paths.Layout, clock func() time.Time) (*Store
 		if err := ValidateManagedState(file, layout); err != nil {
 			return nil, err
 		}
+		if err := migrateRemoteSources(file, layout); err != nil {
+			return nil, err
+		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
 	}
 	return &Store{file: file, layout: layout, clock: clock}, nil
+}
+
+// migrateRemoteSources preserves resource IDs and references while dropping
+// obsolete Source payloads. The Binary resource is downloaded again on demand.
+func migrateRemoteSources(file string, layout paths.Layout) error {
+	data, err := storage.ReadJSON[document](file)
+	if err != nil {
+		return err
+	}
+	obsolete := make(map[string]struct{})
+	changed := false
+	for index := range data.Resources {
+		resource := &data.Resources[index]
+		if effectiveSourceType(resource.SourceType) != SourceRemote {
+			continue
+		}
+		sourcePath, _, err := layout.RuleSetPath(resource.ID, ".json")
+		if err != nil {
+			return err
+		}
+		obsolete[sourcePath] = struct{}{}
+		if resource.Format != FormatSource {
+			continue
+		}
+		binaryPath, _, err := layout.RuleSetPath(resource.ID, ".srs")
+		if err != nil {
+			return err
+		}
+		resource.Format, resource.LocalPath = FormatBinary, binaryPath
+		resource.LastAttemptAt, resource.LastSuccessAt = nil, nil
+		resource.LastDigest, resource.LastError = "", ""
+		resource.NextUpdateAt, resource.RuleCount = nil, nil
+		changed = true
+	}
+	if changed {
+		if err := validateDocument(data, layout); err != nil {
+			return err
+		}
+		if err := storage.WriteJSON(file, data, 0o600); err != nil {
+			return err
+		}
+	}
+	for path := range obsolete {
+		if err := os.Remove(path); err != nil && !os.IsNotExist(err) {
+			return fmt.Errorf("删除旧 Source 规则文件失败: %w", err)
+		}
+	}
+	return nil
 }
 
 // ValidateManagedState performs the read-only rule-resource startup gate.

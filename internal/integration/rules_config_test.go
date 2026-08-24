@@ -149,7 +149,7 @@ func TestRuleDownloadPreviewAndValidateFlow(t *testing.T) {
 	env := newIntegrationEnvironment(t)
 	env.InstallFakeCore(t, fakeCoreBehavior{Version: "sing-box version 1.12.0", CheckExit: 0})
 	ruleServer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		_, _ = w.Write([]byte(`{"version":3,"rules":[]}`))
+		_, _ = w.Write([]byte("binary-rule-data"))
 	}))
 	defer ruleServer.Close()
 	resourceID := env.CreateRuleResource(t, ruleServer.URL)
