@@ -45,6 +45,15 @@ test("可创建手工规则，并从完整 Ruleset-Hub 目录预览和导入", a
 
   await page.getByRole("button", { name: "规则集中心", exact: true }).click();
   const catalog = page.getByRole("dialog", { name: "规则集中心" });
+  const desktopViewport = page.viewportSize()!;
+  const catalogBounds = await catalog.boundingBox();
+  expect(catalogBounds).not.toBeNull();
+  expect(catalogBounds!.width).toBe(Math.min(1440, desktopViewport.width - 32));
+  await page.setViewportSize({ width: 900, height: 1024 });
+  expect((await catalog.boundingBox())!.width).toBe(868);
+  await page.setViewportSize({ width: 390, height: 844 });
+  expect((await catalog.boundingBox())!.width).toBe(390);
+  await page.setViewportSize(desktopViewport);
   await expect(catalog.getByText("2139", { exact: true }).first()).toBeVisible();
   await catalog.getByPlaceholder("搜索规则名称或类型...").fill("cloudflare");
   await catalog.getByRole("button", { name: /GeoIP/ }).click();
