@@ -107,10 +107,10 @@
 
   const configTabs = [
     { id: "general", label: "配置概览", shortLabel: "概览", icon: "general" },
-    { id: "dns", label: "DNS", shortLabel: "DNS", icon: "dns" },
     { id: "inbounds", label: "入站", shortLabel: "入站", icon: "inbound" },
     { id: "outbounds", label: "出站", shortLabel: "出站", icon: "outbound" },
     { id: "routing", label: "路由", shortLabel: "路由", icon: "route" },
+    { id: "dns", label: "DNS", shortLabel: "DNS", icon: "dns" },
     { id: "services", label: "服务", shortLabel: "服务", icon: "server" },
     { id: "advanced", label: "高级", shortLabel: "高级", icon: "settings" },
   ];
@@ -3219,7 +3219,7 @@
 
   function commandModal() {
     const body = `<div class="modal-body"><label class="search-wrap" style="display:block"><span class="icon">${icon("search")}</span><input class="search-input" style="height:43px" placeholder="输入页面名称..." autofocus /></label><div class="entry-list" style="padding:12px 0 0">${[
-      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "DNS", "dns"], ["config", "自定义配置 · 入站", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "路由设置", "routing"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["inbounds", "入站配置", "inbound"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
+      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "自定义配置 · 入站", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "路由设置", "routing"], ["config", "DNS", "dns"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["inbounds", "入站配置", "inbound"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
     ].map(([page, label, iconName]) => `<button class="entry-card" data-command-page="${page}" data-command-config="${page === "config" ? iconName : ""}" style="width:100%;text-align:left"><div class="entry-icon">${icon(iconName)}</div><div class="entry-copy"><div class="entry-title">${label}</div><div class="entry-meta">快速跳转</div></div>${icon("chevron", "faint")}</button>`).join("")}</div></div>`;
     return modalFrame("快速跳转", "选择要打开的控制台页面", body);
   }
