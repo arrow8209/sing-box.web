@@ -155,6 +155,40 @@
   "sniff_override_destination": false
 }`;
 
+  const defaultInboundLibrary = [
+    {
+      id: "inbound-library-mixed-lan",
+      mode: "structured",
+      updated: "今天 10:18",
+      config: {
+        type: "mixed",
+        tag: "mixed-lan",
+        listen: "0.0.0.0",
+        listen_port: 20122,
+        tcp_fast_open: false,
+        tcp_multi_path: false,
+        udp_fragment: false,
+        sniff: true,
+        sniff_override_destination: false,
+      },
+    },
+    {
+      id: "inbound-library-tun-system",
+      mode: "structured",
+      updated: "昨天 21:40",
+      config: {
+        type: "tun",
+        tag: "tun-system",
+        address: ["172.18.0.1/30", "fdfe:dcba:9876::1/126"],
+        mtu: 9000,
+        stack: "mixed",
+        auto_route: true,
+        strict_route: true,
+        endpoint_independent_nat: false,
+      },
+    },
+  ];
+
   const customOutboundExample = `{
   "type": "hysteria2",
   "tag": "proxy-hy2",
@@ -312,7 +346,7 @@
   ];
 
   const initialRoute = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-  const initialPage = ["dashboard", "config", "subscriptions", "rulesets", "settings"].includes(initialRoute[0])
+  const initialPage = ["dashboard", "config", "inbounds", "subscriptions", "rulesets", "settings"].includes(initialRoute[0])
     ? initialRoute[0]
     : "dashboard";
   const initialConfigTab = configTabs.some((tab) => tab.id === initialRoute[2])
@@ -435,6 +469,7 @@
     builtInInbounds: true,
     customInbounds: [],
     formInbounds: [],
+    inboundLibrary: [],
     editingProfileId: null,
     editingInboundId: null,
     editingOutboundId: null,
@@ -843,6 +878,17 @@
     }));
   }
 
+  function persistInboundLibrary() {
+    writeStorage("singbox-inbound-library", JSON.stringify(state.inboundLibrary));
+  }
+
+  function initializeInboundLibrary() {
+    const stored = readJsonStorage("singbox-inbound-library");
+    state.inboundLibrary = Array.isArray(stored)
+      ? stored.filter((item) => item?.id && item?.config?.type && item?.config?.tag)
+      : cloneData(defaultInboundLibrary);
+  }
+
   function initializeProfiles() {
     const stored = readJsonStorage("singbox-config-profiles");
     const storedProfiles = Array.isArray(stored?.profiles)
@@ -865,6 +911,7 @@
   const pageMeta = {
     dashboard: { title: "仪表盘", parent: "控制台" },
     config: { title: "配置工作台", parent: "配置" },
+    inbounds: { title: "入站配置", parent: "资源管理" },
     subscriptions: { title: "订阅配置", parent: "资源管理" },
     rulesets: { title: "规则集中心", parent: "资源管理" },
     settings: { title: "设置", parent: "系统" },
@@ -885,17 +932,23 @@
     return new Set(tags);
   }
 
-  function uniqueInboundTag(seed, excludeId = null) {
+  function inboundLibraryTags(excludeId = null) {
+    return new Set(state.inboundLibrary
+      .filter((item) => item.id !== excludeId && item.config.tag)
+      .map((item) => item.config.tag));
+  }
+
+  function uniqueInboundTag(seed, excludeId = null, scope = "profile") {
     const base = String(seed || "inbound").trim() || "inbound";
-    const tags = inboundTags(excludeId);
+    const tags = scope === "library" ? inboundLibraryTags(excludeId) : inboundTags(excludeId);
     if (!tags.has(base)) return base;
     let suffix = 2;
     while (tags.has(`${base}-${suffix}`)) suffix += 1;
     return `${base}-${suffix}`;
   }
 
-  function defaultInboundTag(type, excludeId = null) {
-    return uniqueInboundTag(`${type === "custom" ? "custom" : type}-in`, excludeId);
+  function defaultInboundTag(type, excludeId = null, scope = "profile") {
+    return uniqueInboundTag(`${type === "custom" ? "custom" : type}-in`, excludeId, scope);
   }
 
   function routeRuleCount() {
@@ -980,6 +1033,7 @@
             : ""
         }
         <div class="nav-label">资源</div>
+        ${navItem("inbounds", "入站配置", "inbound")}
         ${navItem("subscriptions", "订阅配置", "subscription")}
         ${navItem("rulesets", "规则集", "rules")}
         <div class="nav-label">系统</div>
@@ -1039,6 +1093,7 @@
 
   function renderPage() {
     if (state.page === "config") return renderConfigPage();
+    if (state.page === "inbounds") return renderInboundLibrary();
     if (state.page === "subscriptions") return renderSubscriptions();
     if (state.page === "rulesets") return renderRulesets();
     if (state.page === "settings") return renderSettings();
@@ -1349,14 +1404,14 @@
     return `<div class="config-layout">
       <div class="config-main">
         <article class="card">
-          <div class="card-head"><div><h3 class="card-title">入站监听器</h3><p class="card-subtitle">流量进入 sing-box 的入口</p></div><button class="btn btn-sm btn-primary" data-modal="inbound">${icon("plus")}新增入站</button></div>
+          <div class="card-head"><div><h3 class="card-title">当前自定义配置的入站</h3><p class="card-subtitle">从一级“入站配置”导入后，作为独立副本维护</p></div><button class="btn btn-sm btn-primary" data-modal="inbound-import">${icon("download")}导入入站配置</button></div>
           <div class="entry-list">
             ${state.builtInInbounds ? `${entryCard("mixed-in", "Mixed Proxy", "mixed", "127.0.0.1:7890", "HTTP 与 SOCKS 复合代理", "inbound", "")}
             ${entryCard("tun-in", "TUN Interface", "tun", "singtun0 · 172.19.0.1/30", "自动路由 · 严格路由", "shield", "cyan")}
             ${entryCard("dns-in", "DNS Listener", "direct", "127.0.0.1:5353", "DNS 劫持入口", "dns", "green")}` : ""}
             ${state.formInbounds.map(formInboundCard).join("")}
             ${state.customInbounds.map(customInboundCard).join("")}
-            ${inboundCount() ? "" : `<button class="config-empty-state" data-modal="inbound">${icon("inbound")}<strong>尚未添加入站</strong><span>点击创建第一个监听入口</span></button>`}
+            ${inboundCount() ? "" : `<button class="config-empty-state" data-modal="inbound-import">${icon("inbound")}<strong>尚未导入入站</strong><span>从入站配置资源库选择一个或多个项目</span></button>`}
           </div>
         </article>
       </div>
@@ -1369,6 +1424,7 @@
             ${settingToggle("允许局域网", "接受来自其他设备的连接", "allowLan")}
           </div>
         </article>
+        <div class="info-callout">${icon("copy")}<span>导入只复制当时的配置内容，不记录来源关系。之后在这里编辑、复制或删除，都不会影响一级“入站配置”中的原项目。</span></div>
         <div class="info-callout">${icon("shield")}<span>TUN 模式需要系统网络管理权限。首次启用时，浏览器端应引导用户完成授权。</span></div>
       </aside>
     </div>`;
@@ -1390,7 +1446,7 @@
     const endpoint = config.listen_port ? `${listener}:${config.listen_port}` : listener;
     return `<div class="entry-card" data-entry="${item.id}">
       <span class="entry-drag">${icon("grip")}</span><div class="entry-icon violet">${icon("code")}</div>
-      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${title}</span><span class="type-badge">${type}</span><span class="badge badge-primary">自定义 JSON</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>完整配置 · ${Object.keys(config).length} 个字段</span></div></div>
+      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${title}</span><span class="type-badge">${type}</span><span class="badge badge-primary">自定义 JSON</span>${item.detached ? '<span class="badge badge-success">独立副本</span>' : ""}</div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>完整配置 · ${Object.keys(config).length} 个字段</span></div></div>
       <div class="entry-actions"><button class="entry-action" data-modal="inbound" data-id="${item.id}" title="编辑 JSON">${icon("edit")}</button><button class="entry-action" data-action="copy-custom-inbound" data-id="${item.id}" title="复制 JSON">${icon("copy")}</button><button class="entry-action danger" data-action="remove-custom-inbound" data-id="${item.id}" title="删除">${icon("trash")}</button></div>
     </div>`;
   }
@@ -1406,9 +1462,47 @@
     const description = enabled ? typeMeta?.description || "表单配置" : "已停用 · 不写入生成配置";
     return `<div class="entry-card" data-entry="${item.id}">
       <span class="entry-drag">${icon("grip")}</span><div class="entry-icon">${icon(typeMeta?.icon || "inbound")}</div>
-      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(config.tag || `${config.type} 入站`)}</span><span class="type-badge">${escapeHtml(config.type)}</span><span class="status-badge ${enabled ? "status-online" : "badge-orange"}">${enabled ? "启用" : "停用"}</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>${description}</span></div></div>
+      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(config.tag || `${config.type} 入站`)}</span><span class="type-badge">${escapeHtml(config.type)}</span><span class="status-badge ${enabled ? "status-online" : "badge-orange"}">${enabled ? "启用" : "停用"}</span>${item.detached ? '<span class="badge badge-primary">独立副本</span>' : ""}</div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>${description}</span></div></div>
       <div class="entry-actions"><button class="entry-action" data-modal="inbound" data-id="${item.id}" title="编辑">${icon("edit")}</button><button class="entry-action" data-action="duplicate-form-inbound" data-id="${item.id}" title="复制">${icon("copy")}</button><button class="entry-action danger" data-action="remove-form-inbound" data-id="${item.id}" title="删除">${icon("trash")}</button></div>
     </div>`;
+  }
+
+  function inboundLibraryCard(item) {
+    const config = item.config;
+    const typeMeta = inboundTypes.find((candidate) => candidate.type === config.type);
+    const listener = config.interface_name || config.listen || (config.type === "tun" ? "自动命名" : "由完整 JSON 定义");
+    const endpoint = config.type === "tun" && config.address?.length
+      ? `${listener} · ${config.address[0]}`
+      : config.listen_port ? `${listener}:${config.listen_port}` : listener;
+    const custom = item.mode === "custom";
+    return `<div class="entry-card inbound-library-card" data-inbound-library-card data-id="${escapeHtml(item.id)}">
+      <div class="entry-icon ${custom ? "violet" : config.type === "tun" ? "cyan" : ""}">${icon(custom ? "code" : typeMeta?.icon || "inbound")}</div>
+      <div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(config.tag)}</span><span class="type-badge">${escapeHtml(config.type)}</span><span class="badge ${custom ? "badge-primary" : "badge-success"}">${custom ? "完整 JSON" : "可导入"}</span></div><div class="entry-meta"><span>${escapeHtml(endpoint)}</span><span class="dot-separator"></span><span>最后编辑 ${escapeHtml(item.updated || "刚刚")}</span></div></div>
+      <div class="entry-actions"><button class="entry-action" data-modal="inbound-library" data-id="${escapeHtml(item.id)}" title="编辑入站配置">${icon("edit")}</button><button class="entry-action" data-action="duplicate-inbound-library" data-id="${escapeHtml(item.id)}" title="复制入站配置">${icon("copy")}</button><button class="entry-action danger" data-action="remove-inbound-library" data-id="${escapeHtml(item.id)}" title="删除入站配置">${icon("trash")}</button></div>
+    </div>`;
+  }
+
+  function renderInboundLibrary() {
+    const typeCount = new Set(state.inboundLibrary.map((item) => item.config.type)).size;
+    const jsonCount = state.inboundLibrary.filter((item) => item.mode === "custom").length;
+    return `<section class="inbound-library-page">
+      <div class="page-intro"><div class="page-intro-copy"><h2>入站配置</h2><p>集中维护可复用的入站配置；自定义配置导入时只复制当前内容。</p></div><div class="page-actions"><button class="btn btn-primary" data-modal="inbound-library">${icon("plus")}新建入站配置</button></div></div>
+      <div class="summary-grid">
+        ${summaryMetric("inbound", "", state.inboundLibrary.length, "入站配置", "独立资源库")}
+        ${summaryMetric("server", "cyan", typeCount, "配置类型", "常用类型与完整 JSON")}
+        ${summaryMetric("copy", "orange", jsonCount, "JSON 配置", "导入后生成独立副本")}
+      </div>
+      <div class="config-layout inbound-library-layout">
+        <div class="config-main"><article class="card"><div class="card-head"><div><h3 class="card-title">可复用入站</h3><p class="card-subtitle">编辑这里的配置不会改变已导入的副本</p></div><span class="route-section-badge">${state.inboundLibrary.length} 项</span></div><div class="entry-list">
+          ${state.inboundLibrary.length ? state.inboundLibrary.map(inboundLibraryCard).join("") : `<button class="config-empty-state" data-modal="inbound-library">${icon("inbound")}<strong>尚未新建入站配置</strong><span>创建后即可在自定义配置中导入</span></button>`}
+        </div></article></div>
+        <aside class="config-aside"><article class="card compact-guide-card"><div class="card-head"><div><h3 class="card-title">导入规则</h3><p class="card-subtitle">复制，而不是引用</p></div></div><div class="card-body compact-guide-list">
+          <div>${icon("plus")}<span><strong>先新建</strong><small>在资源库维护常用入站参数</small></span></div>
+          <div>${icon("copy")}<span><strong>再导入</strong><small>自定义配置获得完整内容副本</small></span></div>
+          <div>${icon("shield")}<span><strong>互不关联</strong><small>导入后任一侧修改或删除均不联动</small></span></div>
+        </div></article><div class="info-callout">${icon("info")}<span>导入时若 <code>tag</code> 与当前自定义配置重复，会自动生成不冲突的新名称。</span></div></aside>
+      </div>
+    </section>`;
   }
 
   function renderOutboundConfig() {
@@ -1924,7 +2018,7 @@
   function openModal(type, itemId = null) {
     let content = "";
     state.editingProfileId = ["profile-manage", "profile-delete"].includes(type) ? itemId : null;
-    state.editingInboundId = type === "inbound" ? itemId : null;
+    state.editingInboundId = ["inbound", "inbound-library"].includes(type) ? itemId : null;
     state.editingOutboundId = type === "outbound" ? itemId : null;
     state.editingRouteRuleId = type === "route" ? itemId : null;
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
@@ -1939,7 +2033,9 @@
     else if (type === "ruleset-hub") content = rulesetHubModal();
     else if (type === "ruleset-hub-preview") content = rulesetHubPreviewModal(itemId);
     else if (type === "resource-ruleset") content = resourceRulesetModal(itemId);
-    else if (type === "inbound") content = inboundModal(itemId);
+    else if (type === "inbound") content = inboundModal(itemId, "profile");
+    else if (type === "inbound-library") content = inboundModal(itemId, "library");
+    else if (type === "inbound-import") content = inboundImportModal();
     else if (type === "outbound") content = outboundModal(itemId);
     else if (type === "route") content = routeRuleModal(itemId);
     else if (type === "route-ruleset") content = routeRulesetModal(itemId);
@@ -2232,26 +2328,54 @@
     </div><div class="info-callout inbound-type-note">${icon("inbound")}<span>Mixed 入站在同一端口同时提供 HTTP 与 SOCKS 代理，适合本机通用代理入口。</span></div>`;
   }
 
-  function inboundModal(itemId) {
-    const customItem = state.customInbounds.find((inbound) => inbound.id === itemId);
-    const formItem = state.formInbounds.find((inbound) => inbound.id === itemId);
-    const item = customItem || formItem;
-    const json = customItem?.json || customInboundExample;
-    const selectedType = customItem ? "custom" : formItem?.config.type || "mixed";
-    const defaultTag = formItem?.config.tag || customItem?.config.tag || defaultInboundTag(selectedType, itemId);
+  function inboundImportOption(item) {
+    const config = item.config;
+    const typeMeta = inboundTypes.find((candidate) => candidate.type === config.type);
+    const nextTag = uniqueInboundTag(config.tag);
+    const renamed = nextTag !== config.tag;
+    const listener = config.interface_name || config.listen || (config.type === "tun" ? "自动命名" : "完整 JSON");
+    const endpoint = config.type === "tun" && config.address?.length
+      ? `${listener} · ${config.address[0]}`
+      : config.listen_port ? `${listener}:${config.listen_port}` : listener;
+    return `<label class="inbound-import-option"><input type="checkbox" name="inbound-library-item" value="${escapeHtml(item.id)}" /><span class="inbound-import-tile"><span class="entry-icon ${item.mode === "custom" ? "violet" : config.type === "tun" ? "cyan" : ""}">${icon(item.mode === "custom" ? "code" : typeMeta?.icon || "inbound")}</span><span class="inbound-import-copy"><strong>${escapeHtml(config.tag)}</strong><small>${escapeHtml(endpoint)}</small></span><span class="inbound-import-badges"><span class="type-badge">${escapeHtml(config.type)}</span>${renamed ? `<span class="badge badge-orange">将改名为 ${escapeHtml(nextTag)}</span>` : ""}</span>${icon("check", "inbound-import-check")}</span></label>`;
+  }
+
+  function inboundImportModal() {
+    const body = state.inboundLibrary.length
+      ? `<form class="modal-body inbound-import-body" id="inbound-import-form" data-form="inbound-import"><div class="inbound-import-banner">${icon("copy")}<div><strong>导入会创建独立副本</strong><span>只复制当前配置内容，不保存来源 ID；导入后两边的编辑和删除均不联动。</span></div></div><div class="inbound-import-list">${state.inboundLibrary.map(inboundImportOption).join("")}</div></form>`
+      : `<div class="modal-body inbound-import-empty">${icon("inbound")}<strong>还没有可导入的入站配置</strong><span>请先到一级“入站配置”中新建项目。</span><button class="btn btn-primary" type="button" data-page="inbounds">${icon("plus")}前往新建</button></div>`;
+    const footer = state.inboundLibrary.length
+      ? `<div class="modal-footer"><span class="modal-footer-note">可同时选择多个项目</span><span class="modal-footer-spacer"></span><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="inbound-import-submit" type="submit" form="inbound-import-form" disabled>${icon("download")}导入所选 <span data-inbound-import-count>0</span> 项</button></div>`
+      : `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button></div>`;
+    return modalFrame("导入入站配置", `复制到“${escapeHtml(activeProfile().name)}”`, body, footer, "modal-wide modal-inbound-import");
+  }
+
+  function inboundModal(itemId, scope = "profile") {
+    const libraryItem = scope === "library" ? state.inboundLibrary.find((inbound) => inbound.id === itemId) : null;
+    const customItem = scope === "profile" ? state.customInbounds.find((inbound) => inbound.id === itemId) : null;
+    const formItem = scope === "profile" ? state.formInbounds.find((inbound) => inbound.id === itemId) : null;
+    const item = libraryItem || customItem || formItem;
+    const customMode = libraryItem ? libraryItem.mode === "custom" : Boolean(customItem);
+    const config = libraryItem?.config || customItem?.config || formItem?.config || {};
+    const json = customMode ? JSON.stringify(config, null, 2) : customInboundExample;
+    const selectedType = customMode ? "custom" : config.type || "mixed";
+    const defaultTag = config.tag || defaultInboundTag(selectedType, itemId, scope);
     const enabled = formItem?.enabled !== false;
     const validation = selectedType === "custom" ? validateCustomInboundJson(json) : { valid: true };
-    const body = `<form class="modal-body inbound-editor-body" id="inbound-form" data-form="inbound" data-default-tag="${escapeHtml(defaultTag)}" data-new="${item ? "false" : "true"}">
+    const body = `<form class="modal-body inbound-editor-body" id="inbound-form" data-form="inbound" data-inbound-scope="${scope}" data-default-tag="${escapeHtml(defaultTag)}" data-new="${item ? "false" : "true"}">
       <div class="inbound-kind-section"><span class="field-label">入站类型<small>选择常用模板或完整 JSON</small></span>${inboundTypeControl(selectedType)}</div>
       <div class="form-grid inbound-base-fields ${selectedType === "custom" ? "is-hidden" : ""}" data-inbound-base-fields>
-        <label class="form-field" data-inbound-name-field><span class="field-label">入站名称<small>对应 tag</small></span><input class="field-input" name="tag" value="${escapeHtml(defaultTag)}" required ${selectedType === "custom" ? "disabled" : ""} /></label>
-        ${inboundStatusControl(enabled)}
+        <label class="form-field ${scope === "library" ? "full" : ""}" data-inbound-name-field><span class="field-label">入站名称<small>对应 tag</small></span><input class="field-input" name="tag" value="${escapeHtml(defaultTag)}" required ${selectedType === "custom" ? "disabled" : ""} /></label>
+        ${scope === "profile" ? inboundStatusControl(enabled) : ""}
       </div>
       <div class="inbound-type-divider"><span>类型专属配置</span></div>
-      <div class="inbound-type-fields" data-inbound-type-fields>${renderInboundTypeFields(selectedType, { config: formItem?.config || {}, customJson: json })}</div>
+      <div class="inbound-type-fields" data-inbound-type-fields>${renderInboundTypeFields(selectedType, { config, customJson: json })}</div>
     </form>`;
-    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="inbound-submit" type="submit" form="inbound-form" ${validation.valid ? "" : "disabled"}>${icon(item ? "save" : "check")}${item ? "保存入站" : "确认添加"}</button></div>`;
-    return modalFrame(item ? "编辑入站" : "新增入站", "参考 GUI.for.SingBox 的常用入站参数，并保留完整 JSON 入口", body, footer, "modal-wide modal-inbound");
+    const saveLabel = scope === "library" ? item ? "保存入站配置" : "新建入站配置" : item ? "保存入站" : "确认添加";
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="inbound-submit" type="submit" form="inbound-form" ${validation.valid ? "" : "disabled"}>${icon(item ? "save" : "check")}${saveLabel}</button></div>`;
+    const title = scope === "library" ? item ? "编辑入站配置" : "新建入站配置" : item ? "编辑独立入站副本" : "新增入站";
+    const description = scope === "library" ? "维护可在多个自定义配置中重复导入的源配置" : "此处内容属于当前自定义配置，不与资源库联动";
+    return modalFrame(title, description, body, footer, "modal-wide modal-inbound");
   }
 
   function updateCustomInboundValidation(textarea) {
@@ -3100,7 +3224,7 @@
 
   function commandModal() {
     const body = `<div class="modal-body"><label class="search-wrap" style="display:block"><span class="icon">${icon("search")}</span><input class="search-input" style="height:43px" placeholder="输入页面名称..." autofocus /></label><div class="entry-list" style="padding:12px 0 0">${[
-      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "DNS", "dns"], ["config", "入站配置", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "端点", "endpoints"], ["config", "路由设置", "routing"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
+      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "DNS", "dns"], ["config", "自定义配置 · 入站", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "端点", "endpoints"], ["config", "路由设置", "routing"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["inbounds", "入站配置", "inbound"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
     ].map(([page, label, iconName]) => `<button class="entry-card" data-command-page="${page}" data-command-config="${page === "config" ? iconName : ""}" style="width:100%;text-align:left"><div class="entry-icon">${icon(iconName)}</div><div class="entry-copy"><div class="entry-title">${label}</div><div class="entry-meta">快速跳转</div></div>${icon("chevron", "faint")}</button>`).join("")}</div></div>`;
     return modalFrame("快速跳转", "选择要打开的控制台页面", body);
   }
@@ -3514,6 +3638,24 @@
       if (!item) return;
       copyText(subscriptionJsonFor(item));
       showToast("已复制订阅 JSON", `已复制 ${subscriptionNodeCount(item)} 个节点的完整 JSON。`, "success");
+    } else if (action === "duplicate-inbound-library") {
+      const index = state.inboundLibrary.findIndex((item) => item.id === actionTarget.dataset.id);
+      if (index < 0) return;
+      const source = state.inboundLibrary[index];
+      const duplicate = cloneData(source);
+      duplicate.id = `inbound-library-${Date.now()}`;
+      duplicate.config.tag = uniqueInboundTag(`${source.config.tag}-copy`, null, "library");
+      duplicate.updated = "刚刚";
+      state.inboundLibrary.splice(index + 1, 0, duplicate);
+      persistInboundLibrary();
+      render();
+      showToast("入站配置已复制", `${duplicate.config.tag} 已加入资源库。`, "success");
+    } else if (action === "remove-inbound-library") {
+      const item = state.inboundLibrary.find((candidate) => candidate.id === actionTarget.dataset.id);
+      state.inboundLibrary = state.inboundLibrary.filter((candidate) => candidate.id !== actionTarget.dataset.id);
+      persistInboundLibrary();
+      render();
+      showToast("入站配置已删除", `${item?.config.tag || "入站配置"} 已移除；自定义配置中已有的副本不受影响。`, "info");
     } else if (action === "copy-custom-inbound") {
       const item = state.customInbounds.find((inbound) => inbound.id === actionTarget.dataset.id);
       if (!item) return;
@@ -3787,6 +3929,15 @@
       if (form) updateOutboundReferenceCount(form);
       return;
     }
+    if (event.target.matches('input[name="inbound-library-item"]')) {
+      const form = event.target.closest("#inbound-import-form");
+      const count = form?.querySelectorAll('input[name="inbound-library-item"]:checked').length || 0;
+      const submit = document.querySelector("#inbound-import-submit");
+      const label = submit?.querySelector("[data-inbound-import-count]");
+      if (label) label.textContent = String(count);
+      if (submit) submit.disabled = count === 0;
+      return;
+    }
     if (event.target.matches("[data-inbound-type]")) {
       const selectedType = event.target.value;
       const form = event.target.closest("#inbound-form");
@@ -3802,7 +3953,7 @@
       baseFields?.classList.toggle("is-hidden", isCustom);
       if (nameInput) {
         const previousDefault = form.dataset.defaultTag;
-        const nextDefault = defaultInboundTag(selectedType, state.editingInboundId);
+        const nextDefault = defaultInboundTag(selectedType, state.editingInboundId, form.dataset.inboundScope || "profile");
         if (form.dataset.new === "true" && nameInput.value === previousDefault) nameInput.value = nextDefault;
         form.dataset.defaultTag = nextDefault;
         nameInput.disabled = isCustom;
@@ -3925,46 +4076,81 @@
       closeModal();
       render();
       showToast("配置片段已保存", `${section.label}已写入当前草稿，请保存后应用。`, "success");
+    } else if (type === "inbound-import") {
+      const selectedIds = new FormData(form).getAll("inbound-library-item").map(String);
+      const selected = selectedIds.map((id) => state.inboundLibrary.find((item) => item.id === id)).filter(Boolean);
+      if (!selected.length) return;
+      let renamed = 0;
+      selected.forEach((item, index) => {
+        const config = cloneData(item.config);
+        const nextTag = uniqueInboundTag(config.tag);
+        if (nextTag !== config.tag) renamed += 1;
+        config.tag = nextTag;
+        const id = `imported-in-${Date.now()}-${index}`;
+        if (item.mode === "custom") {
+          state.customInbounds.push({ id, json: JSON.stringify(config, null, 2), config, detached: true });
+        } else {
+          state.formInbounds.push({ id, config, enabled: true, detached: true });
+        }
+      });
+      state.dirty = true;
+      closeModal();
+      render();
+      showToast("入站配置已导入", `已创建 ${selected.length} 个独立副本${renamed ? `，其中 ${renamed} 个 tag 已自动改名` : ""}。`, "success");
     } else if (type === "inbound") {
       const inboundType = form.querySelector("[data-inbound-type]:checked")?.value || "mixed";
       const editingId = state.editingInboundId;
       const wasExisting = Boolean(editingId);
+      const scope = form.dataset.inboundScope || "profile";
+      const tags = scope === "library" ? inboundLibraryTags(editingId) : inboundTags(editingId);
+      const detached = Boolean(state.formInbounds.find((item) => item.id === editingId)?.detached || state.customInbounds.find((item) => item.id === editingId)?.detached);
+      let config;
+      let mode = "structured";
       if (inboundType === "custom") {
         const textarea = form.querySelector("[data-custom-inbound-json]");
         const result = updateCustomInboundValidation(textarea);
         if (!result.valid) return;
-        if (inboundTags(editingId).has(result.config.tag)) {
-          showToast("入站名称已存在", `“${result.config.tag}”已被其他入站使用。`, "info");
-          textarea.focus();
-          return;
-        }
-        const json = JSON.stringify(result.config, null, 2);
-        const existing = state.customInbounds.find((inbound) => inbound.id === editingId);
-        if (existing) {
-          existing.json = json;
-          existing.config = result.config;
-        } else {
-          if (editingId) state.formInbounds = state.formInbounds.filter((inbound) => inbound.id !== editingId);
-          state.customInbounds.push({ id: editingId || `custom-in-${Date.now()}`, json, config: result.config });
-        }
-        state.dirty = true;
-        closeModal();
-        render();
-        showToast(wasExisting ? "入站已更新" : "自定义入站已添加", `${result.config.tag} 已写入当前配置草稿，请保存后应用。`, "success");
+        config = result.config;
+        mode = "custom";
       } else {
-        const config = buildInboundConfig(form, inboundType);
-        if (inboundTags(editingId).has(config.tag)) {
-          showToast("入站名称已存在", `“${config.tag}”已被其他入站使用。`, "info");
-          form.querySelector('[name="tag"]')?.focus();
-          return;
-        }
+        config = buildInboundConfig(form, inboundType);
         if (inboundType === "tun" && !config.address.length) {
           showToast("缺少 TUN 地址", "请至少添加一个 IPv4 或 IPv6 前缀。", "info");
           form.querySelector('[data-list-name="address"] [data-tun-list-input]')?.focus();
           return;
         }
+      }
+      if (tags.has(config.tag)) {
+        showToast("入站名称已存在", `“${config.tag}”已被其他入站使用。`, "info");
+        form.querySelector(inboundType === "custom" ? "[data-custom-inbound-json]" : '[name="tag"]')?.focus();
+        return;
+      }
+      if (scope === "library") {
+        const next = { id: editingId || `inbound-library-${Date.now()}`, mode, updated: "刚刚", config: cloneData(config) };
+        const existingIndex = state.inboundLibrary.findIndex((item) => item.id === editingId);
+        if (existingIndex >= 0) state.inboundLibrary.splice(existingIndex, 1, next);
+        else state.inboundLibrary.unshift(next);
+        persistInboundLibrary();
+        closeModal();
+        render();
+        showToast(wasExisting ? "入站配置已更新" : "入站配置已新建", `${config.tag} 已保存到一级入站配置资源库。`, "success");
+      } else if (mode === "custom") {
+        const json = JSON.stringify(config, null, 2);
+        const existing = state.customInbounds.find((inbound) => inbound.id === editingId);
+        if (existing) {
+          existing.json = json;
+          existing.config = config;
+        } else {
+          if (editingId) state.formInbounds = state.formInbounds.filter((inbound) => inbound.id !== editingId);
+          state.customInbounds.push({ id: editingId || `custom-in-${Date.now()}`, json, config, ...(detached ? { detached: true } : {}) });
+        }
+        state.dirty = true;
+        closeModal();
+        render();
+        showToast(wasExisting ? "入站已更新" : "自定义入站已添加", `${config.tag} 已写入当前配置草稿，请保存后应用。`, "success");
+      } else {
         const enabled = new FormData(form).get("enabled") === "true";
-        const next = { id: editingId || `form-in-${Date.now()}`, config, enabled };
+        const next = { id: editingId || `form-in-${Date.now()}`, config, enabled, ...(detached ? { detached: true } : {}) };
         const existingIndex = state.formInbounds.findIndex((inbound) => inbound.id === editingId);
         if (existingIndex >= 0) {
           state.formInbounds.splice(existingIndex, 1, next);
@@ -4239,7 +4425,7 @@
 
   window.addEventListener("popstate", () => {
     const route = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-    state.page = ["dashboard", "config", "subscriptions", "rulesets", "settings"].includes(route[0]) ? route[0] : "dashboard";
+    state.page = ["dashboard", "config", "inbounds", "subscriptions", "rulesets", "settings"].includes(route[0]) ? route[0] : "dashboard";
     if (state.page === "config") {
       const routeProfileId = route[2] ? route[1] : null;
       const routeTab = route[2] || route[1];
@@ -4255,6 +4441,7 @@
     render();
   });
 
+  initializeInboundLibrary();
   initializeProfiles();
   applyTheme();
   setAccent(state.accent);

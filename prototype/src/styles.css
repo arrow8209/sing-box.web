@@ -2676,6 +2676,170 @@ svg {
   white-space: nowrap;
 }
 
+.inbound-import-body {
+  display: grid;
+  gap: 14px;
+}
+
+.inbound-import-banner {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 11px 12px;
+  border: 1px solid color-mix(in srgb, var(--primary) 24%, var(--line));
+  border-radius: 11px;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.inbound-import-banner > .icon {
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+}
+
+.inbound-import-banner strong,
+.inbound-import-banner span {
+  display: block;
+}
+
+.inbound-import-banner strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.inbound-import-banner span {
+  margin-top: 2px;
+  color: var(--text-soft);
+  font-size: 8px;
+}
+
+.inbound-import-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+}
+
+.inbound-import-option {
+  min-width: 0;
+}
+
+.inbound-import-option > input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  opacity: 0;
+}
+
+.inbound-import-tile {
+  display: grid;
+  min-height: 76px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  grid-template-rows: auto auto;
+  align-content: center;
+  align-items: center;
+  gap: 4px 9px;
+  padding: 10px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-soft);
+  cursor: pointer;
+  transition: border-color 150ms ease, background 150ms ease, transform 150ms ease;
+}
+
+.inbound-import-tile:hover {
+  border-color: color-mix(in srgb, var(--primary) 30%, var(--line));
+  transform: translateY(-1px);
+}
+
+.inbound-import-tile > .entry-icon {
+  grid-row: 1 / 3;
+}
+
+.inbound-import-copy {
+  min-width: 0;
+}
+
+.inbound-import-copy strong,
+.inbound-import-copy small {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.inbound-import-copy strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.inbound-import-copy small {
+  margin-top: 2px;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.inbound-import-badges {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 5px;
+}
+
+.inbound-import-check {
+  width: 17px;
+  height: 17px;
+  grid-column: 3;
+  grid-row: 1 / 3;
+  color: transparent;
+}
+
+.inbound-import-option > input:checked + .inbound-import-tile {
+  border-color: color-mix(in srgb, var(--primary) 48%, var(--line));
+  background: var(--primary-soft);
+  box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent);
+}
+
+.inbound-import-option > input:checked + .inbound-import-tile .inbound-import-check {
+  color: var(--primary);
+}
+
+.inbound-import-option > input:focus-visible + .inbound-import-tile {
+  outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent);
+  outline-offset: 1px;
+}
+
+.inbound-import-empty {
+  display: grid;
+  min-height: 270px;
+  place-items: center;
+  align-content: center;
+  gap: 8px;
+  color: var(--text-faint);
+  text-align: center;
+}
+
+.inbound-import-empty > .icon {
+  width: 34px;
+  height: 34px;
+  margin-bottom: 3px;
+  color: var(--primary);
+}
+
+.inbound-import-empty strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.inbound-import-empty span {
+  font-size: 9px;
+}
+
+.inbound-import-empty .btn {
+  margin-top: 7px;
+}
+
 .inbound-type-divider {
   display: flex;
   align-items: center;
@@ -4475,6 +4639,10 @@ svg {
 
 .modal.modal-inbound {
   width: min(760px, 100%);
+}
+
+.modal.modal-inbound-import {
+  width: min(780px, 100%);
 }
 
 .modal.modal-outbound {
@@ -6811,6 +6979,10 @@ svg {
 
   .inbound-type-control {
     grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .inbound-import-list {
+    grid-template-columns: 1fr;
   }
 
   .modal.modal-outbound {
