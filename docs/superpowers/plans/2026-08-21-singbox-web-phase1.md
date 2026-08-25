@@ -81,7 +81,7 @@
 - `internal/rules/downloader.go`：受限 HTTP 客户端、逐次重定向检查、大小/超时限制和 source/binary 内容检查。
 - `internal/rules/scheduler.go`：服务端定时队列、重启重建、禁用和失败后的下一次调度。
 - `internal/rules/handler.go`：规则资源 CRUD 与立即更新 API。
-- `internal/configgen/model.go`：13 个受管顶层键、文件名映射、预览文件和综合摘要类型。
+- `internal/configgen/model.go`：12 个受管顶层键、文件名映射、预览文件和综合摘要类型。
 - `internal/configgen/generator.go`：把草稿和资源快照生成确定性模块文件，注入本地 `route.rule_set`。
 - `internal/configgen/semantic.go`：JSON 缓冲、tag、出站、DNS、规则集、资源绑定与条件必填检查。
 - `internal/configgen/checker.go`：直接执行当前二进制的 `check -C`，30 秒超时，stdout/stderr 各 64 KiB。
@@ -109,7 +109,7 @@
 - `web/src/api/client.ts`、`web/src/api/types.ts`：同源 API 客户端、CSRF、错误与所有 DTO；组件不直接调用 `fetch`。
 - `web/src/features/auth/`：仅密码登录与修改密码。
 - `web/src/features/profiles/`：档案侧栏、创建/改名/删除/切换和草稿自动保存状态机。
-- `web/src/features/config-editor/`：八个配置标签、结构化路径编辑、模块 JSON 缓冲和出站节点 JSON。
+- `web/src/features/config-editor/`：七个配置标签、结构化路径编辑、模块 JSON 缓冲和出站节点 JSON。
 - `web/src/features/rule-resources/`：资源 CRUD、禁用、更新、引用保护与调度状态。
 - `web/src/features/application/`：模块预览、检查、应用阶段、冲突、漂移确认和恢复结果。
 - `web/src/features/core/`：安装版本、最新稳定版、运行状态、PID、当前档案和确认式手动更新。

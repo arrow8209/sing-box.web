@@ -113,7 +113,6 @@ func collectTags(c *semanticCollector, parsed map[string]any) collectedTags {
 	tags := collectedTags{outbounds: map[string]struct{}{}, dnsServers: map[string]struct{}{}, ruleSets: map[string]struct{}{}}
 	collectArrayTags(c, parsed["inbounds"], "inbounds", nil)
 	collectArrayTags(c, parsed["outbounds"], "outbounds", tags.outbounds)
-	collectArrayTags(c, parsed["endpoints"], "endpoints", nil)
 	collectArrayTags(c, parsed["services"], "services", nil)
 	if dns, ok := parsed["dns"].(map[string]any); ok {
 		collectArrayTags(c, dns["servers"], "dns.servers", tags.dnsServers)

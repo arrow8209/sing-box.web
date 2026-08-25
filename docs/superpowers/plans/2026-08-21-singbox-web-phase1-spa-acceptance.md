@@ -11,7 +11,7 @@
 ## Global Constraints
 
 - 登录页只显示密码输入框，不显示或接受用户名，不提供注册或找回密码。
-- 配置工作区保留概览、DNS、入站、出站、端点、路由、服务和高级标签。
+- 配置工作区保留概览、DNS、入站、出站、路由、服务和高级标签。
 - 代理节点不设独立页面，只能在出站模块 JSON 编辑器中手工粘贴或编辑节点 JSON。
 - 产品现在和以后都不提供代理节点订阅、URL 拉取、解析、同步或定时刷新。
 - 主操作名称固定为“应用”；持续显示保存中、已保存、冲突、需要应用、正在应用、运行中和应用失败。
@@ -30,7 +30,7 @@
 - `web/src/api/`：唯一 fetch 边界、DTO、ETag、CSRF 和错误解码。
 - `web/src/features/auth/`：会话初始化、仅密码登录/修改与路由守卫。
 - `web/src/features/profiles/`：档案列表、侧栏、自动保存状态机、冲突与离线恢复。
-- `web/src/features/config-editor/`：八个模块标签、路径编辑和 JSON 文本缓冲。
+- `web/src/features/config-editor/`：七个模块标签、路径编辑和 JSON 文本缓冲。
 - `web/src/features/rule-resources/`：全局规则资源和档案绑定。
 - `web/src/features/application/`：预览、检查、应用、漂移确认与错误跳转。
 - `web/src/features/core/`：安装、版本、真实子进程状态和手动更新。
@@ -381,7 +381,7 @@ git commit -m "实现档案自动保存与冲突恢复"
 
 **Interfaces:**
 - Consumes: `useProfileStore().draft/mutate`；不调用配置导入、订阅或导出 API。
-- Produces: 八个固定标签、`setJsonPath(text, path, value)`、`saveModuleBuffer(module, text)` 和出站数组 JSON 编辑器。
+- Produces: 七个固定标签、`setJsonPath(text, path, value)`、`saveModuleBuffer(module, text)` 和出站数组 JSON 编辑器。
 
 - [ ] **Step 1: 写结构化编辑保留未知字段、无效缓冲和出站节点往返测试**
 
@@ -426,7 +426,6 @@ export const configTabs = [
   { id: "dns", label: "DNS", modules: ["dns"] },
   { id: "inbounds", label: "入站", modules: ["inbounds"] },
   { id: "outbounds", label: "出站", modules: ["outbounds"] },
-  { id: "endpoints", label: "端点", modules: ["endpoints"] },
   { id: "route", label: "路由", modules: ["route"] },
   { id: "services", label: "服务", modules: ["services"] },
   { id: "advanced", label: "高级", modules: ["ntp", "certificate", "certificate_providers", "http_clients", "network_namespaces", "experimental"] },
@@ -464,7 +463,7 @@ export function applyModuleBuffer(draft: Draft, module: string, text: string): B
 
 - [ ] **Step 5: 实现一期结构化字段和模块 JSON dialog**
 
-结构化编辑只覆盖原型已有且可明确映射的路径：`log.level`；DNS servers/rules/final；inbounds/outbounds/endpoints/services 数组项目的 `type/tag` 与完整对象 JSON；`route.final/rules/rule_set`；`experimental.clash_api` 与 `cache_file` 的常用字段。任何项目都提供完整 JSON 编辑，保存时验证顶层容器类型并保留未知键。
+结构化编辑只覆盖原型已有且可明确映射的路径：`log.level`；DNS servers/rules/final；inbounds/outbounds/services 数组项目的 `type/tag` 与完整对象 JSON；`route.final/rules/rule_set`；`experimental.clash_api` 与 `cache_file` 的常用字段。任何项目都提供完整 JSON 编辑，保存时验证顶层容器类型并保留未知键。
 
 - [ ] **Step 6: 实现出站手工节点体验并移除代理订阅概念**
 
@@ -474,7 +473,7 @@ export function applyModuleBuffer(draft: Draft, module: string, text: string): B
 
 Run: `npm --prefix web run test:unit -- config && npm --prefix web run typecheck`
 
-Expected: PASS；未来协议和嵌套未知字段保留；无效文本已自动保存但禁止应用；八个标签均存在；出站页没有订阅入口。
+Expected: PASS；未来协议和嵌套未知字段保留；无效文本已自动保存但禁止应用；七个标签均存在；出站页没有订阅入口。
 
 - [ ] **Step 8: 提交配置编辑工作区**
 
@@ -905,7 +904,7 @@ Run: `npm --prefix web run test:e2e -- visual.spec.ts --update-snapshots`
 
 Expected: 生成六张受版本控制截图基线（3 断点 × light/dark 中各计划场景），无横向页面溢出。
 
-手工打开 dashboard、八配置标签、规则、核心、设置和所有 dialog；在 Chrome 响应式模式检查 1440×900、900×1024、390×844，键盘 Tab/Escape、浅/深主题、侧栏 drawer、手机底部应用栏。把检查清单记录到本计划执行提交说明或 PR。
+手工打开 dashboard、七个配置标签、规则、核心、设置和所有 dialog；在 Chrome 响应式模式检查 1440×900、900×1024、390×844，键盘 Tab/Escape、浅/深主题、侧栏 drawer、手机底部应用栏。把检查清单记录到本计划执行提交说明或 PR。
 
 - [ ] **Step 7: 运行组件、视觉和类型全量验证**
 

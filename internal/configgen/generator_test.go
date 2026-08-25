@@ -40,8 +40,12 @@ func TestGenerateWritesOneDeterministicFilePerPresentModule(t *testing.T) {
 	assertNoFileContains(t, first.Files, "https://", "download_detour", "update_interval")
 }
 
-func TestGenerateOmitsMissingAndSchemaModules(t *testing.T) {
-	output, err := NewGenerator().Generate(context.Background(), profile.Draft{Config: map[string]json.RawMessage{"$schema": json.RawMessage(`"https://example.test/schema"`), "dns": json.RawMessage(`null`)}}, rules.Snapshot{})
+func TestGenerateOmitsMissingSchemaAndUnsupportedModules(t *testing.T) {
+	output, err := NewGenerator().Generate(context.Background(), profile.Draft{Config: map[string]json.RawMessage{
+		"$schema":   json.RawMessage(`"https://example.test/schema"`),
+		"dns":       json.RawMessage(`null`),
+		"endpoints": json.RawMessage(`[{"type":"wireguard","tag":"unused"}]`),
+	}}, rules.Snapshot{})
 	if err != nil {
 		t.Fatal(err)
 	}

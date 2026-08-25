@@ -82,6 +82,8 @@ for (const scenario of scenarios) {
     await page.goto("/workspace");
     await setTheme(page, scenario.theme);
     await expect(page.locator(".config-context-bar")).toBeVisible();
+    await expect(page.getByRole("tab")).toHaveCount(7);
+    await expect(page.getByRole("tab", { name: "端点" })).toHaveCount(0);
     await expect(page.locator("main")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-config.png`, { fullPage: true });

@@ -19,6 +19,7 @@ func TestValidateSemanticReportsStablePaths(t *testing.T) {
 		code, path string
 	}{
 		{"invalid buffer", profile.Draft{Buffers: map[string]string{"outbounds": "[{"}}, rules.Snapshot{}, "invalid_json_buffer", "outbounds"},
+		{"unsupported endpoint module", semanticDraft("endpoints", `[]`), rules.Snapshot{}, "unknown_module", "endpoints"},
 		{"wrong container", semanticDraft("outbounds", `{}`), rules.Snapshot{}, "invalid_module_container", "outbounds"},
 		{"duplicate outbound", semanticDraft("outbounds", `[{"type":"direct","tag":"x"},{"type":"block","tag":"x"}]`), rules.Snapshot{}, "duplicate_tag", "outbounds[1].tag"},
 		{"missing route outbound", semanticModules(map[string]string{"outbounds": `[{"type":"direct","tag":"direct"}]`, "route": `{"final":"missing"}`}), rules.Snapshot{}, "unknown_outbound", "route.final"},

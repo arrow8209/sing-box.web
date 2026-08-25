@@ -4,10 +4,11 @@ import ConfigTabs from "@/features/config-editor/ConfigTabs.vue";
 import OutboundJsonEditor from "@/features/config-editor/OutboundJsonEditor.vue";
 
 describe("配置编辑器", () => {
-  it("始终显示八个固定标签", () => {
+  it("始终显示七个固定标签且不提供端点模式", () => {
     const wrapper = mount(ConfigTabs, { props: { active: "overview" } });
-    expect(wrapper.findAll("button")).toHaveLength(8);
+    expect(wrapper.findAll("button")).toHaveLength(7);
     expect(wrapper.text()).toContain("高级");
+    expect(wrapper.text()).not.toContain("端点");
   });
 
   it("手工粘贴出站 JSON 原样回传，不遮罩也不丢字段", async () => {

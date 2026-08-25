@@ -490,8 +490,7 @@ var modules = []Module{
     {"log", "10-log.json"}, {"dns", "20-dns.json"}, {"ntp", "30-ntp.json"},
     {"certificate", "40-certificate.json"}, {"certificate_providers", "41-certificate-providers.json"},
     {"http_clients", "42-http-clients.json"}, {"network_namespaces", "43-network-namespaces.json"},
-    {"endpoints", "50-endpoints.json"}, {"inbounds", "60-inbounds.json"},
-    {"outbounds", "70-outbounds.json"}, {"route", "80-route.json"},
+    {"inbounds", "60-inbounds.json"}, {"outbounds", "70-outbounds.json"}, {"route", "80-route.json"},
     {"services", "90-services.json"}, {"experimental", "99-experimental.json"},
 }
 
@@ -592,7 +591,7 @@ Expected: FAIL，缺少 `ValidateSemantic`。
 
 - [ ] **Step 3: 实现缓冲解析和顶层容器检查**
 
-对 `draft.Buffers` 的每个键分别解析；允许键只限 13 个生成模块和 `$schema`。对象模块为 `log/dns/ntp/certificate/route/experimental`，数组模块为其余受管模块；空文本表示删除模块。文本无效时保留草稿中的最近有效 `Config` 供继续编辑，但返回 `invalid_json_buffer` 并禁止预览、检查和应用。有效缓冲已由 profile 保存服务以原始 `json.RawMessage` 重建 Config，因此语义检查和生成器读取的是同一事实。
+对 `draft.Buffers` 的每个键分别解析；允许键只限 12 个生成模块和 `$schema`。对象模块为 `log/dns/ntp/certificate/route/experimental`，数组模块为其余受管模块；空文本表示删除模块。文本无效时保留草稿中的最近有效 `Config` 供继续编辑，但返回 `invalid_json_buffer` 并禁止预览、检查和应用。有效缓冲已由 profile 保存服务以原始 `json.RawMessage` 重建 Config，因此语义检查和生成器读取的是同一事实。
 
 ```go
 func ValidateSemantic(draft profile.Draft, snapshot rules.Snapshot) []apierror.Error {
@@ -612,12 +611,12 @@ func ValidateSemantic(draft profile.Draft, snapshot rules.Snapshot) []apierror.E
 
 检查下列路径，不对未知字段猜测 Schema：
 
-- `inbounds[i].tag`、`outbounds[i].tag`、`endpoints[i].tag`、`services[i].tag`、`dns.servers[i].tag` 各自非空且集合内唯一。
+- `inbounds[i].tag`、`outbounds[i].tag`、`services[i].tag`、`dns.servers[i].tag` 各自非空且集合内唯一。
 - `route.final`、`route.rules[i].outbound`、`outbounds[i].detour`、`outbounds[i].outbounds[j]`、`inbounds[i].detour` 必须引用已知出站 tag。
 - `dns.final`、`dns.rules[i].server` 与对象形态 `dns.rules[i].action.server` 必须引用已知 DNS server tag。
 - `route.rules[i].rule_set` 的字符串或字符串数组必须引用草稿本地/inline tag 或启用绑定 tag。
 - 每个启用绑定要求非空且唯一 tag、存在资源、已有成功文件；绑定 tag 不得与草稿规则集 tag 重复。
-- `type` 和 `tag` 是入站、出站、端点、服务、DNS server 和规则集项目的基础必填字段；URL/协议细节交给当前 sing-box 二进制检查。
+- `type` 和 `tag` 是入站、出站、服务、DNS server 和规则集项目的基础必填字段；URL/协议细节交给当前 sing-box 二进制检查。
 
 - [ ] **Step 5: 运行语义全表和未知字段回归测试**
 

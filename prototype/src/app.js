@@ -110,7 +110,6 @@
     { id: "dns", label: "DNS", shortLabel: "DNS", icon: "dns" },
     { id: "inbounds", label: "入站", shortLabel: "入站", icon: "inbound" },
     { id: "outbounds", label: "出站", shortLabel: "出站", icon: "outbound" },
-    { id: "endpoints", label: "端点", shortLabel: "端点", icon: "route" },
     { id: "routing", label: "路由", shortLabel: "路由", icon: "route" },
     { id: "services", label: "服务", shortLabel: "服务", icon: "server" },
     { id: "advanced", label: "高级", shortLabel: "高级", icon: "settings" },
@@ -127,7 +126,6 @@
     { key: "certificate_providers", label: "证书提供器", type: "array", group: "advanced", icon: "shield", description: "ACME、Tailscale 等" },
     { key: "http_clients", label: "HTTP 客户端", type: "array", group: "advanced", icon: "globe", description: "可复用下载客户端" },
     { key: "network_namespaces", label: "网络命名空间", type: "array", group: "advanced", icon: "folder", description: "default 与 unshare" },
-    { key: "endpoints", label: "端点", type: "array", group: "endpoints", icon: "route", description: "VPN 与组网端点" },
     { key: "inbounds", label: "入站", type: "array", group: "inbounds", icon: "inbound", description: "流量入口" },
     { key: "outbounds", label: "出站", type: "array", group: "outbounds", icon: "outbound", description: "出口与策略组" },
     { key: "route", label: "路由", type: "object", group: "routing", icon: "route", description: "规则与规则集" },
@@ -135,7 +133,6 @@
     { key: "experimental", label: "实验性", type: "object", group: "advanced", icon: "sparkles", description: "Clash API、缓存等" },
   ];
 
-  const endpointTypes = ["wireguard", "tailscale", "openconnect", "openvpn-client", "openvpn-server"];
   const serviceTypes = ["api", "derp", "resolved", "ssm-api", "ccm", "ocm", "oom-killer", "hysteria-realm", "usbip-client", "usbip-server"];
   const inboundTypes = [
     { type: "mixed", label: "Mixed", icon: "inbound", description: "HTTP 与 SOCKS 复合代理" },
@@ -1295,7 +1292,7 @@
       <div class="config-context-icon">${icon("config")}</div>
       <div class="config-context-copy">
         <div class="config-context-title"><strong>${escapeHtml(profile.name)}</strong><span class="status-badge status-online">当前</span>${state.dirty ? '<span class="status-badge badge-orange">未保存</span>' : ""}</div>
-        <div class="config-context-meta"><span>${escapeHtml(profile.source)}</span><i></i><span>v${profile.version}</span><i></i><span>${configured}/14 个顶层模块</span><i></i><span>${escapeHtml(state.lastSaved)}</span></div>
+        <div class="config-context-meta"><span>${escapeHtml(profile.source)}</span><i></i><span>v${profile.version}</span><i></i><span>${configured}/${officialConfigSections.length} 个顶层模块</span><i></i><span>${escapeHtml(state.lastSaved)}</span></div>
       </div>
       <div class="config-context-actions desktop-config-actions">
         <button class="btn btn-sm" data-modal="profile-manage" data-id="${escapeHtml(profile.id)}">${icon("edit")}管理</button>
@@ -1316,7 +1313,6 @@
     let content = renderGeneralConfig();
     if (state.activeConfig === "inbounds") content = renderInboundConfig();
     if (state.activeConfig === "outbounds") content = renderOutboundConfig();
-    if (state.activeConfig === "endpoints") content = renderEndpointsConfig();
     if (state.activeConfig === "routing") content = renderRoutingConfig();
     if (state.activeConfig === "dns") content = renderDnsConfig();
     if (state.activeConfig === "services") content = renderServicesConfig();
@@ -1340,7 +1336,7 @@
     const config = currentProfileConfigObject();
     const configured = officialConfigSections.filter((section) => hasConfigSection(section, config[section.key])).length;
     return `<div class="config-health-strip" aria-label="配置摘要">
-      <div><span>${icon("check")}</span><strong>${configured}<small>/14</small></strong><em>已配置模块</em></div>
+      <div><span>${icon("check")}</span><strong>${configured}<small>/${officialConfigSections.length}</small></strong><em>已配置模块</em></div>
       <div><span>${icon("inbound")}</span><strong>${inboundCount()}</strong><em>入站</em></div>
       <div><span>${icon("outbound")}</span><strong>${state.outbounds.length}</strong><em>出站</em></div>
       <div><span>${icon("route")}</span><strong>${routeRuleCount()}</strong><em>路由规则</em></div>
@@ -1348,7 +1344,7 @@
     <div class="config-layout config-overview-layout">
       <div class="config-main">
         <article class="card config-map-card">
-          <div class="card-head"><div><h3 class="card-title">完整配置结构</h3><p class="card-subtitle">依据 sing-box 官方 Schema · 14 个顶层模块</p></div><span class="type-badge">schema.json</span></div>
+          <div class="card-head"><div><h3 class="card-title">完整配置结构</h3><p class="card-subtitle">依据当前产品范围 · ${officialConfigSections.length} 个顶层模块</p></div><span class="type-badge">schema.json</span></div>
           <div class="config-map">
             ${officialConfigSections.map((section) => {
               const value = config[section.key];
@@ -1563,7 +1559,7 @@
     return cleanName.slice(0, 2) || "--";
   }
 
-  function collectionConfigRow(item, index, iconName) {
+  function collectionConfigRow(item, index, key, iconName) {
     const type = String(item?.type || "custom");
     const tag = String(item?.tag || `${type}-${index + 1}`);
     const detail = item?.server || item?.listen || item?.address || `${Object.keys(item || {}).length} 个字段`;
@@ -1571,7 +1567,7 @@
       <span class="collection-config-icon">${icon(iconName)}</span>
       <div class="collection-config-copy"><strong>${escapeHtml(tag)}</strong><span>${escapeHtml(String(detail))}</span></div>
       <span class="type-badge">${escapeHtml(type)}</span>
-      <button class="entry-action" data-modal="config-section" data-id="${iconName === "server" ? "services" : "endpoints"}" title="编辑完整 JSON">${icon("edit")}</button>
+      <button class="entry-action" data-modal="config-section" data-id="${key}" title="编辑完整 JSON">${icon("edit")}</button>
     </div>`;
   }
 
@@ -1583,7 +1579,7 @@
         <article class="card">
           <div class="card-head"><div><h3 class="card-title">${title}</h3><p class="card-subtitle">${subtitle}</p></div><button class="btn btn-sm btn-primary" data-modal="config-section" data-id="${key}">${icon("code")}${items.length ? "编辑 JSON" : "添加配置"}</button></div>
           <div class="collection-config-list">
-            ${items.length ? items.map((item, index) => collectionConfigRow(item, index, iconName)).join("") : `<button class="config-empty-state" data-modal="config-section" data-id="${key}">${icon(iconName)}<strong>尚未配置${title}</strong><span>使用完整 JSON 数组添加，所有官方字段均可保留</span></button>`}
+            ${items.length ? items.map((item, index) => collectionConfigRow(item, index, key, iconName)).join("") : `<button class="config-empty-state" data-modal="config-section" data-id="${key}">${icon(iconName)}<strong>尚未配置${title}</strong><span>使用完整 JSON 数组添加，所有官方字段均可保留</span></button>`}
           </div>
         </article>
       </div>
@@ -1592,13 +1588,9 @@
           <div class="card-head"><div><h3 class="card-title">官方类型</h3><p class="card-subtitle">当前 Schema 支持的 type</p></div><span class="type-badge">${key}</span></div>
           <div class="card-body"><div class="type-chip-list">${supportedTypes.map((type) => `<code>${type}</code>`).join("")}</div></div>
         </article>
-        <div class="info-callout">${icon("info")}<span>${key === "endpoints" ? "端点用于 WireGuard、Tailscale、OpenVPN 与 OpenConnect 等组网连接，并可被路由规则引用。" : "服务独立于代理入站运行，包括 API、DERP、Resolved、OOM Killer 与 USB/IP 等能力。"}</span></div>
+        <div class="info-callout">${icon("info")}<span>服务独立于代理入站运行，包括 API、DERP、Resolved、OOM Killer 与 USB/IP 等能力。</span></div>
       </aside>
     </div>`;
-  }
-
-  function renderEndpointsConfig() {
-    return renderCollectionConfig("endpoints", "端点", "VPN 与组网接口，可参与路由匹配", "route", endpointTypes);
   }
 
   function renderServicesConfig() {
@@ -3127,7 +3119,10 @@
       if (config.outbounds !== undefined && !Array.isArray(config.outbounds)) {
         return { valid: false, message: "outbounds 必须是数组。" };
       }
-      for (const key of ["certificate_providers", "http_clients", "network_namespaces", "endpoints", "services"]) {
+      if (config.endpoints !== undefined) {
+        return { valid: false, message: "当前产品不支持 endpoints 配置。" };
+      }
+      for (const key of ["certificate_providers", "http_clients", "network_namespaces", "services"]) {
         if (config[key] !== undefined && !Array.isArray(config[key])) {
           return { valid: false, message: `${key} 必须是数组。` };
         }
@@ -3141,8 +3136,8 @@
       const inboundTotal = config.inbounds?.length || 0;
       const outboundTotal = config.outbounds?.length || 0;
       const ruleTotal = Array.isArray(config.route?.rules) ? config.route.rules.length : 0;
-      const extensionTotal = (config.endpoints?.length || 0) + (config.services?.length || 0);
-      return { valid: true, config, message: `JSON 有效 · ${inboundTotal} 个入站 · ${outboundTotal} 个出站 · ${ruleTotal} 条路由规则 · ${extensionTotal} 个端点/服务` };
+      const serviceTotal = config.services?.length || 0;
+      return { valid: true, config, message: `JSON 有效 · ${inboundTotal} 个入站 · ${outboundTotal} 个出站 · ${ruleTotal} 条路由规则 · ${serviceTotal} 个服务` };
     } catch (error) {
       return { valid: false, message: `JSON 语法错误：${error.message}` };
     }
@@ -3217,14 +3212,14 @@
   function jsonModal() {
     const config = currentProfileConfigObject();
     const configured = officialConfigSections.filter((section) => hasConfigSection(section, config[section.key])).length;
-    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>已生成 ${configured}/14 个顶层模块，包含 ${inboundCount()} 个入站、${state.outbounds.length} 个出站、${config.endpoints?.length || 0} 个端点、${config.services?.length || 0} 个服务与 ${routeRuleCount()} 条路由规则。</span></div></div>`;
+    const body = `<div class="modal-body">${renderCodePreview(true)}<div class="info-callout" style="margin-top:12px">${icon("check")}<span>已生成 ${configured}/${officialConfigSections.length} 个顶层模块，包含 ${inboundCount()} 个入站、${state.outbounds.length} 个出站、${config.services?.length || 0} 个服务与 ${routeRuleCount()} 条路由规则。</span></div></div>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="copy-json">${icon("copy")}复制 JSON</button><button class="btn btn-primary" data-action="close-modal">完成</button></div>`;
     return modalFrame("配置 JSON 预览", "由当前表单实时生成，只读展示", body, footer);
   }
 
   function commandModal() {
     const body = `<div class="modal-body"><label class="search-wrap" style="display:block"><span class="icon">${icon("search")}</span><input class="search-input" style="height:43px" placeholder="输入页面名称..." autofocus /></label><div class="entry-list" style="padding:12px 0 0">${[
-      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "DNS", "dns"], ["config", "自定义配置 · 入站", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "端点", "endpoints"], ["config", "路由设置", "routing"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["inbounds", "入站配置", "inbound"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
+      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "DNS", "dns"], ["config", "自定义配置 · 入站", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "路由设置", "routing"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["inbounds", "入站配置", "inbound"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
     ].map(([page, label, iconName]) => `<button class="entry-card" data-command-page="${page}" data-command-config="${page === "config" ? iconName : ""}" style="width:100%;text-align:left"><div class="entry-icon">${icon(iconName)}</div><div class="entry-copy"><div class="entry-title">${label}</div><div class="entry-meta">快速跳转</div></div>${icon("chevron", "faint")}</button>`).join("")}</div></div>`;
     return modalFrame("快速跳转", "选择要打开的控制台页面", body);
   }

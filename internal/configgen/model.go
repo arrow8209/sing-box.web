@@ -22,7 +22,6 @@ var modules = []Module{
 	{"certificate_providers", "41-certificate-providers.json"},
 	{"http_clients", "42-http-clients.json"},
 	{"network_namespaces", "43-network-namespaces.json"},
-	{"endpoints", "50-endpoints.json"},
 	{"inbounds", "60-inbounds.json"},
 	{"outbounds", "70-outbounds.json"},
 	{"route", "80-route.json"},
