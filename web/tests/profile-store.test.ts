@@ -53,4 +53,18 @@ describe("档案草稿保存", () => {
     api.clearSaveError(); window.dispatchEvent(new Event("online")); await new Promise((resolve) => setTimeout(resolve));
     expect(store.saveState.value).toBe("saved");
   });
+
+  it("递归解包更新过程写回的深层 Vue 代理", async () => {
+    const api = fakeApi(); const store = createProfileStore(api); stores.push(store);
+    await store.refresh(); await store.open("profile-a");
+    store.mutate((value) => {
+      const current = value.config.inbounds as unknown[];
+      value.config = { ...value.config, inbounds: [...current, { type: "mixed", tag: "mixed-in" }] };
+      value.buffers.inbounds = JSON.stringify(value.config.inbounds);
+    });
+    await store.flush();
+    expect(store.saveState.value).toBe("saved");
+    expect(api.saveDraft).toHaveBeenCalledTimes(1);
+    expect(api.saveDraft.mock.calls[0]?.[2].buffers.inbounds).toContain("mixed-in");
+  });
 });

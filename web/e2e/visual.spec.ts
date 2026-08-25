@@ -60,6 +60,20 @@ async function ensureVisualSubscription(page: Page): Promise<void> {
   await expect(page.locator(".subscription-card")).toHaveCount(1);
 }
 
+async function ensureVisualInbound(page: Page): Promise<void> {
+  await page.goto("/inbounds");
+  await expect(page.getByRole("heading", { name: "入站配置", exact: true })).toBeVisible();
+  if (await page.locator(".resource-row").count()) return;
+  await page.getByRole("button", { name: "新建入站配置", exact: true }).click();
+  const dialog = page.getByRole("dialog", { name: "新建入站配置" });
+  await dialog.locator('input[name="tag"]').fill("visual-mixed-in");
+  await dialog.locator('input[type="number"]').first().fill("19090");
+  await dialog.getByRole("button", { name: "新建入站配置", exact: true }).click();
+  await expect(page.locator(".resource-row")).toHaveCount(1);
+  await page.reload();
+  await expect(page.locator(".resource-row")).toHaveCount(1);
+}
+
 for (const scenario of scenarios) {
   test(`${scenario.name} configuration and rules workspace`, async ({ page }) => {
     await page.setViewportSize({ width: scenario.width, height: scenario.height });
@@ -71,6 +85,12 @@ for (const scenario of scenarios) {
     await expect(page.locator("main")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-config.png`, { fullPage: true });
+
+    await ensureVisualInbound(page);
+    await setTheme(page, scenario.theme);
+    await expect(page.locator(".resource-row")).toBeVisible();
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
+    await expect(page).toHaveScreenshot(`${scenario.name}-inbounds.png`, { fullPage: true });
 
     await page.goto("/rules");
     await setTheme(page, scenario.theme);

@@ -7,6 +7,7 @@ import ProfileSidebar from "./features/profiles/ProfileSidebar.vue";
 import ConfigWorkspace from "./features/config-editor/ConfigWorkspace.vue";
 import RuleResourcesView from "./features/rule-resources/RuleResourcesView.vue";
 import SubscriptionsView from "./features/subscriptions/SubscriptionsView.vue";
+import InboundResourcesView from "./features/inbounds/InboundResourcesView.vue";
 import CoreView from "./features/core/CoreView.vue";
 import DashboardView from "./features/dashboard/DashboardView.vue";
 import SettingsView from "./features/settings/SettingsView.vue";
@@ -32,6 +33,7 @@ const router = createRouter({
         { path: "", name: "overview", component: DashboardView },
         { path: "workspace", name: "workspace", component: ConfigWorkspace },
         { path: "profiles", name: "profiles", component: ProfileSidebar },
+        { path: "inbounds", name: "inbounds", component: InboundResourcesView },
         { path: "subscriptions", name: "subscriptions", component: SubscriptionsView },
         { path: "rules", name: "rules", component: RuleResourcesView },
         { path: "core", name: "core", component: CoreView },

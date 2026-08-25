@@ -20,7 +20,15 @@ export function setJsonPath(text: string, path: readonly (string | number)[], va
 }
 
 export function applyModuleBuffer(draft: Draft, module: string, text: string): BufferResult {
-  const next = structuredClone(draft);
+  // Drafts held by the profile store are deep Vue proxies, which the browser
+  // structured-clone algorithm rejects. This edit only replaces one module,
+  // so copy the envelope and its maps without round-tripping untouched JSON.
+  const next: Draft = {
+    ...draft,
+    config: { ...draft.config },
+    buffers: { ...draft.buffers },
+    bindings: draft.bindings.map((binding) => ({ ...binding }))
+  };
   next.buffers[module] = text;
   if (text.trim() === "") {
     delete next.config[module];

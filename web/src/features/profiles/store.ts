@@ -25,7 +25,10 @@ export interface ProfileStore {
 }
 
 function copy<T>(value: T): T {
-  return structuredClone(toRaw(value));
+  if (value === null || typeof value !== "object") return value;
+  const raw = toRaw(value);
+  if (Array.isArray(raw)) return raw.map((item) => copy(item)) as T;
+  return Object.fromEntries(Object.entries(raw).map(([key, item]) => [key, copy(item)])) as T;
 }
 
 export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {

@@ -17,6 +17,7 @@ type Middleware func(http.Handler) http.Handler
 type Dependencies struct {
 	ProfileHandler      http.Handler
 	SubscriptionHandler http.Handler
+	InboundHandler      http.Handler
 	RuleResourceHandler http.Handler
 	ConfigHandler       http.Handler
 	ApplicationHandler  http.Handler
@@ -35,6 +36,7 @@ type Dependencies struct {
 func NewRouter(deps Dependencies) http.Handler {
 	profiles := deps.ProfileHandler
 	subscriptions := deps.SubscriptionHandler
+	inbounds := deps.InboundHandler
 	rules := deps.RuleResourceHandler
 	configuration := deps.ConfigHandler
 	application := deps.ApplicationHandler
@@ -64,6 +66,14 @@ func NewRouter(deps Dependencies) http.Handler {
 	} else {
 		subscriptions = csrfForWrites(subscriptions, deps.RequireCSRF)
 		subscriptions = deps.Authenticate(subscriptions)
+	}
+	if inbounds == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
+		inbounds = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
+		})
+	} else {
+		inbounds = csrfForWrites(inbounds, deps.RequireCSRF)
+		inbounds = deps.Authenticate(inbounds)
 	}
 	if application == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
 		application = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -118,6 +128,8 @@ func NewRouter(deps Dependencies) http.Handler {
 			rules.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/subscriptions" || strings.HasPrefix(r.URL.Path, "/api/v1/subscriptions/"):
 			subscriptions.ServeHTTP(w, r)
+		case r.URL.Path == "/api/v1/inbound-resources" || strings.HasPrefix(r.URL.Path, "/api/v1/inbound-resources/"):
+			inbounds.ServeHTTP(w, r)
 		case strings.HasPrefix(r.URL.Path, "/api/v1/auth/") && deps.AuthHandler != nil:
 			deps.AuthHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/capabilities" && deps.CapabilityHandler != nil:

@@ -1,3 +1,4 @@
+import { reactive } from "vue";
 import { describe, expect, it } from "vitest";
 import { applyModuleBuffer, setJsonPath } from "@/features/config-editor/json";
 import type { Draft } from "@/features/profiles/types";
@@ -21,5 +22,14 @@ describe("配置 JSON 缓冲", () => {
     expect(result.draft.buffers.outbounds).toBe('[{"type":');
     expect(result.draft.config.outbounds).toEqual([{ type: "direct", tag: "direct" }]);
     expect(result.error?.fieldPath).toBe("outbounds");
+  });
+
+  it("可以更新 Vue 响应式草稿而不触发代理克隆错误", () => {
+    const draft = reactive(draftFixture(1, { inbounds: [{ type: "mixed", tag: "mixed-in" }] }));
+    draft.buffers.inbounds = `[{"type":"mixed","tag":"mixed-in"}]`;
+    const result = applyModuleBuffer(draft, "inbounds", `[{"type":"tun","tag":"tun-in"}]`);
+    expect(result.error).toBeUndefined();
+    expect(result.draft.config.inbounds).toEqual([{ type: "tun", tag: "tun-in" }]);
+    expect(draft.config.inbounds).toEqual([{ type: "mixed", tag: "mixed-in" }]);
   });
 });

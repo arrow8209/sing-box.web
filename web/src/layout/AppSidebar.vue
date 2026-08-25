@@ -55,6 +55,7 @@ function close(): void { emit("close"); }
         </div>
       </div>
 
+      <RouterLink class="nav-item" to="/inbounds" @click="close"><AppIcon name="inbound" /><span>入站配置</span></RouterLink>
       <RouterLink class="nav-item" to="/subscriptions" @click="close"><AppIcon name="subscription" /><span>订阅配置</span></RouterLink>
       <RouterLink class="nav-item" to="/rules" @click="close"><AppIcon name="rules" /><span>规则集</span></RouterLink>
       <RouterLink class="nav-item" to="/core" @click="close"><AppIcon name="cpu" /><span>核心管理</span></RouterLink>

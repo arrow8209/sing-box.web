@@ -1,5 +1,6 @@
 export interface Capabilities {
   configuration: boolean;
+  inboundResources: boolean;
   subscriptions: boolean;
   ruleResources: boolean;
   application: boolean;

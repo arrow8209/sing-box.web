@@ -18,6 +18,7 @@ import (
 	"singbox-web/internal/configgen"
 	"singbox-web/internal/core"
 	"singbox-web/internal/httpapi"
+	"singbox-web/internal/inbounds"
 	"singbox-web/internal/paths"
 	"singbox-web/internal/profile"
 	"singbox-web/internal/rules"
@@ -121,6 +122,9 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err := subscriptions.ValidateManagedState(layout); err != nil {
 		return nil, err
 	}
+	if err := inbounds.ValidateManagedState(layout); err != nil {
+		return nil, err
+	}
 	if _, err := os.Stat(layout.CoreFile); err == nil {
 		if err := storage.ValidateJSON(layout.CoreFile); err != nil {
 			return nil, err
@@ -136,6 +140,10 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		return nil, err
 	}
 	subscriptionService, err := subscriptions.Open(layout, clock, randomSource)
+	if err != nil {
+		return nil, err
+	}
+	inboundService, err := inbounds.Open(layout, clock, randomSource)
 	if err != nil {
 		return nil, err
 	}
@@ -226,6 +234,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler:      profile.NewHandler(profileService),
 		SubscriptionHandler: subscriptions.NewHandler(subscriptionService),
+		InboundHandler:      inbounds.NewHandler(inboundService),
 		RuleResourceHandler: rules.NewHandler(ruleService, ruleCatalog),
 		ConfigHandler:       configHandler,
 		ApplicationHandler:  application.NewHandler(coordinator),
