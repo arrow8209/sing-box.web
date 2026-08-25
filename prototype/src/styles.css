@@ -3439,9 +3439,23 @@ svg {
   font-size: 9px;
 }
 
+.outbound-summary {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: 11px;
+}
+
+.outbound-summary .entry-meta {
+  min-width: 0;
+  margin-top: 0;
+}
+
 .outbound-members {
   display: flex;
-  margin-top: 13px;
+  flex: 0 0 auto;
 }
 
 .member-avatar {
@@ -8079,10 +8093,6 @@ svg {
 
   .outbound-head {
     gap: 10px;
-  }
-
-  .outbound-members {
-    margin-top: 12px;
   }
 
   .collection-config-list {

@@ -1548,8 +1548,7 @@
     const countLabel = ["selector", "urltest"].includes(outbound.type) ? `${refs.length} 个引用` : "内置出站";
     return `<div class="outbound-card" data-outbound-id="${escapeHtml(outbound.id)}">
       <div class="outbound-head"><div class="entry-icon ${meta.tone}">${icon(meta.iconName)}</div><div class="outbound-name"><strong>${escapeHtml(outbound.tag)}</strong><span>${escapeHtml(meta.description)}</span></div><button class="entry-action" data-modal="outbound" data-id="${escapeHtml(outbound.id)}" title="编辑出站">${icon("edit")}</button></div>
-      <div class="entry-meta" style="margin-top:11px"><span class="type-badge">${escapeHtml(outbound.type)}</span><span>${countLabel}</span>${outbound.hidden ? '<span class="status-badge badge-orange">隐藏</span>' : ""}</div>
-      <div class="outbound-members">${members.map((member, index) => `<span class="member-avatar" style="z-index:${members.length - index}" title="${escapeHtml(member)}">${escapeHtml(outboundMemberInitial(member))}</span>`).join("")}${extraCount ? `<span class="member-avatar more">+${extraCount}</span>` : ""}</div>
+      <div class="outbound-summary"><div class="entry-meta"><span class="type-badge">${escapeHtml(outbound.type)}</span><span>${countLabel}</span>${outbound.hidden ? '<span class="status-badge badge-orange">隐藏</span>' : ""}</div><div class="outbound-members">${members.map((member, index) => `<span class="member-avatar" style="z-index:${members.length - index}" title="${escapeHtml(member)}">${escapeHtml(outboundMemberInitial(member))}</span>`).join("")}${extraCount ? `<span class="member-avatar more">+${extraCount}</span>` : ""}</div></div>
     </div>`;
   }
 
