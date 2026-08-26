@@ -162,12 +162,6 @@ export function referencedSubscriptionOutboundTags(source: unknown[], subscripti
     : []);
 }
 
-export function outboundMemberInitial(name: string): string {
-  const cleanName = name.replace(/^\p{Extended_Pictographic}+\s*/u, "").trim();
-  if (/^[a-z]/i.test(cleanName)) return cleanName.slice(0, 2).toUpperCase();
-  return Array.from(cleanName).slice(0, 2).join("") || "--";
-}
-
 export function outboundDescription(config: OutboundConfig): string {
   if (config.type === "selector") return "手动选择引用的出站或订阅";
   if (config.type === "urltest") return `每 ${typeof config.interval === "string" && config.interval ? config.interval : "5m"} 检测延迟`;

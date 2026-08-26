@@ -52,6 +52,7 @@ async function addDirect(page: Page): Promise<void> {
 async function addUrlTest(page: Page): Promise<void> {
   await page.getByRole("button", { name: "新增出站" }).click();
   const dialog = page.getByRole("dialog", { name: "出站" });
+  await expect(dialog.locator(".reference-badge")).toHaveCount(0);
   await dialog.getByRole("radio", { name: "自动选择" }).check();
   await dialog.locator('input[name="tag"]').fill("E2E 自动选择");
   await dialog.locator('input[name="interval"]').fill("5m");
@@ -86,6 +87,7 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   await addUrlTest(page);
   await addSelectorWithSubscription(page);
 
+  await expect(page.locator(".outbound-members")).toHaveCount(0);
   await expect(page.getByLabel("测试间隔")).toHaveValue("5m");
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
@@ -126,7 +128,11 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   await renameDialog.locator('input[name="tag"]').fill("E2E 自动选择-已改");
   await renameDialog.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.locator('[data-outbound-tag="E2E 自动选择-已改"]')).toBeVisible();
-  await expect(page.locator('[data-outbound-tag="节点选择"] [title="E2E 自动选择-已改"]')).toBeVisible();
+  await page.getByRole("button", { name: "编辑出站 节点选择" }).click();
+  const selectorDialog = page.getByRole("dialog", { name: "出站" });
+  const renamedReference = selectorDialog.locator(".reference-tile").filter({ hasText: "E2E 自动选择-已改" });
+  await expect(renamedReference.locator('input[type="checkbox"]')).toBeChecked();
+  await selectorDialog.getByRole("button", { name: "取消" }).click();
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });

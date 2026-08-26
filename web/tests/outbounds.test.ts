@@ -174,6 +174,7 @@ describe("自定义配置出站", () => {
     });
 
     expect(wrapper.findAll('.type-control input[type="radio"]')).toHaveLength(4);
+    expect(wrapper.find(".reference-badge").exists()).toBe(false);
     expect(wrapper.text()).not.toContain("完整 JSON");
     expect(wrapper.text()).not.toContain("not-visible-in-dom");
     const subscriptionGroup = wrapper.findAll(".reference-group").find((item) => item.get(".reference-head").text().includes("订阅"));
@@ -236,6 +237,7 @@ describe("自定义配置出站", () => {
     await flushPromises();
 
     expect(wrapper.findAll(".outbound-card")).toHaveLength(1);
+    expect(wrapper.find(".outbound-members").exists()).toBe(false);
     expect(wrapper.find('[data-outbound-tag="节点选择"]').exists()).toBe(true);
     expect(wrapper.find('[data-outbound-tag="新加坡 01"]').exists()).toBe(false);
     expect(wrapper.find('[data-outbound-tag="direct"]').exists()).toBe(false);
