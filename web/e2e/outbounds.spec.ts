@@ -70,8 +70,8 @@ async function addSelectorWithSubscription(page: Page): Promise<void> {
   await expect(dialog.getByText("已选 2 项 · 3 个出站")).toBeVisible();
   await dialog.getByRole("button", { name: "确认添加" }).click();
   await expect(page.locator('[data-outbound-tag="节点选择"]')).toContainText("3 个引用");
-  await expect(page.locator('[data-outbound-tag="新加坡 E2E"]')).toBeVisible();
-  await expect(page.locator('[data-outbound-tag="香港 E2E"]')).toBeVisible();
+  await expect(page.locator('[data-outbound-tag="新加坡 E2E"]')).toHaveCount(0);
+  await expect(page.locator('[data-outbound-tag="香港 E2E"]')).toHaveCount(0);
 }
 
 test("按原型创建、引用、编辑和持久化自定义配置出站", async ({ page }) => {
@@ -116,9 +116,13 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
 
   await page.reload();
   await page.getByRole("tab", { name: "出站", exact: true }).click();
-  await expect(page.locator(".outbound-card")).toHaveCount(initialOutboundCount + 6);
+  await expect(page.locator(".outbound-card")).toHaveCount(initialOutboundCount + 4);
+  const selectorCard = page.locator('[data-outbound-tag="节点选择"]');
+  await expect(selectorCard.getByRole("button", { name: "编辑出站 节点选择" })).toBeVisible();
+  await expect(selectorCard.getByRole("button", { name: "删除出站 节点选择" })).toBeVisible();
   await page.getByRole("button", { name: "编辑出站 节点选择" }).click();
   const editor = page.getByRole("dialog", { name: "出站" });
+  await expect(editor.getByRole("button", { name: "删除出站" })).toHaveCount(0);
   await expect(editor.getByText("已选 3 项 · 3 个出站")).toBeVisible();
   await editor.getByLabel("隐藏出站").check();
   await editor.getByRole("button", { name: "保存", exact: true }).click();

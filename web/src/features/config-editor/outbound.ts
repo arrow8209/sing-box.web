@@ -77,6 +77,42 @@ export function outboundReferenceTags(config: OutboundConfig): string[] {
   return config.outbounds.filter((tag): tag is string => typeof tag === "string" && Boolean(tag.trim()));
 }
 
+function sameValue(left: unknown, right: unknown): boolean {
+  if (Object.is(left, right)) return true;
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left)
+      && Array.isArray(right)
+      && left.length === right.length
+      && left.every((item, index) => sameValue(item, right[index]));
+  }
+  if (!isObject(left) || !isObject(right)) return false;
+  const leftKeys = Object.keys(left).sort();
+  const rightKeys = Object.keys(right).sort();
+  return leftKeys.length === rightKeys.length
+    && leftKeys.every((key, index) => key === rightKeys[index] && sameValue(left[key], right[key]));
+}
+
+function sameOutboundIgnoringTag(left: OutboundConfig, right: OutboundConfig): boolean {
+  const { tag: _leftTag, ...leftFields } = left;
+  const { tag: _rightTag, ...rightFields } = right;
+  return sameValue(leftFields, rightFields);
+}
+
+/**
+ * Finds subscription node copies which only exist to satisfy a policy group's
+ * final sing-box tag references. They remain in the JSON configuration but are
+ * represented by the owning selector/urltest instead of standalone UI cards.
+ */
+export function referencedSubscriptionOutboundTags(source: unknown[], subscriptionNodes: unknown[]): string[] {
+  const outbounds = source.filter(isOutboundConfig);
+  const referenced = new Set(outbounds.flatMap((config) => isPolicyOutbound(config) ? outboundReferenceTags(config) : []));
+  const candidates = subscriptionNodes.filter(isOutboundConfig);
+  return outbounds.flatMap((config) => referenced.has(config.tag)
+    && candidates.some((candidate) => candidate.tag === config.tag || sameOutboundIgnoringTag(config, candidate))
+    ? [config.tag]
+    : []);
+}
+
 export function outboundMemberInitial(name: string): string {
   const cleanName = name.replace(/^\p{Extended_Pictographic}+\s*/u, "").trim();
   if (/^[a-z]/i.test(cleanName)) return cleanName.slice(0, 2).toUpperCase();

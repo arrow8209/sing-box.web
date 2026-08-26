@@ -1,13 +1,17 @@
-import { mount } from "@vue/test-utils";
-import { describe, expect, it } from "vitest";
+import { flushPromises, mount } from "@vue/test-utils";
+import { describe, expect, it, vi } from "vitest";
+import OutboundConfigPanel from "@/features/config-editor/OutboundConfigPanel.vue";
 import OutboundEditorDialog from "@/features/config-editor/OutboundEditorDialog.vue";
 import {
   applyOutboundBufferEdit,
   mergeOutboundEdit,
+  referencedSubscriptionOutboundTags,
   validateOutboundJson,
   type OutboundConfig,
   type OutboundEditorResult
 } from "@/features/config-editor/outbound";
+import type { Draft } from "@/features/profiles/types";
+import { subscriptionApi } from "@/features/subscriptions/api";
 import type { SubscriptionDetail } from "@/features/subscriptions/types";
 
 describe("自定义配置出站", () => {
@@ -39,6 +43,21 @@ describe("自定义配置出站", () => {
     expect(merged.items[2]).toEqual({ type: "trojan", tag: "香港 01", password: "secret", tls: { enabled: true }, future: { x: 1 } });
     expect(JSON.stringify(merged.items)).not.toContain("subscription-node");
     expect(JSON.stringify(merged.items)).not.toContain("sourceId");
+  });
+
+  it("识别策略组引用的订阅节点副本，但保留普通出站卡片", () => {
+    const items = [
+      { type: "selector", tag: "节点选择", outbounds: ["手工节点", "订阅旧副本", "香港 01-2"] },
+      { type: "vless", tag: "手工节点", server: "manual.example.test", uuid: "manual" },
+      { type: "vless", tag: "订阅旧副本", server: "old.example.test", uuid: "old" },
+      { type: "trojan", tag: "香港 01-2", server: "hk.example.test", password: "keep", tls: { enabled: true } },
+      { type: "trojan", tag: "未引用节点", server: "hk.example.test", password: "keep", tls: { enabled: true } }
+    ];
+    const subscriptionNodes = [
+      { type: "trojan", tag: "香港 01", password: "keep", server: "hk.example.test", tls: { enabled: true } },
+      { type: "vless", tag: "订阅旧副本", server: "subscription-updated.example.test", uuid: "changed" }
+    ];
+    expect(referencedSubscriptionOutboundTags(items, subscriptionNodes)).toEqual(["订阅旧副本", "香港 01-2"]);
   });
 
   it("订阅节点 tag 冲突时保留完整副本并自动改名", () => {
@@ -103,11 +122,57 @@ describe("自定义配置出站", () => {
         outbounds: [outbound, { type: "direct", tag: "direct" }]
       }
     });
+    expect(wrapper.findAll("button").some((button) => button.text().includes("删除出站"))).toBe(false);
     await wrapper.get('input[name="include"]').setValue("HK|SG");
     await wrapper.get("form").trigger("submit");
     const submitted = wrapper.emitted("submit")?.[0]?.[0] as OutboundEditorResult;
     expect(submitted.config).toMatchObject({ type: "selector", tag: "节点选择", include: "HK|SG", future_option: { nested: 900 } });
     expect(submitted.references.map((reference) => reference.tag)).toEqual(["direct"]);
+  });
+
+  it("订阅节点保留在最终 JSON 中，但不显示为独立卡片，删除入口与编辑入口同组", async () => {
+    const id = "a".repeat(32);
+    const copiedNode = { type: "trojan", tag: "香港 01", server: "hk.example.test", password: "keep" };
+    const subscription: SubscriptionDetail = {
+      id,
+      name: "家庭节点",
+      outbounds: [copiedNode],
+      updatedAt: "2026-08-25T00:00:00Z"
+    };
+    vi.spyOn(subscriptionApi, "list").mockResolvedValue([{
+      id,
+      name: subscription.name,
+      nodeCount: 1,
+      protocols: ["trojan"],
+      updatedAt: subscription.updatedAt
+    }]);
+    vi.spyOn(subscriptionApi, "get").mockResolvedValue(subscription);
+    const outbounds = [
+      { type: "selector", tag: "节点选择", outbounds: ["香港 01"] },
+      copiedNode,
+      { type: "direct", tag: "手工直连" }
+    ];
+    const draft: Draft = {
+      profileId: "b".repeat(32),
+      revision: 1,
+      config: { outbounds },
+      buffers: { outbounds: JSON.stringify(outbounds, null, 2) },
+      bindings: [],
+      savedAt: "2026-08-25T00:00:00Z"
+    };
+    const wrapper = mount(OutboundConfigPanel, { props: { draft } });
+    await flushPromises();
+
+    expect(wrapper.find('[data-outbound-tag="节点选择"]').exists()).toBe(true);
+    expect(wrapper.find('[data-outbound-tag="手工直连"]').exists()).toBe(true);
+    expect(wrapper.find('[data-outbound-tag="香港 01"]').exists()).toBe(false);
+    const card = wrapper.get('[data-outbound-tag="节点选择"]');
+    expect(card.find('[aria-label="编辑出站 节点选择"]').exists()).toBe(true);
+    expect(card.find('[aria-label="删除出站 节点选择"]').exists()).toBe(true);
+
+    await card.get('[aria-label="删除出站 节点选择"]').trigger("click");
+    const saved = JSON.parse(wrapper.emitted("save")?.[0]?.[0] as string) as Array<Record<string, unknown>>;
+    expect(saved.some((item) => item.tag === "节点选择")).toBe(false);
   });
 
   it("显示原型中的五种类型，订阅凭据仅在确认选择后随副本提交", async () => {
