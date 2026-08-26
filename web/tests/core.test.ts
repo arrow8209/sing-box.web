@@ -2,6 +2,7 @@ import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import CoreStatusCard from "@/features/core/CoreStatusCard.vue";
 import CoreUpdateDialog from "@/features/core/CoreUpdateDialog.vue";
+import CoreVersionPanel from "@/features/core/CoreVersionPanel.vue";
 import { createCoreStore } from "@/features/core/store";
 import type { CoreApi } from "@/features/core/api";
 
@@ -14,6 +15,14 @@ describe("核心状态", () => {
     expect(wrapper.text()).toContain("PID 4321");
     expect(wrapper.text()).toContain("1.12.2");
     expect(wrapper.text()).not.toContain("内存占用");
+  });
+  it("在主面板同时展示当前版本、最新版本和下载入口", async () => {
+    const wrapper = mount(CoreVersionPanel, { props: { status: status(), latest: { version: "1.12.3", arch: "amd64" }, checking: false, busy: false, updateAvailable: true } });
+    expect(wrapper.get('[aria-label="当前版本"]').text()).toContain("1.12.2");
+    expect(wrapper.get('[aria-label="最新版本"]').text()).toContain("1.12.3");
+    expect(wrapper.get("[data-download-core]").text()).toContain("下载最新版本");
+    await wrapper.get("[data-download-core]").trigger("click");
+    expect(wrapper.emitted("download")).toHaveLength(1);
   });
   it("不会在确认前启动更新", async () => {
     const confirm = vi.fn();
