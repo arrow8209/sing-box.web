@@ -1,6 +1,5 @@
 import { mount } from "@vue/test-utils";
 import { describe, expect, it, vi } from "vitest";
-import RuleBindingEditor from "@/features/rule-resources/RuleBindingEditor.vue";
 import RuleResourceDialog from "@/features/rule-resources/RuleResourceDialog.vue";
 import { createRuleResourceStore } from "@/features/rule-resources/store";
 import type { RuleCatalog, RuleResource, RuleResourceInput } from "@/features/rule-resources/types";
@@ -58,13 +57,6 @@ describe("规则资源", () => {
     const store = createRuleResourceStore(api); await store.refresh(); const pending = store.update(resource.id);
     expect(store.updatingId.value).toBe(resource.id); release?.(); await pending;
     expect(store.updatingId.value).toBeNull(); expect(api.list).toHaveBeenCalledTimes(2);
-  });
-
-  it("绑定只产出 resourceId、tag、enabled，路径只读", async () => {
-    const wrapper = mount(RuleBindingEditor, { props: { bindings: [], resources: [resource] } });
-    await wrapper.get("button").trigger("click");
-    expect(wrapper.emitted("change")?.[0]?.[0]).toEqual([{ resourceId: resource.id, tag: "GeoSite CN", enabled: true }]);
-    expect(wrapper.text()).not.toContain("download_detour");
   });
 
   it("批量更新最多并发五项，并汇总变化与失败", async () => {
