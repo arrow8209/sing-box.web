@@ -588,7 +588,6 @@
     routeDefaultInterface: "",
     routeDefaultDns: "Local-DNS",
     routeFinal: "outbound-select",
-    dnsSection: "general",
     dnsDisabledRules: [],
     dnsInsertionPosition: 2,
     editingDnsServerIndex: null,
@@ -1957,21 +1956,12 @@
     const servers = Array.isArray(dns.servers) ? dns.servers : [];
     const activeRules = Array.isArray(dns.rules) ? dns.rules : [];
     const ruleItems = dnsRuleItems(dns);
-    const activeSection = ["general", "servers", "rules"].includes(state.dnsSection) ? state.dnsSection : "general";
-    const section = activeSection === "servers"
-      ? renderDnsServers(dns)
-      : activeSection === "rules"
-        ? renderDnsRules(dns, ruleItems)
-        : renderDnsGeneral(dns);
-    return `<article class="card dns-workbench">
-      <div class="dns-workbench-head"><div><h3 class="card-title">DNS 设置</h3><p class="card-subtitle">管理缓存行为、上游解析器与按顺序匹配的 DNS 规则</p></div><div class="dns-workbench-actions"><span class="route-section-badge">${servers.length} 个服务器 · ${activeRules.length}/${ruleItems.length} 条规则启用</span><button class="btn btn-sm" data-modal="config-section" data-id="dns">${icon("code")}编辑全部 JSON</button></div></div>
-      <nav class="dns-section-tabs" aria-label="DNS 设置分区">
-        ${dnsSectionTab("general", "config", "通用")}
-        ${dnsSectionTab("servers", "server", "服务器", servers.length)}
-        ${dnsSectionTab("rules", "rules", "规则", ruleItems.length)}
-      </nav>
-      ${section}
-    </article>`;
+    return `<div class="dns-page">
+      <article class="card dns-summary-card"><div class="dns-workbench-head"><div><h3 class="card-title">DNS 设置</h3><p class="card-subtitle">在同一页面管理缓存行为、上游解析器与按顺序匹配的 DNS 规则</p></div><div class="dns-workbench-actions"><span class="route-section-badge">${servers.length} 个服务器 · ${activeRules.length}/${ruleItems.length} 条规则启用</span><button class="btn btn-sm" data-modal="config-section" data-id="dns">${icon("code")}编辑全部 JSON</button></div></div></article>
+      <article class="card dns-merged-section" id="dns-general-section"><div class="dns-section-toolbar"><div class="dns-section-title"><span class="dns-section-title-icon">${icon("config")}</span><div class="dns-section-copy"><strong>通用设置</strong><span>缓存、回退服务器与默认解析策略</span></div></div><div class="dns-section-actions"><span class="route-section-badge">全局行为</span></div></div>${renderDnsGeneral(dns)}</article>
+      ${renderDnsServers(dns)}
+      ${renderDnsRules(dns, ruleItems)}
+    </div>`;
   }
 
   function dnsConfigValue() {
@@ -1983,10 +1973,6 @@
     return [...new Set((Array.isArray(value?.servers) ? value.servers : []).flatMap((server) => typeof server?.tag === "string" && server.tag.trim() ? [server.tag.trim()] : []))];
   }
 
-  function dnsSectionTab(id, iconName, label, count = null) {
-    return `<button class="${state.dnsSection === id ? "active" : ""}" type="button" data-dns-section="${id}" aria-pressed="${state.dnsSection === id}">${icon(iconName)}${label}${count === null ? "" : `<span>${count}</span>`}</button>`;
-  }
-
   function dnsGeneralToggle(dns, key, title, description, iconName, tone = "") {
     const enabled = dns[key] === true;
     return `<article><span class="dns-setting-icon ${tone}">${icon(iconName)}</span><div><strong>${title}</strong><small>${description}</small></div><button class="switch ${enabled ? "on" : ""}" type="button" role="switch" aria-label="切换${title}" aria-checked="${enabled}" aria-pressed="${enabled}" data-dns-toggle="${key}"></button></article>`;
@@ -1996,7 +1982,7 @@
     const tags = dnsServerTags(dns);
     const currentFinal = String(dns.final || "");
     const finalTags = currentFinal && !tags.includes(currentFinal) ? [currentFinal, ...tags] : tags;
-    return `<div class="dns-section-panel dns-general-section">
+    return `<div class="dns-general-section">
       <div class="dns-general-toggles">
         ${dnsGeneralToggle(dns, "disable_cache", "禁用 DNS 缓存", "每次请求都重新查询上游服务器", "database")}
         ${dnsGeneralToggle(dns, "disable_expire", "禁用 DNS 缓存过期", "缓存记录不会因 TTL 到期而失效", "clock", "orange")}
@@ -2038,7 +2024,7 @@
 
   function renderDnsServers(dns) {
     const servers = Array.isArray(dns.servers) ? dns.servers : [];
-    return `<div class="dns-section-panel"><div class="dns-section-toolbar"><div><strong>上游 DNS 服务器</strong><span>标签可被规则、回退 DNS 与域名解析器引用</span></div><button class="btn btn-sm btn-primary" data-modal="dns-server">${icon("plus")}新增服务器</button></div><div class="dns-server-list">${servers.length ? servers.map(dnsServerConfig).join("") : `<button class="config-empty-state" data-modal="dns-server">${icon("dns")}<strong>尚未配置 DNS 服务器</strong><span>点击添加第一个解析器</span></button>`}</div></div>`;
+    return `<article class="card dns-merged-section" id="dns-servers-section"><div class="dns-section-toolbar"><div class="dns-section-title"><span class="dns-section-title-icon cyan">${icon("server")}</span><div class="dns-section-copy"><strong>上游 DNS 服务器</strong><span>标签可被规则、回退 DNS 与域名解析器引用</span></div></div><div class="dns-section-actions"><span class="route-section-badge">${servers.length} 个解析器</span><button class="btn btn-sm btn-primary" data-modal="dns-server">${icon("plus")}新增服务器</button></div></div><div class="dns-server-list">${servers.length ? servers.map(dnsServerConfig).join("") : `<button class="config-empty-state" data-modal="dns-server">${icon("dns")}<strong>尚未配置 DNS 服务器</strong><span>点击添加第一个解析器</span></button>`}</div></article>`;
   }
 
   function dnsRuleType(rule) {
@@ -2103,7 +2089,8 @@
     const content = rows.map((item) => item.marker
       ? `<div class="dns-insertion-point"><span></span><button data-modal="dns-rule">${icon("plus")}新规则将插入到这里</button><span></span></div>`
       : dnsRuleConfig(item, items.indexOf(item))).join("");
-    return `<div class="dns-section-panel"><div class="dns-section-toolbar"><div><strong>DNS 规则</strong><span>从上到下依次匹配；新增规则会放在插入点之后</span></div><button class="btn btn-sm btn-primary" data-modal="dns-rule">${icon("plus")}新增规则</button></div><div class="dns-rule-list">${items.length ? content : `<button class="config-empty-state" data-modal="dns-rule">${icon("rules")}<strong>尚未配置 DNS 规则</strong><span>未命中时会使用回退 DNS</span></button>`}</div>${state.dnsDisabledRules.length ? `<div class="dns-disabled-note">${icon("info")}停用规则只保存在草稿编辑状态中，不会进入实际 DNS JSON。</div>` : ""}</div>`;
+    const activeCount = items.filter((item) => item.enabled).length;
+    return `<article class="card dns-merged-section" id="dns-rules-section"><div class="dns-section-toolbar"><div class="dns-section-title"><span class="dns-section-title-icon violet">${icon("rules")}</span><div class="dns-section-copy"><strong>DNS 规则</strong><span>从上到下依次匹配；新增规则会放在插入点之后</span></div></div><div class="dns-section-actions"><span class="route-section-badge">已启用 ${activeCount}/${items.length}</span><button class="btn btn-sm btn-primary" data-modal="dns-rule">${icon("plus")}新增规则</button></div></div><div class="dns-rule-list">${items.length ? content : `<button class="config-empty-state" data-modal="dns-rule">${icon("rules")}<strong>尚未配置 DNS 规则</strong><span>未命中时会使用回退 DNS</span></button>`}</div>${state.dnsDisabledRules.length ? `<div class="dns-disabled-note">${icon("info")}停用规则只保存在草稿编辑状态中，不会进入实际 DNS JSON。</div>` : ""}</article>`;
   }
 
   function dnsServerDefaultPort(type) {
@@ -3992,13 +3979,6 @@
   });
 
   document.addEventListener("click", (event) => {
-    const dnsSectionTarget = event.target.closest("[data-dns-section]");
-    if (dnsSectionTarget) {
-      state.dnsSection = dnsSectionTarget.dataset.dnsSection;
-      render();
-      return;
-    }
-
     const dnsToggleTarget = event.target.closest("[data-dns-toggle]");
     if (dnsToggleTarget) {
       const dns = cloneData(dnsConfigValue());

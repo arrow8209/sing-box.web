@@ -4033,7 +4033,14 @@ svg {
   font-weight: 650;
 }
 
-.dns-workbench {
+.dns-page {
+  display: grid;
+  min-width: 0;
+  gap: 12px;
+}
+
+.dns-summary-card,
+.dns-merged-section {
   min-width: 0;
   overflow: hidden;
 }
@@ -4045,7 +4052,6 @@ svg {
   justify-content: space-between;
   gap: 16px;
   padding: 12px 14px;
-  border-bottom: 1px solid var(--line);
 }
 
 .dns-workbench-actions {
@@ -4055,65 +4061,13 @@ svg {
   gap: 7px;
 }
 
-.dns-section-tabs {
-  display: flex;
-  justify-content: center;
-  gap: 3px;
-  padding: 7px 10px 0;
-}
-
-.dns-section-tabs button {
-  display: inline-flex;
-  min-height: 37px;
-  align-items: center;
-  gap: 6px;
-  padding: 7px 13px;
-  border-radius: 9px 9px 0 0;
-  color: var(--text-faint);
-  background: transparent;
-  font-size: 10px;
-  font-weight: 650;
-}
-
-.dns-section-tabs button:hover {
-  color: var(--text);
-  background: var(--surface-soft);
-}
-
-.dns-section-tabs button.active {
-  color: var(--primary);
-  background: var(--primary-soft);
-}
-
-.dns-section-tabs .icon {
-  width: 14px;
-  height: 14px;
-}
-
-.dns-section-tabs button > span:not(.icon) {
-  display: inline-flex;
-  min-width: 16px;
-  height: 16px;
-  align-items: center;
-  justify-content: center;
-  padding: 0 4px;
-  border-radius: 999px;
-  color: var(--text-faint);
-  background: var(--surface);
-  font-size: 7px;
-}
-
-.dns-section-panel {
-  min-height: 330px;
-  border-top: 1px solid var(--line);
-  background: var(--surface-soft);
-}
-
 .dns-general-section {
   display: grid;
   align-content: start;
   gap: 10px;
   padding: 11px;
+  border-top: 1px solid var(--line);
+  background: var(--surface-soft);
 }
 
 .dns-general-toggles {
@@ -4227,30 +4181,74 @@ svg {
   background: var(--surface);
 }
 
-.dns-section-toolbar > div {
+.dns-section-title {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 10px;
+}
+
+.dns-section-title-icon {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 9px;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.dns-section-title-icon.cyan {
+  color: var(--cyan);
+  background: var(--cyan-soft);
+}
+
+.dns-section-title-icon.violet {
+  color: var(--violet);
+  background: color-mix(in srgb, var(--violet) 12%, var(--surface));
+}
+
+.dns-section-title-icon .icon {
+  width: 15px;
+  height: 15px;
+}
+
+.dns-section-copy {
   min-width: 0;
 }
 
-.dns-section-toolbar strong,
-.dns-section-toolbar span {
+.dns-section-copy strong,
+.dns-section-copy span {
   display: block;
 }
 
-.dns-section-toolbar strong {
+.dns-section-copy strong {
   color: var(--text);
   font-size: 10px;
 }
 
-.dns-section-toolbar span {
+.dns-section-copy span {
+  overflow: hidden;
   margin-top: 2px;
   color: var(--text-faint);
   font-size: 8px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dns-section-actions {
+  display: flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 7px;
 }
 
 .dns-server-list,
 .dns-rule-list {
   display: grid;
   padding: 8px 14px 14px;
+  background: var(--surface-soft);
 }
 
 .dns-server-row {
@@ -9034,17 +9032,6 @@ svg {
 }
 
 @media (max-width: 560px) {
-  .dns-section-tabs {
-    justify-content: stretch;
-  }
-
-  .dns-section-tabs button {
-    min-width: 0;
-    flex: 1;
-    justify-content: center;
-    padding-inline: 7px;
-  }
-
   .dns-general-section {
     padding: 8px;
   }
@@ -9058,12 +9045,20 @@ svg {
   }
 
   .dns-section-toolbar {
-    align-items: flex-start;
+    align-items: stretch;
     flex-direction: column;
   }
 
-  .dns-section-toolbar .btn {
+  .dns-section-actions {
     width: 100%;
+  }
+
+  .dns-section-actions .route-section-badge {
+    margin-right: auto;
+  }
+
+  .dns-section-actions .btn {
+    flex: 1;
   }
 
   .dns-server-list,
