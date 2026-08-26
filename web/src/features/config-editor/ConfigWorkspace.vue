@@ -59,6 +59,7 @@ function saveRoute(payload: RoutePanelSave): void {
   if (!draft.value) return;
   const result = saveModuleBuffer(draft.value, "route", payload.text);
   result.draft.bindings = payload.bindings.map((binding) => ({ ...binding }));
+  result.draft.editorState = { ...(result.draft.editorState ?? {}), route: payload.editorState };
   applyResult(result.draft, "route", result.error?.message);
 }
 function fromStructured(next: Draft, error?: string): void { applyResult(next, "log", error); }
