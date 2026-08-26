@@ -1,4 +1,4 @@
-.card, .panel, .application-bar, .outbound-editor, .structured-panel, .rule-table, .core-card, .settings-card {
+.card, .panel, .outbound-editor, .structured-panel, .rule-table, .core-card, .settings-card {
   border: 1px solid var(--line);
   border-radius: var(--radius);
   background: var(--surface);

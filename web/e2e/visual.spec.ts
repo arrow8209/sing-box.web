@@ -81,7 +81,11 @@ for (const scenario of scenarios) {
     await ensureVisualProfile(page);
     await page.goto("/workspace");
     await setTheme(page, scenario.theme);
-    await expect(page.locator(".config-context-bar")).toBeVisible();
+    const contextBar = page.locator(".config-context-bar");
+    const applicationActions = contextBar.getByRole("group", { name: "配置操作" });
+    await expect(contextBar).toBeVisible();
+    await expect(applicationActions.getByRole("button")).toHaveText(["预览", "检查", "应用"]);
+    await expect(page.locator(".application-actions")).toHaveCount(1);
     await expect(page.getByRole("tab")).toHaveCount(7);
     await expect(page.getByRole("tab", { name: "端点" })).toHaveCount(0);
     await expect(page.locator("main")).toBeVisible();
