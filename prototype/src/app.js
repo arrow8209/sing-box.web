@@ -342,6 +342,64 @@
     ["resolve", "解析 DNS", "globe"],
   ];
 
+  const dnsServerTypeOptions = [
+    ["local", "本地"], ["hosts", "Hosts"], ["udp", "UDP"], ["tcp", "TCP"],
+    ["tls", "TLS"], ["https", "HTTPS"], ["h3", "HTTP/3"], ["quic", "QUIC"],
+    ["dhcp", "DHCP"], ["fakeip", "Fake-IP"], ["tailscale", "Tailscale"], ["resolved", "systemd-resolved"],
+  ];
+
+  const dnsRuleTypeOptions = [
+    ["inbound", "入站 (inbound)"],
+    ["network", "网络 (network)"],
+    ["protocol", "协议 (protocol)"],
+    ["query_type", "查询类型 (query_type)"],
+    ["domain", "域名 (domain)"],
+    ["domain_suffix", "域名后缀 (domain_suffix)"],
+    ["domain_keyword", "域名关键词 (domain_keyword)"],
+    ["domain_regex", "域名正则 (domain_regex)"],
+    ["source_ip_cidr", "源 IP 地址段 (source_ip_cidr)"],
+    ["ip_cidr", "响应 IP 地址段 (ip_cidr)"],
+    ["source_port", "源端口 (source_port)"],
+    ["source_port_range", "源端口范围 (source_port_range)"],
+    ["port", "目标端口 (port)"],
+    ["port_range", "目标端口范围 (port_range)"],
+    ["process_name", "进程名称 (process_name)"],
+    ["process_path", "进程路径 (process_path)"],
+    ["process_path_regex", "进程路径正则 (process_path_regex)"],
+    ["package_name", "包名 (package_name)"],
+    ["clash_mode", "Clash 模式 (clash_mode)"],
+    ["rule_set", "规则集 (rule_set)"],
+    ["inline", "完整 JSON (inline)"],
+  ];
+
+  const dnsRuleActionOptions = [
+    ["route", "路由", "route"],
+    ["route-options", "解析选项", "config"],
+    ["reject", "拒绝", "shield"],
+    ["predefined", "预定义", "dns"],
+  ];
+
+  // 与 temp/config.default.json 的 dns 对象保持一致，原型在浏览器中直接克隆使用。
+  const defaultDnsConfig = {
+    servers: [
+      { tag: "Fake-IP", type: "fakeip", inet4_range: "198.18.0.0/15", inet6_range: "fc00::/18" },
+      { tag: "Local-DNS", type: "https", domain_resolver: "Local-DNS-Resolver", server_port: 443, server: "223.5.5.5", path: "/dns-query" },
+      { tag: "Local-DNS-Resolver", type: "udp", server_port: 53, server: "223.5.5.5" },
+      { tag: "Remote-DNS", type: "tls", detour: "🚀 节点选择", domain_resolver: "Remote-DNS-Resolver", server_port: 853, server: "8.8.8.8" },
+      { tag: "Remote-DNS-Resolver", type: "udp", detour: "🚀 节点选择", server_port: 53, server: "8.8.8.8" },
+    ],
+    rules: [
+      { action: "route", clash_mode: "direct", server: "Local-DNS" },
+      { action: "route", clash_mode: "global", server: "Remote-DNS" },
+      { action: "route", rule_set: ["GeoSite-CN"], server: "Local-DNS" },
+      { action: "route", rule_set: ["GeoLocation-!CN"], server: "Remote-DNS" },
+    ],
+    disable_cache: false,
+    disable_expire: false,
+    independent_cache: false,
+    final: "Remote-DNS",
+  };
+
   const initialRoute = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
   const initialPage = ["dashboard", "config", "inbounds", "subscriptions", "rulesets", "settings"].includes(initialRoute[0])
     ? initialRoute[0]
@@ -528,8 +586,13 @@
     routeFindProcess: false,
     routeAutoDetectInterface: true,
     routeDefaultInterface: "",
-    routeDefaultDns: "dns-remote",
+    routeDefaultDns: "Local-DNS",
     routeFinal: "outbound-select",
+    dnsSection: "general",
+    dnsDisabledRules: [],
+    dnsInsertionPosition: 2,
+    editingDnsServerIndex: null,
+    editingDnsRuleKey: null,
     editingRouteRuleId: null,
     editingRouteRulesetId: null,
     editingConfigSection: null,
@@ -612,6 +675,8 @@
     "routeDefaultInterface",
     "routeDefaultDns",
     "routeFinal",
+    "dnsDisabledRules",
+    "dnsInsertionPosition",
     "routeRuleSets",
     "routeRules",
   ];
@@ -659,8 +724,10 @@
       routeFindProcess: false,
       routeAutoDetectInterface: true,
       routeDefaultInterface: "",
-      routeDefaultDns: "",
+      routeDefaultDns: "Local-DNS",
       routeFinal: "direct",
+      dnsDisabledRules: [],
+      dnsInsertionPosition: 2,
       routeRuleSets: [],
       routeRules: [
         { id: `route-insertion-${Date.now()}`, type: "insertion", enable: true, payload: "", invert: false, action: "route", outbound: "", sniffer: [], strategy: "", server: "" },
@@ -734,8 +801,12 @@
       routeFindProcess: Boolean(route.find_process),
       routeAutoDetectInterface: route.auto_detect_interface !== false,
       routeDefaultInterface: String(route.default_interface || ""),
-      routeDefaultDns: String(route.default_domain_resolver || ""),
+      routeDefaultDns: typeof route.default_domain_resolver === "string"
+        ? route.default_domain_resolver
+        : String(route.default_domain_resolver?.server || ""),
       routeFinal: String(route.final || "direct"),
+      dnsDisabledRules: [],
+      dnsInsertionPosition: Math.min(2, Array.isArray(config.dns?.rules) ? config.dns.rules.length : 0),
       routeRuleSets: (Array.isArray(route.rule_set) ? route.rule_set : []).map((ruleset, index) => ({
         id: String(ruleset.tag || `imported-ruleset-${index + 1}`),
         tag: String(ruleset.tag || `规则集 ${index + 1}`),
@@ -831,7 +902,7 @@
     else delete config.route.default_interface;
     if (state.routeDefaultDns) config.route.default_domain_resolver = state.routeDefaultDns;
     else delete config.route.default_domain_resolver;
-    if (!config.dns) config.dns = { servers: [], rules: [] };
+    if (!config.dns) config.dns = cloneData(defaultDnsConfig);
     if (!state.ipv6) config.dns.strategy = "ipv4_only";
     else if (config.dns.strategy === "ipv4_only") delete config.dns.strategy;
 
@@ -1668,7 +1739,9 @@
   }
 
   function routeDnsOptions() {
-    return [["", "由 DNS 路由规则决定"], ["dns-remote", "Cloudflare DoH"], ["dns-domestic", "AliDNS DoH"], ["dns-local", "本地 DNS"]];
+    const tags = dnsServerTags(configSectionValue("dns"));
+    const current = state.routeDefaultDns && !tags.includes(state.routeDefaultDns) ? [state.routeDefaultDns] : [];
+    return [["", "由 DNS 路由规则决定"], ...[...current, ...tags].map((tag) => [tag, tag])];
   }
 
   function routeInboundOptions() {
@@ -1880,55 +1953,381 @@
   }
 
   function renderDnsConfig() {
-    const dns = configSectionValue("dns") || {};
+    const dns = dnsConfigValue();
     const servers = Array.isArray(dns.servers) ? dns.servers : [];
-    const rules = Array.isArray(dns.rules) ? dns.rules : [];
-    const serverTypes = ["local", "hosts", "udp", "tcp", "tls", "https", "h3", "quic", "dhcp", "fakeip", "tailscale", "resolved"];
-    return `<div class="config-layout">
-      <div class="config-main">
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">DNS 服务器</h3><p class="card-subtitle">${servers.length} 个解析器 · 支持本地、传统与加密传输</p></div><button class="btn btn-sm btn-primary" data-modal="config-section" data-id="dns">${icon("code")}${servers.length ? "编辑 DNS" : "添加 DNS"}</button></div>
-          <div class="dns-server-grid">
-            ${servers.length ? servers.map(dnsServerConfig).join("") : `<button class="config-empty-state" data-modal="config-section" data-id="dns">${icon("dns")}<strong>尚未配置 DNS 服务器</strong><span>点击编辑完整 dns 对象</span></button>`}
-          </div>
-        </article>
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">DNS 规则</h3><p class="card-subtitle">按顺序匹配，动作由 action 字段定义</p></div><span class="route-section-badge">${rules.length} 条</span></div>
-          <div class="entry-list">${rules.length ? rules.map(dnsRuleConfig).join("") : `<button class="config-empty-state" data-modal="config-section" data-id="dns">${icon("rules")}<strong>尚未配置 DNS 规则</strong><span>未命中时使用 final 或默认服务器</span></button>`}</div>
-        </article>
+    const activeRules = Array.isArray(dns.rules) ? dns.rules : [];
+    const ruleItems = dnsRuleItems(dns);
+    const activeSection = ["general", "servers", "rules"].includes(state.dnsSection) ? state.dnsSection : "general";
+    const section = activeSection === "servers"
+      ? renderDnsServers(dns)
+      : activeSection === "rules"
+        ? renderDnsRules(dns, ruleItems)
+        : renderDnsGeneral(dns);
+    return `<article class="card dns-workbench">
+      <div class="dns-workbench-head"><div><h3 class="card-title">DNS 设置</h3><p class="card-subtitle">管理缓存行为、上游解析器与按顺序匹配的 DNS 规则</p></div><div class="dns-workbench-actions"><span class="route-section-badge">${servers.length} 个服务器 · ${activeRules.length}/${ruleItems.length} 条规则启用</span><button class="btn btn-sm" data-modal="config-section" data-id="dns">${icon("code")}编辑全部 JSON</button></div></div>
+      <nav class="dns-section-tabs" aria-label="DNS 设置分区">
+        ${dnsSectionTab("general", "config", "通用")}
+        ${dnsSectionTab("servers", "server", "服务器", servers.length)}
+        ${dnsSectionTab("rules", "rules", "规则", ruleItems.length)}
+      </nav>
+      ${section}
+    </article>`;
+  }
+
+  function dnsConfigValue() {
+    const value = configSectionValue("dns");
+    return value && typeof value === "object" && !Array.isArray(value) ? value : cloneData(defaultDnsConfig);
+  }
+
+  function dnsServerTags(value = dnsConfigValue()) {
+    return [...new Set((Array.isArray(value?.servers) ? value.servers : []).flatMap((server) => typeof server?.tag === "string" && server.tag.trim() ? [server.tag.trim()] : []))];
+  }
+
+  function dnsSectionTab(id, iconName, label, count = null) {
+    return `<button class="${state.dnsSection === id ? "active" : ""}" type="button" data-dns-section="${id}" aria-pressed="${state.dnsSection === id}">${icon(iconName)}${label}${count === null ? "" : `<span>${count}</span>`}</button>`;
+  }
+
+  function dnsGeneralToggle(dns, key, title, description, iconName, tone = "") {
+    const enabled = dns[key] === true;
+    return `<article><span class="dns-setting-icon ${tone}">${icon(iconName)}</span><div><strong>${title}</strong><small>${description}</small></div><button class="switch ${enabled ? "on" : ""}" type="button" role="switch" aria-label="切换${title}" aria-checked="${enabled}" aria-pressed="${enabled}" data-dns-toggle="${key}"></button></article>`;
+  }
+
+  function renderDnsGeneral(dns) {
+    const tags = dnsServerTags(dns);
+    const currentFinal = String(dns.final || "");
+    const finalTags = currentFinal && !tags.includes(currentFinal) ? [currentFinal, ...tags] : tags;
+    return `<div class="dns-section-panel dns-general-section">
+      <div class="dns-general-toggles">
+        ${dnsGeneralToggle(dns, "disable_cache", "禁用 DNS 缓存", "每次请求都重新查询上游服务器", "database")}
+        ${dnsGeneralToggle(dns, "disable_expire", "禁用 DNS 缓存过期", "缓存记录不会因 TTL 到期而失效", "clock", "orange")}
+        ${dnsGeneralToggle(dns, "independent_cache", "独立缓存", "为每个 DNS 服务器使用独立缓存", "dns", "cyan")}
       </div>
-      <aside class="config-aside">
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">DNS 行为</h3><p class="card-subtitle">当前对象摘要</p></div></div>
-          <div class="card-body compact-kv-list">
-            <div><span>默认服务器</span><strong>${escapeHtml(String(dns.final || "由规则决定"))}</strong></div>
-            <div><span>地址策略</span><strong>${escapeHtml(String(dns.strategy || "default"))}</strong></div>
-            <div><span>独立缓存</span><strong>${dns.independent_cache ? "开启" : "关闭"}</strong></div>
-            <div><span>反向映射</span><strong>${dns.reverse_mapping ? "开启" : "关闭"}</strong></div>
-          </div>
-        </article>
-        <article class="card">
-          <div class="card-head"><div><h3 class="card-title">服务器类型</h3><p class="card-subtitle">当前 Schema 常用类型</p></div></div>
-          <div class="card-body"><div class="type-chip-list">${serverTypes.map((type) => `<code>${type}</code>`).join("")}</div></div>
-        </article>
-      </aside>
+      <div class="dns-general-fields">
+        <label><span><strong>回退 DNS</strong><small>所有规则未命中时使用的服务器</small></span><select class="field-select" aria-label="回退 DNS" data-dns-field="final">${selectOptionsMarkup([["", "由 sing-box 自动选择"], ...finalTags.map((tag) => [tag, tag])], currentFinal)}</select></label>
+        <label><span><strong>解析策略</strong><small>控制 A 与 AAAA 查询的优先级</small></span><select class="field-select" aria-label="DNS 解析策略" data-dns-field="strategy">${selectOptionsMarkup([["", "默认"], ["prefer_ipv4", "优先 IPv4"], ["prefer_ipv6", "优先 IPv6"], ["ipv4_only", "仅 IPv4"], ["ipv6_only", "仅 IPv6"]], String(dns.strategy || ""))}</select></label>
+        <label><span><strong>客户端子网</strong><small>发送 EDNS Client Subnet；留空表示无</small></span><input class="field-input" aria-label="DNS 客户端子网" data-dns-field="client_subnet" value="${escapeHtml(String(dns.client_subnet || ""))}" placeholder="无，例如 1.2.3.4/24" /></label>
+      </div>
     </div>`;
+  }
+
+  function dnsServerAddress(server) {
+    const type = String(server?.type || "legacy");
+    if (type === "fakeip") {
+      const ranges = [server?.inet4_range, server?.inet6_range].filter((value) => typeof value === "string" && value);
+      return `fake-ip://${ranges.join(",") || "未设置地址段"}`;
+    }
+    if (type === "local") return `local://${server?.predefined || "system"}`;
+    if (type === "hosts") return "hosts://配置内映射";
+    if (type === "dhcp") return `dhcp://${server?.interface || "auto"}`;
+    if (type === "resolved") return "resolved://system";
+    if (type === "tailscale") return `tailscale://${server?.endpoint || "default"}`;
+    const rawHost = String(server?.server || "未设置地址");
+    const host = rawHost.includes(":") && !rawHost.startsWith("[") ? `[${rawHost}]` : rawHost;
+    const port = server?.server_port === undefined || server?.server_port === "" ? "" : `:${server.server_port}`;
+    const path = ["https", "h3"].includes(type) ? String(server?.path || "") : "";
+    return `${type}://${host}${port}${path}`;
   }
 
   function dnsServerConfig(server, index) {
     const type = String(server?.type || "legacy");
-    const tag = String(server?.tag || `dns-${index + 1}`);
-    const address = server?.server || server?.address || server?.path || type;
+    const tag = String(server?.tag || `服务器 ${index + 1}`);
     const tone = ["https", "h3", "quic", "tls"].includes(type) ? "cyan" : type === "fakeip" ? "orange" : "";
-    return `<div class="dns-server"><div class="entry-icon ${tone}">${icon(type === "fakeip" ? "sparkles" : "dns")}</div><div class="dns-server-copy"><strong>${escapeHtml(tag)}</strong><span>${escapeHtml(String(address))}</span></div><span class="type-badge">${escapeHtml(type)}</span><button class="entry-action" data-modal="config-section" data-id="dns" title="编辑完整 DNS">${icon("edit")}</button></div>`;
+    const detour = typeof server?.detour === "string" && server.detour ? `<em>${icon("route")}${escapeHtml(server.detour)}</em>` : "";
+    return `<div class="dns-server-row"><span class="dns-server-icon ${tone}">${icon(type === "fakeip" ? "sparkles" : "dns")}</span><div class="dns-server-copy"><strong>${escapeHtml(tag)}</strong><span>${escapeHtml(dnsServerAddress(server))}</span></div><div class="dns-server-meta"><b>${escapeHtml(type)}</b>${detour}</div><div class="dns-row-actions"><button data-modal="dns-server" data-id="${index}" title="编辑服务器" aria-label="编辑 DNS 服务器 ${index + 1}">${icon("edit")}</button><button class="danger" data-action="remove-dns-server" data-index="${index}" title="删除服务器" aria-label="删除 DNS 服务器 ${index + 1}">${icon("trash")}</button></div></div>`;
   }
 
-  function dnsRuleConfig(rule, index) {
-    const action = typeof rule?.action === "string" ? rule.action : rule?.action?.type || "route";
-    const matchKey = Object.keys(rule || {}).find((key) => !["action", "invert"].includes(key)) || "default";
-    const rawValue = rule?.[matchKey];
-    const value = Array.isArray(rawValue) ? rawValue.join(", ") : typeof rawValue === "object" ? JSON.stringify(rawValue) : String(rawValue ?? "全部查询");
-    return `<div class="entry-card dns-rule-config"><span class="rule-order">${index + 1}</span><div class="entry-copy"><div class="entry-title-row"><span class="entry-title">${escapeHtml(matchKey)}</span><span class="type-badge">${escapeHtml(action)}</span>${rule?.invert ? '<span class="badge badge-orange">反向</span>' : ""}</div><div class="entry-meta"><span>${escapeHtml(value)}</span></div></div><button class="entry-action" data-modal="config-section" data-id="dns" title="编辑完整 DNS">${icon("edit")}</button></div>`;
+  function renderDnsServers(dns) {
+    const servers = Array.isArray(dns.servers) ? dns.servers : [];
+    return `<div class="dns-section-panel"><div class="dns-section-toolbar"><div><strong>上游 DNS 服务器</strong><span>标签可被规则、回退 DNS 与域名解析器引用</span></div><button class="btn btn-sm btn-primary" data-modal="dns-server">${icon("plus")}新增服务器</button></div><div class="dns-server-list">${servers.length ? servers.map(dnsServerConfig).join("") : `<button class="config-empty-state" data-modal="dns-server">${icon("dns")}<strong>尚未配置 DNS 服务器</strong><span>点击添加第一个解析器</span></button>`}</div></div>`;
+  }
+
+  function dnsRuleType(rule) {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) return "inline";
+    return dnsRuleTypeOptions.find(([type]) => type !== "inline" && Object.prototype.hasOwnProperty.call(rule, type))?.[0] || "inline";
+  }
+
+  function dnsRulePayload(rule, type = dnsRuleType(rule)) {
+    if (!rule || typeof rule !== "object") return "";
+    if (type === "inline") return "完整 JSON 规则";
+    const value = rule[type];
+    if (Array.isArray(value)) return value.map((item) => typeof item === "object" && item ? JSON.stringify(item) : String(item)).join(", ");
+    if (value && typeof value === "object") return JSON.stringify(value);
+    return String(value ?? "");
+  }
+
+  function dnsRuleAction(rule) {
+    return typeof rule?.action === "string" && rule.action ? rule.action : "route";
+  }
+
+  function dnsRuleItems(dns = dnsConfigValue()) {
+    const active = (Array.isArray(dns.rules) ? dns.rules : []).map((rule, sourceIndex) => ({ key: `active:${sourceIndex}`, enabled: true, sourceIndex, rule }));
+    const result = [...active];
+    const disabled = Array.isArray(state.dnsDisabledRules) ? state.dnsDisabledRules.filter((item) => item?.id && item?.rule && typeof item.rule === "object") : [];
+    disabled.sort((left, right) => Number(left.position) - Number(right.position)).forEach((item) => {
+      result.splice(Math.max(0, Math.min(Number(item.position) || 0, result.length)), 0, { key: `disabled:${item.id}`, enabled: false, disabledId: item.id, rule: item.rule });
+    });
+    return result;
+  }
+
+  function storeDnsDisabledRules(items) {
+    state.dnsDisabledRules = items.flatMap((item, position) => item.enabled ? [] : [{ id: item.disabledId || `dns-rule-${Date.now()}-${position}`, position, rule: cloneData(item.rule) }]);
+  }
+
+  function dnsInsertionPosition(total) {
+    const value = Number.isInteger(state.dnsInsertionPosition) ? state.dnsInsertionPosition : 2;
+    return Math.max(0, Math.min(value, total));
+  }
+
+  function dnsRuleActionLabel(rule) {
+    const action = dnsRuleAction(rule);
+    return dnsRuleActionOptions.find(([value]) => value === action)?.[1] || action;
+  }
+
+  function dnsRuleSummary(rule) {
+    const type = dnsRuleType(rule);
+    const payload = dnsRulePayload(rule, type) || "全部查询";
+    const action = dnsRuleAction(rule);
+    const target = action === "route" ? String(rule?.server || dnsConfigValue().final || "默认服务器") : action;
+    return `${type}, ${payload}, ${action}, ${target}`;
+  }
+
+  function dnsRuleConfig(item, position) {
+    const displayIndex = String(position + 1).padStart(2, "0");
+    return `<div class="dns-rule-row ${item.enabled ? "" : "is-disabled"}" data-dns-rule-key="${escapeHtml(item.key)}"><label class="dns-rule-switch"><input type="checkbox" data-dns-rule-toggle="${escapeHtml(item.key)}" ${item.enabled ? "checked" : ""} aria-label="${item.enabled ? "停用" : "启用"}第 ${position + 1} 条 DNS 规则" /><span></span></label><span class="dns-rule-index">${displayIndex}</span><div class="dns-rule-copy"><strong>${escapeHtml(dnsRuleSummary(item.rule))}</strong><small>${escapeHtml(dnsRuleActionLabel(item.rule))}${item.rule?.invert ? " · 反向匹配" : ""}</small></div><div class="dns-row-actions"><button data-modal="dns-rule" data-id="${escapeHtml(item.key)}" title="编辑规则" aria-label="编辑 DNS 规则 ${position + 1}">${icon("edit")}</button><button class="danger" data-action="remove-dns-rule" data-key="${escapeHtml(item.key)}" title="删除规则" aria-label="删除 DNS 规则 ${position + 1}">${icon("trash")}</button></div></div>`;
+  }
+
+  function renderDnsRules(dns, items = dnsRuleItems(dns)) {
+    const insertion = dnsInsertionPosition(items.length);
+    const rows = [...items];
+    rows.splice(insertion, 0, { marker: true, key: "marker" });
+    const content = rows.map((item) => item.marker
+      ? `<div class="dns-insertion-point"><span></span><button data-modal="dns-rule">${icon("plus")}新规则将插入到这里</button><span></span></div>`
+      : dnsRuleConfig(item, items.indexOf(item))).join("");
+    return `<div class="dns-section-panel"><div class="dns-section-toolbar"><div><strong>DNS 规则</strong><span>从上到下依次匹配；新增规则会放在插入点之后</span></div><button class="btn btn-sm btn-primary" data-modal="dns-rule">${icon("plus")}新增规则</button></div><div class="dns-rule-list">${items.length ? content : `<button class="config-empty-state" data-modal="dns-rule">${icon("rules")}<strong>尚未配置 DNS 规则</strong><span>未命中时会使用回退 DNS</span></button>`}</div>${state.dnsDisabledRules.length ? `<div class="dns-disabled-note">${icon("info")}停用规则只保存在草稿编辑状态中，不会进入实际 DNS JSON。</div>` : ""}</div>`;
+  }
+
+  function dnsServerDefaultPort(type) {
+    if (type === "tls") return 853;
+    if (["https", "h3", "quic"].includes(type)) return 443;
+    return 53;
+  }
+
+  function uniqueDnsServerTag(seed = "DNS-Server", excludeIndex = null) {
+    const tags = new Set((dnsConfigValue().servers || []).flatMap((server, index) => index !== excludeIndex && typeof server?.tag === "string" ? [server.tag] : []));
+    if (!tags.has(seed)) return seed;
+    let suffix = 2;
+    while (tags.has(`${seed}-${suffix}`)) suffix += 1;
+    return `${seed}-${suffix}`;
+  }
+
+  function dnsServerModal(itemId = null) {
+    const dns = dnsConfigValue();
+    const servers = Array.isArray(dns.servers) ? dns.servers : [];
+    const index = itemId === null || itemId === "" ? null : Number(itemId);
+    const existing = Number.isInteger(index) ? servers[index] : null;
+    const server = existing && typeof existing === "object" ? existing : {};
+    const type = String(server.type || "https");
+    const tag = String(server.tag || uniqueDnsServerTag("DNS-Server", index));
+    const endpointType = ["udp", "tcp", "tls", "https", "h3", "quic"].includes(type);
+    const fakeIpType = type === "fakeip";
+    const pathType = ["https", "h3"].includes(type);
+    const currentResolver = typeof server.domain_resolver === "string" ? server.domain_resolver : String(server.domain_resolver?.server || "");
+    const resolverTags = dnsServerTags(dns).filter((candidate) => candidate !== tag);
+    if (currentResolver && !resolverTags.includes(currentResolver)) resolverTags.unshift(currentResolver);
+    const detourTags = [...new Set([String(server.detour || ""), ...state.outbounds.map((outbound) => outbound.tag).filter(Boolean)])].filter(Boolean);
+    const body = `<form class="modal-body route-editor-body" id="dns-server-form" data-form="dns-server" data-index="${index === null ? "" : index}" data-server-default-port="${dnsServerDefaultPort(type)}">
+      <div class="route-editor-grid">
+        ${routeEditorRow("服务器标签", "tag", `<input class="field-input" name="dns-server-tag" value="${escapeHtml(tag)}" placeholder="例如 Local-DNS" required data-modal-initial-focus />`)}
+        ${routeEditorRow("服务器类型", "type", routeSegmentedControl("dns-server-type", type, dnsServerTypeOptions.map(([value, label]) => [value, label, ""]), "dns-server-types"), "align-start")}
+        <div data-dns-server-endpoint-fields ${endpointType ? "" : "hidden"}>
+          ${routeEditorRow("服务器地址", "server", `<input class="field-input" name="dns-server-address" value="${escapeHtml(String(server.server || ""))}" placeholder="例如 223.5.5.5" ${endpointType ? "required" : ""} />`)}
+          ${routeEditorRow("服务器端口", "server_port", `<input class="field-input" name="dns-server-port" type="number" min="1" max="65535" value="${escapeHtml(String(server.server_port || dnsServerDefaultPort(type)))}" ${endpointType ? "required" : ""} />`)}
+          <div data-dns-server-path-field ${pathType ? "" : "hidden"}>${routeEditorRow("请求路径", "path", `<input class="field-input" name="dns-server-path" value="${escapeHtml(String(server.path || "/dns-query"))}" placeholder="/dns-query" />`)}</div>
+          ${routeEditorRow("域名解析器", "domain_resolver", `<select class="field-select" name="dns-server-resolver">${selectOptionsMarkup([["", "无需前置解析"], ...resolverTags.map((value) => [value, value])], currentResolver)}</select>`)}
+          ${routeEditorRow("出站路由", "detour", `<select class="field-select" name="dns-server-detour">${selectOptionsMarkup([["", "默认出站"], ...detourTags.map((value) => [value, value])], String(server.detour || ""))}</select>`)}
+        </div>
+        <div data-dns-server-fakeip-fields ${fakeIpType ? "" : "hidden"}>
+          ${routeEditorRow("IPv4 地址段", "inet4_range", `<input class="field-input" name="dns-server-inet4" value="${escapeHtml(String(server.inet4_range || "198.18.0.0/15"))}" placeholder="198.18.0.0/15" />`)}
+          ${routeEditorRow("IPv6 地址段", "inet6_range", `<input class="field-input" name="dns-server-inet6" value="${escapeHtml(String(server.inet6_range || "fc00::/18"))}" placeholder="fc00::/18" />`)}
+        </div>
+        <div data-dns-server-dhcp-fields ${type === "dhcp" ? "" : "hidden"}>${routeEditorRow("网络接口", "interface", `<input class="field-input" name="dns-server-interface" value="${escapeHtml(String(server.interface || ""))}" placeholder="留空自动检测" />`)}</div>
+        <div data-dns-server-tailscale-fields ${type === "tailscale" ? "" : "hidden"}>${routeEditorRow("Tailscale 端点", "endpoint", `<input class="field-input" name="dns-server-endpoint" value="${escapeHtml(String(server.endpoint || ""))}" placeholder="端点标签" />`)}</div>
+        <div class="dns-server-no-options" data-dns-server-no-options ${endpointType || fakeIpType || type === "dhcp" || type === "tailscale" ? "hidden" : ""}>${icon("dns")}<strong>该类型无需常用参数</strong><span>仍可在“编辑全部 JSON”中维护高级字段。</span></div>
+        <div class="info-callout">${icon("info")}<span>表单只更新当前展示字段，未展示的 sing-box 高级字段会继续保留。</span></div>
+      </div>
+    </form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="dns-server-form">${icon(existing ? "save" : "plus")}${existing ? "保存" : "确认添加"}</button></div>`;
+    return modalFrame(existing ? "编辑 DNS 服务器" : "新增 DNS 服务器", existing ? "更新解析器参数，未展示字段会原样保留" : "配置上游解析器或 Fake-IP 地址池", body, footer, "modal-route-rule modal-dns-server");
+  }
+
+  function updateDnsServerTypeFields(form, type) {
+    const endpointType = ["udp", "tcp", "tls", "https", "h3", "quic"].includes(type);
+    const endpointFields = form.querySelector("[data-dns-server-endpoint-fields]");
+    const fakeIpFields = form.querySelector("[data-dns-server-fakeip-fields]");
+    const pathField = form.querySelector("[data-dns-server-path-field]");
+    const dhcpFields = form.querySelector("[data-dns-server-dhcp-fields]");
+    const tailscaleFields = form.querySelector("[data-dns-server-tailscale-fields]");
+    const noOptions = form.querySelector("[data-dns-server-no-options]");
+    if (endpointFields) endpointFields.hidden = !endpointType;
+    if (fakeIpFields) fakeIpFields.hidden = type !== "fakeip";
+    if (pathField) pathField.hidden = !["https", "h3"].includes(type);
+    if (dhcpFields) dhcpFields.hidden = type !== "dhcp";
+    if (tailscaleFields) tailscaleFields.hidden = type !== "tailscale";
+    if (noOptions) noOptions.hidden = endpointType || type === "fakeip" || type === "dhcp" || type === "tailscale";
+    const address = form.querySelector('[name="dns-server-address"]');
+    const port = form.querySelector('[name="dns-server-port"]');
+    if (address) address.required = endpointType;
+    if (port) {
+      const previousDefault = Number(form.dataset.serverDefaultPort || port.value);
+      if (!port.value || Number(port.value) === previousDefault) port.value = String(dnsServerDefaultPort(type));
+      port.required = endpointType;
+      form.dataset.serverDefaultPort = String(dnsServerDefaultPort(type));
+    }
+  }
+
+  function buildDnsServerConfig(form, existing = {}) {
+    const data = new FormData(form);
+    const type = String(data.get("dns-server-type") || "https");
+    const server = cloneData(existing && typeof existing === "object" ? existing : {});
+    ["server", "server_port", "path", "domain_resolver", "detour", "inet4_range", "inet6_range", "interface", "endpoint"].forEach((key) => delete server[key]);
+    server.tag = String(data.get("dns-server-tag") || "").trim();
+    server.type = type;
+    if (["udp", "tcp", "tls", "https", "h3", "quic"].includes(type)) {
+      server.server = String(data.get("dns-server-address") || "").trim();
+      server.server_port = Number(data.get("dns-server-port") || dnsServerDefaultPort(type));
+      if (["https", "h3"].includes(type) && String(data.get("dns-server-path") || "").trim()) server.path = String(data.get("dns-server-path")).trim();
+      const resolver = String(data.get("dns-server-resolver") || "");
+      if (resolver) {
+        server.domain_resolver = existing?.domain_resolver && typeof existing.domain_resolver === "object"
+          ? { ...cloneData(existing.domain_resolver), server: resolver }
+          : resolver;
+      } else if (existing?.domain_resolver && typeof existing.domain_resolver === "object") {
+        const resolverConfig = cloneData(existing.domain_resolver);
+        delete resolverConfig.server;
+        if (Object.keys(resolverConfig).length) server.domain_resolver = resolverConfig;
+      }
+      const detour = String(data.get("dns-server-detour") || "");
+      if (detour) server.detour = detour;
+    } else if (type === "fakeip") {
+      const inet4 = String(data.get("dns-server-inet4") || "").trim();
+      const inet6 = String(data.get("dns-server-inet6") || "").trim();
+      if (inet4) server.inet4_range = inet4;
+      if (inet6) server.inet6_range = inet6;
+    } else if (type === "dhcp") {
+      const networkInterface = String(data.get("dns-server-interface") || "").trim();
+      if (networkInterface) server.interface = networkInterface;
+    } else if (type === "tailscale") {
+      const endpoint = String(data.get("dns-server-endpoint") || "").trim();
+      if (endpoint) server.endpoint = endpoint;
+    }
+    return server;
+  }
+
+  function renameDnsServerReferences(dns, from, to) {
+    if (!from || !to || from === to) return;
+    if (dns.final === from) dns.final = to;
+    (Array.isArray(dns.servers) ? dns.servers : []).forEach((server) => {
+      if (server?.domain_resolver === from) server.domain_resolver = to;
+      else if (server?.domain_resolver && typeof server.domain_resolver === "object" && server.domain_resolver.server === from) server.domain_resolver.server = to;
+    });
+    (Array.isArray(dns.rules) ? dns.rules : []).forEach((rule) => {
+      if (rule?.server === from) rule.server = to;
+    });
+    state.dnsDisabledRules.forEach((item) => {
+      if (item?.rule?.server === from) item.rule.server = to;
+    });
+    if (state.routeDefaultDns === from) state.routeDefaultDns = to;
+    state.routeRules.forEach((rule) => {
+      if (rule.server === from) rule.server = to;
+    });
+  }
+
+  function dnsRuleSetOptions(rule = {}) {
+    const selected = new Set(Array.isArray(rule.rule_set) ? rule.rule_set.map(String) : typeof rule.rule_set === "string" ? [rule.rule_set] : []);
+    const options = routeRuleSetOptions().map((option) => ({ ...option, value: option.tag }));
+    const known = new Set(options.map((option) => option.value));
+    selected.forEach((tag) => {
+      if (!known.has(tag)) options.push({ id: `dns:${tag}`, value: tag, tag, name: tag, detail: "当前 DNS JSON 引用", disabled: false });
+    });
+    return { options, selected };
+  }
+
+  function renderDnsRulePayloadFields(type, rule = {}) {
+    if (type === "inline") {
+      return routeEditorRow("完整规则 JSON", "inline", `<textarea class="field-textarea route-code-input" name="dns-rule-inline" spellcheck="false">${escapeHtml(JSON.stringify(rule && typeof rule === "object" ? rule : {}, null, 2))}</textarea>`, "align-start");
+    }
+    if (type === "rule_set") {
+      const { options, selected } = dnsRuleSetOptions(rule);
+      return `<div class="route-modal-divider"><span>选择规则集</span><strong data-dns-rule-set-count>${options.length} 项 · 已选 ${selected.size} 项</strong></div><div class="route-choice-grid dns-ruleset-choices">${options.map((option) => `<label class="route-choice-card ${option.disabled && !selected.has(option.value) ? "is-disabled" : ""}"><input type="checkbox" name="dns-rule-ruleset" value="${escapeHtml(option.value)}" ${selected.has(option.value) ? "checked" : ""} ${option.disabled && !selected.has(option.value) ? "disabled" : ""} /><span><strong>${escapeHtml(option.name)}</strong><small>${escapeHtml(option.detail)}</small>${icon("check")}</span></label>`).join("")}</div>`;
+    }
+    const payload = dnsRulePayload(rule, type);
+    if (type === "clash_mode") return routeEditorRow("Clash 模式", type, routeSegmentedControl("dns-rule-payload", payload || "global", [["global", "全局"], ["direct", "直连"]], "two"));
+    if (type === "inbound") {
+      const tags = [...inboundTags()];
+      if (payload && !tags.includes(payload)) tags.unshift(payload);
+      return routeEditorRow("入站标签", type, `<select class="field-select" name="dns-rule-payload">${selectOptionsMarkup([["", "请选择入站"], ...tags.map((tag) => [tag, tag])], payload)}</select>`);
+    }
+    const numeric = ["source_port", "port"].includes(type);
+    return routeEditorRow("匹配内容", type, `<input class="field-input" name="dns-rule-payload" type="${numeric ? "number" : "text"}" value="${escapeHtml(payload)}" placeholder="多项使用逗号分隔" />`);
+  }
+
+  function renderDnsRuleActionFields(action, rule = {}) {
+    if (["route", "route-options"].includes(action)) {
+      const routeTarget = action === "route" ? routeEditorRow("目标服务器", "server", `<select class="field-select" name="dns-rule-server">${selectOptionsMarkup([["", "请选择 DNS 服务器"], ...dnsServerTags().map((tag) => [tag, tag])], String(rule.server || ""))}</select>`) : "";
+      return `${routeTarget}${routeEditorRow("解析策略", "strategy", `<select class="field-select" name="dns-rule-strategy">${selectOptionsMarkup([["", "继承 DNS 通用设置"], ["prefer_ipv4", "优先 IPv4"], ["prefer_ipv6", "优先 IPv6"], ["ipv4_only", "仅 IPv4"], ["ipv6_only", "仅 IPv6"]], String(rule.strategy || ""))}</select>`)}${routeEditorRow("跳过缓存", "disable_cache", `<div class="route-inline-toggle"><span>该规则的解析结果不写入缓存</span><label class="form-switch"><input type="checkbox" name="dns-rule-disable-cache" value="true" ${rule.disable_cache ? "checked" : ""} /><span class="switch"></span></label></div>`)}`;
+    }
+    if (action === "reject") return routeEditorRow("拒绝方式", "method", routeSegmentedControl("dns-rule-method", String(rule.method || "default"), [["default", "默认响应"], ["drop", "静默丢弃"]], "two"));
+    return routeEditorRow("响应码", "rcode", `<select class="field-select" name="dns-rule-rcode">${selectOptionsMarkup([["NOERROR", "NOERROR"], ["NXDOMAIN", "NXDOMAIN"], ["REFUSED", "REFUSED"], ["SERVFAIL", "SERVFAIL"]], String(rule.rcode || "NOERROR"))}</select>`);
+  }
+
+  function dnsRuleModal(itemKey = null) {
+    const existingItem = itemKey ? dnsRuleItems().find((item) => item.key === itemKey) : null;
+    const rule = existingItem?.rule || { domain_suffix: [], action: "route", server: dnsConfigValue().final || dnsServerTags()[0] || "" };
+    const type = dnsRuleType(rule);
+    const action = dnsRuleAction(rule);
+    const body = `<form class="modal-body route-editor-body" id="dns-rule-form" data-form="dns-rule" data-key="${escapeHtml(itemKey || "")}"><div class="route-editor-grid">
+      ${routeEditorRow("规则类型", "match", `<select class="field-select" name="dns-rule-type" data-dns-rule-type data-modal-initial-focus>${selectOptionsMarkup(dnsRuleTypeOptions, type)}</select>`)}
+      <div data-dns-rule-payload-fields>${renderDnsRulePayloadFields(type, rule)}</div>
+      ${routeEditorRow("反向匹配", "invert", `<div class="route-inline-toggle"><span>对当前匹配条件取反</span><label class="form-switch"><input type="checkbox" name="dns-rule-invert" value="true" ${rule.invert ? "checked" : ""} /><span class="switch"></span></label></div>`)}
+      ${routeEditorRow("规则动作", "action", routeSegmentedControl("dns-rule-action", action, dnsRuleActionOptions, "four"))}
+      <div class="route-action-panel" data-dns-rule-action-fields>${renderDnsRuleActionFields(action, rule)}</div>
+      <div class="info-callout">${icon("info")}<span>停用规则只保存在草稿编辑状态中，不会写入实际 DNS JSON。</span></div>
+    </div></form>`;
+    const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="dns-rule-form">${icon(existingItem ? "save" : "plus")}${existingItem ? "保存" : "确认添加"}</button></div>`;
+    return modalFrame(existingItem ? "编辑 DNS 规则" : "新增 DNS 规则", existingItem ? "更新匹配条件与解析动作，未展示字段会原样保留" : "新规则会添加在规则列表的插入点之后", body, footer, "modal-route-rule modal-dns-rule");
+  }
+
+  function buildDnsRuleConfig(form, existing = {}) {
+    const data = new FormData(form);
+    const type = String(data.get("dns-rule-type") || "domain_suffix");
+    if (type === "inline") return JSON.parse(String(data.get("dns-rule-inline") || "{}"));
+    const rule = cloneData(existing && typeof existing === "object" ? existing : {});
+    const previousType = dnsRuleType(rule);
+    if (previousType !== "inline" && previousType !== type) delete rule[previousType];
+    let values = String(data.get("dns-rule-payload") || "").split(",").map((item) => item.trim()).filter(Boolean);
+    if (type === "rule_set") values = data.getAll("dns-rule-ruleset").map(String);
+    if (["source_port", "port"].includes(type)) {
+      const numbers = values.map(Number).filter(Number.isInteger);
+      rule[type] = Array.isArray(existing?.[type]) || numbers.length > 1 ? numbers : numbers[0];
+    } else if (["clash_mode", "inbound"].includes(type)) {
+      rule[type] = Array.isArray(existing?.[type]) ? values : values[0];
+    } else {
+      rule[type] = values;
+    }
+    if (data.get("dns-rule-invert") === "true") rule.invert = true;
+    else delete rule.invert;
+    const action = String(data.get("dns-rule-action") || "route");
+    rule.action = action;
+    ["server", "strategy", "disable_cache", "method", "rcode"].forEach((key) => delete rule[key]);
+    if (action === "route") rule.server = String(data.get("dns-rule-server") || "");
+    if (["route", "route-options"].includes(action)) {
+      const strategy = String(data.get("dns-rule-strategy") || "");
+      if (strategy) rule.strategy = strategy;
+      if (data.get("dns-rule-disable-cache") === "true") rule.disable_cache = true;
+    }
+    if (action === "reject" && String(data.get("dns-rule-method") || "default") !== "default") rule.method = String(data.get("dns-rule-method"));
+    if (action === "predefined") rule.rcode = String(data.get("dns-rule-rcode") || "NOERROR");
+    return rule;
   }
 
   function getSubscriptionNodes(subscription) {
@@ -2130,6 +2529,8 @@
     state.editingOutboundId = type === "outbound" ? itemId : null;
     state.editingRouteRuleId = type === "route" ? itemId : null;
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
+    state.editingDnsServerIndex = type === "dns-server" && itemId !== null ? Number(itemId) : null;
+    state.editingDnsRuleKey = type === "dns-rule" ? itemId : null;
     state.editingSubscriptionId = type === "subscription" ? itemId : null;
     state.editingResourceRulesetId = type === "resource-ruleset" ? itemId : null;
     state.editingConfigSection = type === "config-section" ? itemId : null;
@@ -2148,12 +2549,8 @@
     else if (type === "route") content = routeRuleModal(itemId);
     else if (type === "route-ruleset") content = routeRulesetModal(itemId);
     else if (type === "config-section") content = configSectionModal(itemId);
-    else if (type === "dns-rule") content = genericModal("新增 DNS 规则", "规则将添加到当前列表末尾", "rule", [
-      ["规则名称", "新规则"], ["匹配类型", "domain_suffix", "select", ["domain", "domain_suffix", "ip_cidr", "rule_set", "process_name"]], ["匹配内容", ""], ["目标出站", "节点选择", "select", ["节点选择", "自动选择", "direct", "block"]]
-    ]);
-    else if (type === "dns") content = genericModal("新增 DNS 服务器", "配置上游 DNS 解析器", "dns", [
-      ["服务器标签", "dns-remote"], ["服务器类型", "https", "select", ["https", "tls", "quic", "udp", "local"]], ["服务器地址", "https://1.1.1.1/dns-query"], ["解析路由", "节点选择", "select", ["节点选择", "direct"]]
-    ]);
+    else if (type === "dns-rule") content = dnsRuleModal(itemId);
+    else if (type === "dns-server" || type === "dns") content = dnsServerModal(itemId);
     else if (type === "json") content = jsonModal();
     else if (type === "command") content = commandModal();
     modalRoot.innerHTML = content;
@@ -2171,7 +2568,7 @@
 
   function defaultConfigSectionValue(section) {
     if (section.key === "$schema") return "https://sing-box.sagernet.org/schema.json";
-    if (section.key === "dns") return { servers: [], rules: [] };
+    if (section.key === "dns") return cloneData(defaultDnsConfig);
     if (section.key === "ntp") return { enabled: true, server: "time.apple.com", server_port: 123, interval: "30m" };
     if (section.type === "array") return [];
     return {};
@@ -3453,6 +3850,8 @@
     state.editingOutboundId = null;
     state.editingRouteRuleId = null;
     state.editingRouteRulesetId = null;
+    state.editingDnsServerIndex = null;
+    state.editingDnsRuleKey = null;
     state.editingSubscriptionId = null;
     state.editingResourceRulesetId = null;
     state.editingConfigSection = null;
@@ -3593,6 +3992,56 @@
   });
 
   document.addEventListener("click", (event) => {
+    const dnsSectionTarget = event.target.closest("[data-dns-section]");
+    if (dnsSectionTarget) {
+      state.dnsSection = dnsSectionTarget.dataset.dnsSection;
+      render();
+      return;
+    }
+
+    const dnsToggleTarget = event.target.closest("[data-dns-toggle]");
+    if (dnsToggleTarget) {
+      const dns = cloneData(dnsConfigValue());
+      const key = dnsToggleTarget.dataset.dnsToggle;
+      dns[key] = dns[key] !== true;
+      setConfigSectionValue("dns", dns);
+      render();
+      showToast("DNS 设置已更新", `${dnsToggleTarget.getAttribute("aria-label")?.replace(/^切换/, "") || "缓存设置"}已${dns[key] ? "开启" : "关闭"}。`, "info");
+      return;
+    }
+
+    const dnsServerRemoveTarget = event.target.closest('[data-action="remove-dns-server"]');
+    if (dnsServerRemoveTarget) {
+      const dns = cloneData(dnsConfigValue());
+      const index = Number(dnsServerRemoveTarget.dataset.index);
+      const server = Array.isArray(dns.servers) ? dns.servers[index] : null;
+      if (!server || !Number.isInteger(index)) return;
+      dns.servers.splice(index, 1);
+      setConfigSectionValue("dns", dns);
+      render();
+      showToast("DNS 服务器已移除", `${server.tag || `服务器 ${index + 1}`} 已移除；原有引用会保留，便于继续迁移。`, "info");
+      return;
+    }
+
+    const dnsRuleRemoveTarget = event.target.closest('[data-action="remove-dns-rule"]');
+    if (dnsRuleRemoveTarget) {
+      const key = dnsRuleRemoveTarget.dataset.key;
+      const dns = cloneData(dnsConfigValue());
+      const items = dnsRuleItems(dns);
+      const position = items.findIndex((item) => item.key === key);
+      const item = items[position];
+      if (!item) return;
+      const nextItems = [...items];
+      nextItems.splice(position, 1);
+      if (item.enabled) dns.rules.splice(item.sourceIndex, 1);
+      if (position < dnsInsertionPosition(items.length)) state.dnsInsertionPosition = Math.max(0, dnsInsertionPosition(items.length) - 1);
+      storeDnsDisabledRules(nextItems);
+      setConfigSectionValue("dns", dns);
+      render();
+      showToast("DNS 规则已移除", `${dnsRuleType(item.rule)} 已从配置草稿移除。`, "info");
+      return;
+    }
+
     const routeRemoveTarget = event.target.closest("[data-route-remove]");
     if (routeRemoveTarget) {
       const id = routeRemoveTarget.dataset.id;
@@ -4103,6 +4552,67 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches("[data-dns-field]")) {
+      const dns = cloneData(dnsConfigValue());
+      const key = event.target.dataset.dnsField;
+      const value = event.target.value.trim();
+      if (value) dns[key] = value;
+      else delete dns[key];
+      setConfigSectionValue("dns", dns);
+      render();
+      showToast("DNS 设置已更新", "通用解析参数已写入当前配置草稿。", "info");
+      return;
+    }
+    if (event.target.matches('input[name="dns-server-type"]')) {
+      const form = event.target.closest("#dns-server-form");
+      if (form) updateDnsServerTypeFields(form, event.target.value);
+      return;
+    }
+    if (event.target.matches("[data-dns-rule-toggle]")) {
+      const key = event.target.dataset.dnsRuleToggle;
+      const dns = cloneData(dnsConfigValue());
+      const items = dnsRuleItems(dns);
+      const position = items.findIndex((item) => item.key === key);
+      const item = items[position];
+      if (!item) return;
+      const nextItems = [...items];
+      if (item.enabled && !event.target.checked) {
+        const disabledId = `dns-rule-${Date.now()}`;
+        dns.rules.splice(item.sourceIndex, 1);
+        nextItems[position] = { ...item, key: `disabled:${disabledId}`, enabled: false, sourceIndex: undefined, disabledId };
+      } else if (!item.enabled && event.target.checked) {
+        const sourceIndex = items.slice(0, position).filter((candidate) => candidate.enabled).length;
+        dns.rules.splice(sourceIndex, 0, cloneData(item.rule));
+        nextItems[position] = { ...item, key: `active:new-${Date.now()}`, enabled: true, sourceIndex, disabledId: undefined };
+      } else {
+        return;
+      }
+      storeDnsDisabledRules(nextItems);
+      setConfigSectionValue("dns", dns);
+      render();
+      showToast(event.target.checked ? "DNS 规则已启用" : "DNS 规则已停用", event.target.checked ? "规则已恢复到实际 DNS JSON。" : "规则只保留在草稿编辑状态中。", "info");
+      return;
+    }
+    if (event.target.matches("[data-dns-rule-type]")) {
+      const form = event.target.closest("#dns-rule-form");
+      const fields = form?.querySelector("[data-dns-rule-payload-fields]");
+      if (fields) fields.innerHTML = renderDnsRulePayloadFields(event.target.value, {});
+      return;
+    }
+    if (event.target.matches('input[name="dns-rule-action"]')) {
+      const form = event.target.closest("#dns-rule-form");
+      const fields = form?.querySelector("[data-dns-rule-action-fields]");
+      if (fields) fields.innerHTML = renderDnsRuleActionFields(event.target.value, { action: event.target.value, server: dnsConfigValue().final || "" });
+      return;
+    }
+    if (event.target.matches('input[name="dns-rule-ruleset"]')) {
+      const form = event.target.closest("#dns-rule-form");
+      const count = form?.querySelectorAll('input[name="dns-rule-ruleset"]:checked').length || 0;
+      const total = form?.querySelectorAll('input[name="dns-rule-ruleset"]').length || 0;
+      const label = form?.querySelector("[data-dns-rule-set-count]");
+      if (label) label.textContent = `${total} 项 · 已选 ${count} 项`;
+      return;
+    }
     if (event.target.matches('input[name="profile-create-mode"]')) {
       const mode = event.target.value;
       const section = document.querySelector("[data-profile-json-section]");
@@ -4342,6 +4852,91 @@
       closeModal();
       render();
       showToast("配置片段已保存", `${section.label}已写入当前草稿，请保存后应用。`, "success");
+    } else if (type === "dns-server") {
+      const dns = cloneData(dnsConfigValue());
+      if (!Array.isArray(dns.servers)) dns.servers = [];
+      const index = form.dataset.index === "" ? null : Number(form.dataset.index);
+      const existing = Number.isInteger(index) ? dns.servers[index] : null;
+      const server = buildDnsServerConfig(form, existing || {});
+      if (!server.tag) {
+        showToast("缺少服务器标签", "请填写一个可被 DNS 规则引用的 tag。", "info");
+        form.querySelector('[name="dns-server-tag"]')?.focus();
+        return;
+      }
+      const duplicate = dns.servers.find((item, itemIndex) => itemIndex !== index && item?.tag === server.tag);
+      if (duplicate) {
+        showToast("服务器标签已存在", `“${server.tag}”已被其他 DNS 服务器使用。`, "info");
+        form.querySelector('[name="dns-server-tag"]')?.focus();
+        return;
+      }
+      if (["udp", "tcp", "tls", "https", "h3", "quic"].includes(server.type) && (!server.server || !Number.isInteger(server.server_port) || server.server_port < 1 || server.server_port > 65535)) {
+        showToast("服务器端点无效", "请填写服务器地址以及 1 到 65535 的端口。", "info");
+        return;
+      }
+      if (["https", "h3"].includes(server.type) && server.path && !server.path.startsWith("/")) {
+        showToast("请求路径无效", "HTTPS 与 HTTP/3 请求路径必须以 / 开头。", "info");
+        form.querySelector('[name="dns-server-path"]')?.focus();
+        return;
+      }
+      if (server.type === "fakeip" && !server.inet4_range && !server.inet6_range) {
+        showToast("缺少 Fake-IP 地址段", "请至少填写一个 IPv4 或 IPv6 地址段。", "info");
+        return;
+      }
+      const previousTag = String(existing?.tag || "");
+      if (Number.isInteger(index)) dns.servers.splice(index, 1, server);
+      else dns.servers.push(server);
+      if (previousTag && previousTag !== server.tag) renameDnsServerReferences(dns, previousTag, server.tag);
+      setConfigSectionValue("dns", dns);
+      closeModal();
+      render();
+      showToast(existing ? "DNS 服务器已更新" : "DNS 服务器已添加", `${server.tag}（${server.type}）已写入当前配置草稿。`, "success");
+    } else if (type === "dns-rule") {
+      const dns = cloneData(dnsConfigValue());
+      if (!Array.isArray(dns.rules)) dns.rules = [];
+      const items = dnsRuleItems(dns);
+      const key = form.dataset.key || "";
+      const existingItem = key ? items.find((item) => item.key === key) : null;
+      let rule;
+      try {
+        rule = buildDnsRuleConfig(form, existingItem?.rule || {});
+      } catch {
+        showToast("JSON 格式错误", "请检查完整 DNS 规则 JSON。", "info");
+        form.querySelector('[name="dns-rule-inline"]')?.focus();
+        return;
+      }
+      if (!rule || typeof rule !== "object" || Array.isArray(rule)) {
+        showToast("DNS 规则无效", "完整规则必须是一个 JSON 对象。", "info");
+        return;
+      }
+      const matchType = dnsRuleType(rule);
+      const matchValue = matchType === "inline" ? rule : rule[matchType];
+      if (matchType !== "inline" && (matchValue === undefined || matchValue === "" || Array.isArray(matchValue) && !matchValue.length)) {
+        showToast("缺少匹配内容", matchType === "rule_set" ? "请至少选择一个规则集。" : "请填写当前规则类型的匹配内容。", "info");
+        return;
+      }
+      if (dnsRuleAction(rule) === "route" && !rule.server) {
+        showToast("缺少目标服务器", "路由动作需要选择一个 DNS 服务器。", "info");
+        form.querySelector('[name="dns-rule-server"]')?.focus();
+        return;
+      }
+      let nextItems = [...items];
+      if (existingItem?.enabled) {
+        dns.rules.splice(existingItem.sourceIndex, 1, rule);
+      } else if (existingItem) {
+        const position = items.findIndex((item) => item.key === existingItem.key);
+        nextItems[position] = { ...existingItem, rule };
+        storeDnsDisabledRules(nextItems);
+      } else {
+        const insertion = dnsInsertionPosition(items.length);
+        const sourceIndex = items.slice(0, insertion).filter((item) => item.enabled).length;
+        dns.rules.splice(sourceIndex, 0, rule);
+        nextItems.splice(insertion, 0, { key: `active:new-${Date.now()}`, enabled: true, sourceIndex, rule });
+        storeDnsDisabledRules(nextItems);
+      }
+      setConfigSectionValue("dns", dns);
+      closeModal();
+      render();
+      showToast(existingItem ? "DNS 规则已更新" : "DNS 规则已添加", `${dnsRuleType(rule)} · ${dnsRuleActionLabel(rule)}`, "success");
     } else if (type === "inbound-import") {
       const selectedIds = new FormData(form).getAll("inbound-library-item").map(String);
       const selected = selectedIds.map((id) => state.inboundLibrary.find((item) => item.id === id)).filter(Boolean);
