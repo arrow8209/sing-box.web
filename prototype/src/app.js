@@ -427,7 +427,7 @@
   };
 
   const initialRoute = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-  const initialPage = ["dashboard", "config", "inbounds", "subscriptions", "rulesets", "settings"].includes(initialRoute[0])
+  const initialPage = ["dashboard", "config", "inbounds", "subscriptions", "rulesets", "core", "settings"].includes(initialRoute[0])
     ? initialRoute[0]
     : "dashboard";
   const initialConfigTab = configTabs.some((tab) => tab.id === initialRoute[2])
@@ -453,6 +453,10 @@
     configExpanded: true,
     sidebarOpen: false,
     sidebarCollapsed: readStorage("singbox-sidebar-collapsed", "false") === "true",
+    coreCurrentVersion: "1.11.11",
+    coreLatestVersion: "1.11.15",
+    coreDownloadState: "idle",
+    coreDownloadProgress: 0,
     coreRunning: true,
     systemProxy: true,
     tunMode: true,
@@ -1045,6 +1049,7 @@
     inbounds: { title: "入站配置", parent: "资源管理" },
     subscriptions: { title: "订阅配置", parent: "资源管理" },
     rulesets: { title: "规则集中心", parent: "资源管理" },
+    core: { title: "核心管理", parent: "系统" },
     settings: { title: "设置", parent: "系统" },
   };
 
@@ -1168,13 +1173,14 @@
         ${navItem("subscriptions", "订阅配置", "subscription")}
         ${navItem("rulesets", "规则集", "rules")}
         <div class="nav-label">系统</div>
+        ${navItem("core", "核心管理", "cpu")}
         ${navItem("settings", "设置", "settings")}
       </div>
       <div class="sidebar-footer">
         <div class="core-mini" title="sing-box ${state.coreRunning ? "核心运行中" : "核心已停止"}">
           <div class="core-mini-icon">${icon("cpu")}</div>
           <div class="core-mini-copy">
-            <div class="core-mini-title">sing-box 1.11.11</div>
+            <div class="core-mini-title">sing-box ${state.coreCurrentVersion}</div>
             <div class="core-mini-state">${state.coreRunning ? "● 核心运行中" : "○ 核心已停止"}</div>
           </div>
           <button class="entry-action" data-action="restart-core" title="重启核心">${icon("rotate")}</button>
@@ -1227,6 +1233,7 @@
     if (state.page === "inbounds") return renderInboundLibrary();
     if (state.page === "subscriptions") return renderSubscriptions();
     if (state.page === "rulesets") return renderRulesets();
+    if (state.page === "core") return renderCorePage();
     if (state.page === "settings") return renderSettings();
     return renderDashboard();
   }
@@ -1266,7 +1273,7 @@
             <div class="hero-footer">
               <div class="hero-meta">
                 <div class="hero-meta-item"><span>运行时间</span><strong>${state.coreRunning ? "12 天 08:42:16" : "--"}</strong></div>
-                <div class="hero-meta-item"><span>核心版本</span><strong>1.11.11</strong></div>
+                <div class="hero-meta-item"><span>核心版本</span><strong>${state.coreCurrentVersion}</strong></div>
                 <div class="hero-meta-item"><span>活动配置</span><strong>${escapeHtml(activeProfile().name)}</strong></div>
               </div>
               <div class="hero-actions">
@@ -1345,6 +1352,62 @@
           ${renderProxySelector()}
         </div>
       </div>
+    </section>`;
+  }
+
+  function renderCorePage() {
+    const downloading = state.coreDownloadState === "downloading";
+    const downloaded = state.coreDownloadState === "downloaded";
+    const releaseLabel = downloading ? "正在下载" : downloaded ? "下载完成" : "发现新版本";
+    const buttonLabel = downloading
+      ? `正在下载 ${state.coreDownloadProgress}%`
+      : downloaded
+        ? "重新下载最新版本"
+        : "下载最新版本";
+    const progress = state.coreDownloadProgress;
+    return `<section class="core-management-page">
+      <div class="page-intro">
+        <div class="page-intro-copy">
+          <h2>核心管理</h2>
+          <p>查看 sing-box 版本，并按需下载最新稳定版本。</p>
+        </div>
+      </div>
+
+      <article class="card core-version-shell">
+        <div class="core-version-shell-head">
+          <span class="core-shell-icon">${icon("cpu")}</span>
+          <div class="core-shell-copy"><strong>sing-box 核心</strong><span>版本信息</span></div>
+          <span class="core-release-state ${downloading ? "downloading" : downloaded ? "downloaded" : ""}"><i></i>${releaseLabel}</span>
+        </div>
+
+        <div class="core-version-grid">
+          <section class="core-version-tile" aria-label="当前版本">
+            <div class="core-version-label">${icon("server")}<span>当前版本</span></div>
+            <strong class="core-version-value">${state.coreCurrentVersion}</strong>
+            <p><span class="core-running-dot"></span>已安装 · ${state.coreRunning ? "核心正在运行" : "核心当前已停止"}</p>
+          </section>
+
+          <span class="core-version-connector">${icon("chevron")}</span>
+
+          <section class="core-version-tile latest" aria-label="最新版本">
+            <div class="core-version-label">${icon("sparkles")}<span>最新版本</span><b>Stable</b></div>
+            <strong class="core-version-value">${state.coreLatestVersion}</strong>
+            <p>官方最新稳定版本</p>
+          </section>
+        </div>
+
+        <div class="core-download-bar">
+          <div class="core-download-copy">
+            <span>${icon(downloaded ? "check" : "download")}</span>
+            <div><strong>${downloaded ? "最新版本已下载" : "下载官方核心"}</strong><small>${downloaded ? `sing-box ${state.coreLatestVersion} 安装包已准备好` : "Linux · amd64 · 13.8 MB"}</small></div>
+          </div>
+          <button class="btn btn-primary core-download-button" type="button" data-action="download-latest-core" ${downloading ? "disabled" : ""}>${icon(downloading ? "rotate" : "download")}${buttonLabel}</button>
+        </div>
+
+        ${downloading || downloaded ? `<div class="core-download-progress ${downloaded ? "complete" : ""}"><div><span>${downloaded ? "下载完成" : "正在下载最新版本"}</span><strong>${progress}%</strong></div><span class="core-progress-track" role="progressbar" aria-label="核心下载进度" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${progress}"><i style="width:${progress}%"></i></span></div>` : ""}
+      </article>
+
+      <p class="core-page-note">${icon("info")}<span>此处仅演示版本下载；下载完成后，当前运行版本不会自动改变。</span></p>
     </section>`;
   }
 
@@ -2608,12 +2671,12 @@
         </nav>
         <div class="settings-content">
           <article class="card settings-section" id="core-settings">
-            <div class="card-head"><div><h3 class="card-title">核心设置</h3><p class="card-subtitle">sing-box 服务启动与运行行为</p></div><span class="badge badge-success">v1.11.11</span></div>
+            <div class="card-head"><div><h3 class="card-title">核心设置</h3><p class="card-subtitle">sing-box 服务启动与运行行为</p></div><span class="badge badge-success">v${state.coreCurrentVersion}</span></div>
             <div class="card-body setting-list">
               ${settingsToggleRow("开机自动运行", "控制台启动后自动拉起 sing-box 核心", "autoStart")}
               ${settingsToggleRow("配置变更自动重载", "保存配置后无感重载核心服务", "clashApi")}
-              ${settingsSelectRow("核心分支", "选择使用的 sing-box 发布通道", "Stable · 1.11.11", ["Stable · 1.11.11", "Beta · 1.12.0-beta.3"])}
-              ${settingsActionRow("检查核心更新", "当前已是最新稳定版本", "检查更新", "check-update")}
+              ${settingsSelectRow("核心分支", "选择使用的 sing-box 发布通道", `Stable · ${state.coreCurrentVersion}`, [`Stable · ${state.coreCurrentVersion}`, "Beta · 1.12.0-beta.3"])}
+              ${settingsActionRow("核心版本", `当前 ${state.coreCurrentVersion} · 最新 ${state.coreLatestVersion}`, "管理版本", "open-core-management")}
             </div>
           </article>
           <article class="card settings-section" id="network-settings">
@@ -2643,7 +2706,7 @@
             </div>
           </article>
           <article class="card about-card" id="about-settings">
-            <div class="brand-mark"><span>S</span></div><div class="about-copy"><strong>SingBox Control</strong><span>Web 原型 v0.1.0 · sing-box 核心 v1.11.11</span></div><button class="btn btn-sm" data-action="project-info">项目说明 ${icon("external")}</button>
+            <div class="brand-mark"><span>S</span></div><div class="about-copy"><strong>SingBox Control</strong><span>Web 原型 v0.1.0 · sing-box 核心 v${state.coreCurrentVersion}</span></div><button class="btn btn-sm" data-action="project-info">项目说明 ${icon("external")}</button>
           </article>
         </div>
       </div>
@@ -3994,7 +4057,7 @@
 
   function commandModal() {
     const body = `<div class="modal-body"><label class="search-wrap" style="display:block"><span class="icon">${icon("search")}</span><input class="search-input" style="height:43px" placeholder="输入页面名称..." autofocus /></label><div class="entry-list" style="padding:12px 0 0">${[
-      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "自定义配置 · 入站", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "路由设置", "routing"], ["config", "DNS", "dns"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["inbounds", "入站配置", "inbound"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["settings", "系统设置", "settings"]
+      ["dashboard", "仪表盘", "dashboard"], ["config", "配置概览", "general"], ["config", "自定义配置 · 入站", "inbounds"], ["config", "出站配置", "outbounds"], ["config", "路由设置", "routing"], ["config", "DNS", "dns"], ["config", "服务", "services"], ["config", "高级配置", "advanced"], ["inbounds", "入站配置", "inbound"], ["subscriptions", "订阅配置", "subscription"], ["rulesets", "规则集", "rules"], ["core", "核心管理", "cpu"], ["settings", "系统设置", "settings"]
     ].map(([page, label, iconName]) => `<button class="entry-card" data-command-page="${page}" data-command-config="${page === "config" ? iconName : ""}" style="width:100%;text-align:left"><div class="entry-icon">${icon(iconName)}</div><div class="entry-copy"><div class="entry-title">${label}</div><div class="entry-meta">快速跳转</div></div>${icon("chevron", "faint")}</button>`).join("")}</div></div>`;
     return modalFrame("快速跳转", "选择要打开的控制台页面", body);
   }
@@ -4353,6 +4416,22 @@
       }, 900);
     } else if (action === "refresh-dashboard") {
       showToast("状态已刷新", "流量、连接与核心状态均已更新。", "info");
+    } else if (action === "download-latest-core") {
+      if (state.coreDownloadState === "downloading") return;
+      state.coreDownloadState = "downloading";
+      state.coreDownloadProgress = 12;
+      render();
+      showToast("开始下载", `正在下载 sing-box ${state.coreLatestVersion}。`, "info");
+      [38, 72, 100].forEach((value, index) => {
+        window.setTimeout(() => {
+          state.coreDownloadProgress = value;
+          if (value === 100) state.coreDownloadState = "downloaded";
+          render();
+          if (value === 100) showToast("下载完成", `sing-box ${state.coreLatestVersion} 安装包已准备好。`, "success");
+        }, 360 * (index + 1));
+      });
+    } else if (action === "open-core-management") {
+      navigate("core");
     } else if (action === "test-proxy-group") {
       const group = state.proxyGroups.find((item) => item.id === actionTarget.dataset.id);
       if (!group) return;
@@ -4637,8 +4716,6 @@
       closeModal();
       navigate("config", state.activeConfig);
       showToast("配置已删除", `“${profile.name}”及其草稿已移除。`, "success");
-    } else if (action === "check-update") {
-      showToast("已是最新版本", "当前 sing-box Stable 1.11.11 无需更新。", "info");
     } else if (action === "change-password") {
       showToast("原型操作", "正式接入后此处将打开密码修改流程。", "info");
     } else if (action === "project-info") {
@@ -5495,7 +5572,7 @@
 
   window.addEventListener("popstate", () => {
     const route = window.location.hash.replace(/^#\/?/, "").split("/").filter(Boolean);
-    state.page = ["dashboard", "config", "inbounds", "subscriptions", "rulesets", "settings"].includes(route[0]) ? route[0] : "dashboard";
+    state.page = ["dashboard", "config", "inbounds", "subscriptions", "rulesets", "core", "settings"].includes(route[0]) ? route[0] : "dashboard";
     if (state.page === "config") {
       const routeProfileId = route[2] ? route[1] : null;
       const routeTab = route[2] || route[1];
