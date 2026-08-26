@@ -534,12 +534,12 @@
     editingRouteRulesetId: null,
     editingConfigSection: null,
     routeRuleSets: [
-      { id: "rs-category-ads", tag: "Category-Ads", type: "remote", format: "binary", url: "https://example.com/category-ads.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
-      { id: "rs-geosite-private", tag: "GeoSite-Private", type: "local", format: "source", url: "", download_detour: "", update_interval: "", path: "4", rules: "" },
-      { id: "rs-geosite-cn", tag: "GeoSite-CN", type: "remote", format: "binary", url: "https://example.com/geosite-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-category-ads", resourceId: 5, tag: "Category-Ads", type: "remote", format: "binary", url: "https://example.com/category-ads.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-geosite-private", resourceId: 4, tag: "GeoSite-Private", type: "local", format: "source", url: "", download_detour: "", update_interval: "", path: "4", rules: "" },
+      { id: "rs-geosite-cn", resourceId: 1, tag: "GeoSite-CN", type: "remote", format: "binary", url: "https://example.com/geosite-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
       { id: "rs-geoip-private", tag: "GeoIP-Private", type: "remote", format: "binary", url: "https://example.com/geoip-private.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
-      { id: "rs-geoip-cn", tag: "GeoIP-CN", type: "remote", format: "binary", url: "https://example.com/geoip-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
-      { id: "rs-geolocation-not-cn", tag: "GeoLocation-!CN", type: "remote", format: "binary", url: "https://example.com/geolocation-not-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-geoip-cn", resourceId: 2, tag: "GeoIP-CN", type: "remote", format: "binary", url: "https://example.com/geoip-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
+      { id: "rs-geolocation-not-cn", resourceId: 3, tag: "GeoLocation-!CN", type: "remote", format: "binary", url: "https://example.com/geolocation-not-cn.srs", download_detour: "outbound-direct", update_interval: "1d", path: "", rules: "" },
     ],
     routeRules: [
       { id: "route-rule-tun-sniff", type: "inbound", enable: true, payload: "tun-in", invert: false, action: "sniff", outbound: "", sniffer: [], strategy: "", server: "" },
@@ -767,8 +767,11 @@
     }
     const listTypes = new Set(["inbound", "network", "protocol", "domain", "domain_suffix", "domain_keyword", "domain_regex", "source_ip_cidr", "ip_cidr", "source_port", "source_port_range", "port", "port_range", "process_name", "process_path", "process_path_regex", "clash_mode", "rule_set"]);
     const values = String(rule.payload || "").split(",").map((item) => item.trim()).filter(Boolean);
+    const exportedValues = rule.type === "rule_set"
+      ? values.map((id) => state.routeRuleSets.find((ruleset) => ruleset.id === id)?.tag || id)
+      : values;
     const config = {
-      [rule.type]: listTypes.has(rule.type) ? values : rule.payload,
+      [rule.type]: listTypes.has(rule.type) ? exportedValues : rule.payload,
     };
     if (rule.invert) config.invert = true;
     if (rule.action && rule.action !== "route") config.action = rule.action;
@@ -1650,11 +1653,6 @@
         </div>
       </article>
 
-      <article class="card route-section" id="route-ruleset-section">
-        <div class="card-head"><div><h3 class="card-title">规则集</h3><p class="card-subtitle">管理路由规则可引用的本地、远程与内联规则集</p></div><div class="route-section-actions"><span class="route-section-badge">${state.routeRuleSets.length} 个</span><button class="btn btn-sm" data-modal="route-ruleset">${icon("plus")}新增规则集</button></div></div>
-        <div class="route-ruleset-grid">${state.routeRuleSets.length ? state.routeRuleSets.map((ruleset) => routeRulesetCard(ruleset)).join("") : `<button class="route-empty-section" data-modal="route-ruleset">${icon("plus")}<strong>添加第一个规则集</strong><span>支持本地、远程与内联来源</span></button>`}</div>
-      </article>
-
       <article class="card route-section" id="route-rules-section">
         <div class="card-head"><div><h3 class="card-title">路由规则</h3><p class="card-subtitle">按从上到下的顺序匹配；新增规则会放在插入点之后</p></div><div class="route-section-actions"><span class="route-section-badge">已启用 ${enabledRules}/${routeRuleCount()}</span><button class="btn btn-sm btn-primary" data-modal="route">${icon("plus")}新增规则</button></div></div>
         <div class="route-rule-list">${state.routeRules.map((rule, index) => routeRuleCard(rule, index)).join("")}</div>
@@ -1688,16 +1686,6 @@
 
   function routeCommonSelect(label, description, name, value, options) {
     return `<label class="route-common-field"><span><strong>${label}</strong><small>${description}</small></span><select class="field-select" name="${name}" data-route-common>${selectOptionsMarkup(options, value)}</select></label>`;
-  }
-
-  function routeRulesetCard(ruleset) {
-    const source = ruleset.type === "remote" ? ruleset.url : ruleset.type === "local" ? `资源 #${ruleset.path}` : "页面内联规则";
-    const tone = ruleset.type === "remote" ? "" : ruleset.type === "local" ? "cyan" : "violet";
-    return `<div class="route-ruleset-card" data-route-ruleset-id="${escapeHtml(ruleset.id)}">
-      <div class="route-ruleset-icon ${tone}">${icon(ruleset.type === "remote" ? "download" : ruleset.type === "local" ? "folder" : "code")}</div>
-      <div class="route-ruleset-copy"><div><strong>${escapeHtml(ruleset.tag)}</strong><span class="type-badge">${escapeHtml(ruleset.type)}</span><span class="type-badge">${escapeHtml(ruleset.type === "inline" ? "source" : ruleset.format)}</span></div><small title="${escapeHtml(source)}">${escapeHtml(source)}</small></div>
-      <div class="entry-actions"><button class="entry-action" data-modal="route-ruleset" data-id="${escapeHtml(ruleset.id)}" title="编辑规则集">${icon("edit")}</button><button class="entry-action danger" data-route-remove="ruleset" data-id="${escapeHtml(ruleset.id)}" title="删除规则集">${icon("trash")}</button></div>
-    </div>`;
   }
 
   function routeOutboundLabel(value) {
@@ -2041,7 +2029,11 @@
     else if (type === "command") content = commandModal();
     modalRoot.innerHTML = content;
     document.body.style.overflow = "hidden";
-    window.setTimeout(() => modalRoot.querySelector(".modal-body input, .modal-body select, .modal-body textarea")?.focus(), 30);
+    window.setTimeout(() => {
+      const initialFocus = modalRoot.querySelector("[data-modal-initial-focus]")
+        || modalRoot.querySelector(".modal-body input, .modal-body select, .modal-body textarea");
+      initialFocus?.focus();
+    }, 30);
   }
 
   function modalFrame(title, description, body, footer = "", modalClass = "") {
@@ -2642,15 +2634,86 @@
     return `<div class="route-editor-row ${className}"><span class="route-editor-label">${label}${hint ? `<small>${hint}</small>` : ""}</span><div class="route-editor-control">${content}</div></div>`;
   }
 
-  function routeRuleSetChoice(ruleset, selectedIds) {
-    return `<label class="route-choice-card"><input type="checkbox" name="route-rule-ruleset" value="${escapeHtml(ruleset.id)}" ${selectedIds.has(ruleset.id) ? "checked" : ""} /><span><strong>${escapeHtml(ruleset.tag)}</strong><small>${escapeHtml(ruleset.type)} · ${escapeHtml(ruleset.type === "inline" ? "source" : ruleset.format)}</small>${icon("check")}</span></label>`;
+  function routeRuleSetResource(ruleset) {
+    return state.rulesets.find((resource) => String(resource.id) === String(ruleset.resourceId || (ruleset.type === "local" ? ruleset.path : "")));
+  }
+
+  function routeRuleSetResourceDetail(resource) {
+    return `${resource.type === "remote" ? "网络" : "手工"} · ${resource.format === "binary" ? "Binary" : "Source"}`;
+  }
+
+  function routeRuleSetOptions() {
+    const linkedResourceIds = new Set();
+    const options = state.routeRuleSets.map((ruleset) => {
+      const resource = routeRuleSetResource(ruleset);
+      if (resource) linkedResourceIds.add(String(resource.id));
+      return {
+        id: ruleset.id,
+        tag: ruleset.tag,
+        name: ruleset.tag,
+        detail: resource ? routeRuleSetResourceDetail(resource) : `${ruleset.type} · 配置内规则集`,
+        disabled: Boolean(resource?.disabled),
+      };
+    });
+    state.rulesets.forEach((resource) => {
+      if (linkedResourceIds.has(String(resource.id))) return;
+      options.push({
+        id: `managed:${resource.id}`,
+        tag: resource.name,
+        name: resource.name,
+        detail: routeRuleSetResourceDetail(resource),
+        disabled: Boolean(resource.disabled),
+      });
+    });
+    const knownIds = new Set(options.map((option) => option.id));
+    state.routeRules.forEach((rule) => {
+      if (rule.type !== "rule_set") return;
+      rule.payload.split(",").filter(Boolean).forEach((id) => {
+        if (knownIds.has(id)) return;
+        knownIds.add(id);
+        options.push({ id, tag: id, name: id, detail: "当前规则引用", disabled: false });
+      });
+    });
+    return options;
+  }
+
+  function routeRuleSetChoice(option, selectedIds) {
+    const searchText = `${option.name} ${option.tag} ${option.detail}`.toLocaleLowerCase("zh-CN");
+    return `<label class="route-choice-card ${option.disabled && !selectedIds.has(option.id) ? "is-disabled" : ""}" data-route-rule-set-option data-search="${escapeHtml(searchText)}"><input type="checkbox" name="route-rule-ruleset" value="${escapeHtml(option.id)}" ${selectedIds.has(option.id) ? "checked" : ""} ${option.disabled && !selectedIds.has(option.id) ? "disabled" : ""} /><span><strong>${escapeHtml(option.name)}</strong><small>${option.disabled ? "已停用 · " : ""}${escapeHtml(option.detail)}</small>${icon("check")}</span></label>`;
+  }
+
+  function updateRouteRuleSetFilter(input) {
+    const form = input.closest("#route-rule-form");
+    if (!form) return;
+    const query = input.value.trim().toLocaleLowerCase("zh-CN");
+    const options = [...form.querySelectorAll("[data-route-rule-set-option]")];
+    let visible = 0;
+    options.forEach((option) => {
+      const matches = !query || option.dataset.search.includes(query);
+      option.hidden = !matches;
+      if (matches) visible += 1;
+    });
+    const resultCount = form.querySelector("[data-route-rule-set-result-count]");
+    if (resultCount) resultCount.textContent = `${visible} / ${options.length}`;
+    const empty = form.querySelector(".route-ruleset-filter-empty");
+    if (empty) {
+      empty.hidden = visible > 0;
+      empty.querySelector("strong").textContent = options.length ? "没有匹配的规则集" : "尚无规则集";
+      empty.querySelector("span:last-child").textContent = options.length ? "调整搜索关键词后重试" : "请先到一级“规则集”页面添加资源。";
+    }
   }
 
   function renderRouteRulePayloadFields(type, rule = {}) {
     const payload = rule.payload || "";
     if (type === "rule_set") {
       const selectedIds = new Set(payload.split(",").filter(Boolean));
-      return `<div class="route-modal-divider"><span>选择规则集</span><strong data-route-rule-set-count>已选 ${selectedIds.size}</strong></div>${state.routeRuleSets.length ? `<div class="route-choice-grid route-ruleset-choices">${state.routeRuleSets.map((ruleset) => routeRuleSetChoice(ruleset, selectedIds)).join("")}</div>` : `<div class="route-modal-empty">${icon("rules")}<strong>尚未配置规则集</strong><span>请先关闭弹窗，在页面的“规则集”区块中新增。</span></div>`}`;
+      const options = routeRuleSetOptions();
+      return `<div class="route-modal-divider"><span>全部规则集</span><strong data-route-rule-set-count>${options.length} 项 · 已选 ${selectedIds.size} 项</strong></div>
+        <label class="route-ruleset-search">${icon("search")}<input type="search" placeholder="搜索规则集名称或 tag" aria-label="搜索规则集" data-route-rule-set-search data-modal-initial-focus /><span data-route-rule-set-result-count>${options.length} / ${options.length}</span></label>
+        <div class="route-choice-grid route-ruleset-choices">
+          ${options.map((option) => routeRuleSetChoice(option, selectedIds)).join("")}
+          <div class="route-modal-empty route-ruleset-filter-empty" ${options.length ? "hidden" : ""}>${icon(options.length ? "search" : "rules")}<strong>${options.length ? "没有匹配的规则集" : "尚无规则集"}</strong><span>${options.length ? "调整搜索关键词后重试" : "请先到一级“规则集”页面添加资源。"}</span></div>
+        </div>`;
     }
     if (type === "inbound") {
       return routeEditorRow("入站标签", "payload", `<select class="field-select" name="route-rule-payload">${selectOptionsMarkup([["", "请选择入站"], ...routeInboundOptions()], payload)}</select>`);
@@ -2745,6 +2808,37 @@
       strategy: String(data.get("route-rule-strategy") || ""),
       server: String(data.get("route-rule-server") || ""),
     };
+  }
+
+  function ensureManagedRouteRuleSet(optionId) {
+    if (!optionId.startsWith("managed:")) return optionId;
+    const resourceId = optionId.slice("managed:".length);
+    const existing = state.routeRuleSets.find((ruleset) => String(ruleset.resourceId || (ruleset.type === "local" ? ruleset.path : "")) === resourceId);
+    if (existing) return existing.id;
+    const resource = state.rulesets.find((item) => String(item.id) === resourceId);
+    if (!resource) return optionId;
+    const existingTags = new Set(state.routeRuleSets.map((ruleset) => ruleset.tag));
+    const baseTag = String(resource.name || "规则集").trim() || "规则集";
+    let tag = baseTag;
+    let suffix = 2;
+    while (existingTags.has(tag)) {
+      tag = `${baseTag}-${suffix}`;
+      suffix += 1;
+    }
+    const ruleset = {
+      id: `managed-ruleset-${resource.id}`,
+      resourceId: resource.id,
+      tag,
+      type: "local",
+      format: resource.format,
+      url: "",
+      download_detour: "",
+      update_interval: "",
+      path: String(resource.id),
+      rules: "",
+    };
+    state.routeRuleSets.push(ruleset);
+    return ruleset.id;
   }
 
   function routeResourceChoice(resource, selectedPath) {
@@ -3822,6 +3916,9 @@
       window.clearTimeout(window.__singboxSearchTimer);
       window.__singboxSearchTimer = window.setTimeout(render, 120);
     }
+    if (event.target.matches("[data-route-rule-set-search]")) {
+      updateRouteRuleSetFilter(event.target);
+    }
     if (event.target.matches("[data-outbound-icon-input]")) {
       const preview = document.querySelector("[data-outbound-icon-preview]");
       if (!preview) return;
@@ -3897,8 +3994,9 @@
     if (event.target.matches('[name="route-rule-ruleset"]')) {
       const form = event.target.closest("#route-rule-form");
       const count = form?.querySelectorAll('[name="route-rule-ruleset"]:checked').length || 0;
+      const total = form?.querySelectorAll('[name="route-rule-ruleset"]').length || 0;
       const label = form?.querySelector("[data-route-rule-set-count]");
-      if (label) label.textContent = `已选 ${count}`;
+      if (label) label.textContent = `${total} 项 · 已选 ${count} 项`;
       return;
     }
     if (event.target.matches('[name="route-ruleset-type"]')) {
@@ -4198,6 +4296,9 @@
       })) {
         showToast("JSON 格式错误", "请检查内联规则或路由选项的 JSON 语法。", "info");
         return;
+      }
+      if (rule.type === "rule_set") {
+        rule.payload = rule.payload.split(",").filter(Boolean).map(ensureManagedRouteRuleSet).join(",");
       }
       const existingIndex = state.routeRules.findIndex((item) => item.id === state.editingRouteRuleId);
       if (existingIndex >= 0) state.routeRules.splice(existingIndex, 1, rule);
