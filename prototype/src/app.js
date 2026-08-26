@@ -379,6 +379,31 @@
     ["predefined", "预定义", "dns"],
   ];
 
+  const defaultFakeIpDnsRule = {
+    action: "route",
+    type: "logical",
+    mode: "and",
+    rules: [
+      {
+        domain_suffix: [
+          ".lan",
+          ".localdomain",
+          ".example",
+          ".invalid",
+          ".localhost",
+          ".test",
+          ".local",
+          ".home.arpa",
+          ".msftconnecttest.com",
+          ".msftncsi.com",
+        ],
+        invert: true,
+      },
+      { query_type: ["A", "AAAA"] },
+    ],
+    server: "Fake-IP",
+  };
+
   // 与 temp/config.default.json 的 dns 对象保持一致，原型在浏览器中直接克隆使用。
   const defaultDnsConfig = {
     servers: [
@@ -392,6 +417,7 @@
       { action: "route", clash_mode: "direct", server: "Local-DNS" },
       { action: "route", clash_mode: "global", server: "Remote-DNS" },
       { action: "route", rule_set: ["GeoSite-CN"], server: "Local-DNS" },
+      defaultFakeIpDnsRule,
       { action: "route", rule_set: ["GeoLocation-!CN"], server: "Remote-DNS" },
     ],
     disable_cache: false,
@@ -684,6 +710,38 @@
     return JSON.parse(JSON.stringify(value));
   }
 
+  function fakeIpDnsRuleParts(rule) {
+    if (!rule || typeof rule !== "object" || Array.isArray(rule)) return null;
+    if (rule.action !== "route" || rule.type !== "logical" || rule.mode !== "and" || !Array.isArray(rule.rules) || rule.rules.length !== 2) return null;
+    const domainRule = rule.rules[0];
+    const queryRule = rule.rules[1];
+    if (!domainRule || typeof domainRule !== "object" || domainRule.invert !== true || !Array.isArray(domainRule.domain_suffix)) return null;
+    if (!queryRule || typeof queryRule !== "object" || !Array.isArray(queryRule.query_type)) return null;
+    return {
+      domainRule,
+      queryRule,
+      suffixes: domainRule.domain_suffix.map(String),
+      queryTypes: queryRule.query_type.map(String),
+    };
+  }
+
+  function isDefaultFakeIpDnsRule(rule) {
+    return Boolean(fakeIpDnsRuleParts(rule));
+  }
+
+  function ensureDefaultFakeIpDnsRule(value) {
+    const dns = value && typeof value === "object" && !Array.isArray(value) ? cloneData(value) : {};
+    if (!Array.isArray(dns.rules)) dns.rules = [];
+    const hasActiveRule = dns.rules.some(isDefaultFakeIpDnsRule);
+    const hasDisabledRule = Array.isArray(state.dnsDisabledRules) && state.dnsDisabledRules.some((item) => isDefaultFakeIpDnsRule(item?.rule));
+    if (!hasActiveRule && !hasDisabledRule) {
+      const remoteRuleIndex = dns.rules.findIndex((rule) => Array.isArray(rule?.rule_set) && rule.rule_set.includes("GeoLocation-!CN"));
+      const insertion = remoteRuleIndex >= 0 ? remoteRuleIndex : Math.min(3, dns.rules.length);
+      dns.rules.splice(insertion, 0, cloneData(defaultFakeIpDnsRule));
+    }
+    return dns;
+  }
+
   function activeProfile() {
     return state.profiles.find((profile) => profile.id === state.activeProfileId) || state.profiles[0];
   }
@@ -902,6 +960,7 @@
     if (state.routeDefaultDns) config.route.default_domain_resolver = state.routeDefaultDns;
     else delete config.route.default_domain_resolver;
     if (!config.dns) config.dns = cloneData(defaultDnsConfig);
+    else config.dns = ensureDefaultFakeIpDnsRule(config.dns);
     if (!state.ipv6) config.dns.strategy = "ipv4_only";
     else if (config.dns.strategy === "ipv4_only") delete config.dns.strategy;
 
@@ -2052,7 +2111,14 @@
     disabled.sort((left, right) => Number(left.position) - Number(right.position)).forEach((item) => {
       result.splice(Math.max(0, Math.min(Number(item.position) || 0, result.length)), 0, { key: `disabled:${item.id}`, enabled: false, disabledId: item.id, rule: item.rule });
     });
-    return result;
+    let builtInAssigned = false;
+    return result.map((item) => {
+      if (!builtInAssigned && isDefaultFakeIpDnsRule(item.rule)) {
+        builtInAssigned = true;
+        return { ...item, builtIn: "fakeip" };
+      }
+      return item;
+    });
   }
 
   function storeDnsDisabledRules(items) {
@@ -2070,6 +2136,7 @@
   }
 
   function dnsRuleSummary(rule) {
+    if (isDefaultFakeIpDnsRule(rule)) return "Fake-IP 地址映射";
     const type = dnsRuleType(rule);
     const payload = dnsRulePayload(rule, type) || "全部查询";
     const action = dnsRuleAction(rule);
@@ -2079,7 +2146,17 @@
 
   function dnsRuleConfig(item, position) {
     const displayIndex = String(position + 1).padStart(2, "0");
-    return `<div class="dns-rule-row ${item.enabled ? "" : "is-disabled"}" data-dns-rule-key="${escapeHtml(item.key)}"><label class="dns-rule-switch"><input type="checkbox" data-dns-rule-toggle="${escapeHtml(item.key)}" ${item.enabled ? "checked" : ""} aria-label="${item.enabled ? "停用" : "启用"}第 ${position + 1} 条 DNS 规则" /><span></span></label><span class="dns-rule-index">${displayIndex}</span><div class="dns-rule-copy"><strong>${escapeHtml(dnsRuleSummary(item.rule))}</strong><small>${escapeHtml(dnsRuleActionLabel(item.rule))}${item.rule?.invert ? " · 反向匹配" : ""}</small></div><div class="dns-row-actions"><button data-modal="dns-rule" data-id="${escapeHtml(item.key)}" title="编辑规则" aria-label="编辑 DNS 规则 ${position + 1}">${icon("edit")}</button><button class="danger" data-action="remove-dns-rule" data-key="${escapeHtml(item.key)}" title="删除规则" aria-label="删除 DNS 规则 ${position + 1}">${icon("trash")}</button></div></div>`;
+    const builtInFakeIp = item.builtIn === "fakeip";
+    const parts = builtInFakeIp ? fakeIpDnsRuleParts(item.rule) : null;
+    const queryTypes = parts?.queryTypes.join(" / ") || "未选择查询类型";
+    const detail = builtInFakeIp
+      ? `AND · 排除 ${parts?.suffixes.length || 0} 个后缀 · ${queryTypes} → ${String(item.rule.server || "Fake-IP")}`
+      : `${dnsRuleActionLabel(item.rule)}${item.rule?.invert ? " · 反向匹配" : ""}`;
+    const editModal = builtInFakeIp ? "dns-fakeip-rule" : "dns-rule";
+    const deleteAction = builtInFakeIp
+      ? `<button class="dns-rule-protected-action" type="button" disabled title="内置 Fake-IP 规则不能删除" aria-label="内置 Fake-IP 规则不能删除">${icon("lock")}</button>`
+      : `<button class="danger" type="button" data-action="remove-dns-rule" data-key="${escapeHtml(item.key)}" title="删除规则" aria-label="删除 DNS 规则 ${position + 1}">${icon("trash")}</button>`;
+    return `<div class="dns-rule-row ${item.enabled ? "" : "is-disabled"} ${builtInFakeIp ? "is-protected" : ""}" data-dns-rule-key="${escapeHtml(item.key)}" ${builtInFakeIp ? 'data-dns-rule-kind="fakeip"' : ""}><label class="dns-rule-switch"><input type="checkbox" data-dns-rule-toggle="${escapeHtml(item.key)}" ${item.enabled ? "checked" : ""} aria-label="${item.enabled ? "停用" : "启用"}${builtInFakeIp ? "内置 Fake-IP" : `第 ${position + 1} 条 DNS`}规则" /><span></span></label><span class="dns-rule-index">${displayIndex}</span><div class="dns-rule-copy"><div class="dns-rule-title-line"><strong>${escapeHtml(dnsRuleSummary(item.rule))}</strong>${builtInFakeIp ? `<span class="dns-rule-system-badge">${icon("lock")}内置</span>` : ""}</div><small>${escapeHtml(detail)}</small></div><div class="dns-row-actions"><button type="button" data-modal="${editModal}" data-id="${escapeHtml(item.key)}" title="${builtInFakeIp ? "编辑 Fake-IP 规则" : "编辑规则"}" aria-label="${builtInFakeIp ? "编辑内置 Fake-IP 规则" : `编辑 DNS 规则 ${position + 1}`}">${icon("edit")}</button>${deleteAction}</div></div>`;
   }
 
   function renderDnsRules(dns, items = dnsRuleItems(dns)) {
@@ -2282,6 +2359,90 @@
     </div></form>`;
     const footer = `<div class="modal-footer"><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" type="submit" form="dns-rule-form">${icon(existingItem ? "save" : "plus")}${existingItem ? "保存" : "确认添加"}</button></div>`;
     return modalFrame(existingItem ? "编辑 DNS 规则" : "新增 DNS 规则", existingItem ? "更新匹配条件与解析动作，未展示字段会原样保留" : "新规则会添加在规则列表的插入点之后", body, footer, "modal-route-rule modal-dns-rule");
+  }
+
+  function fakeIpDnsServers(dns = dnsConfigValue()) {
+    return (Array.isArray(dns?.servers) ? dns.servers : []).flatMap((server, index) => server?.type === "fakeip" && typeof server.tag === "string" && server.tag.trim()
+      ? [{ ...server, index, tag: server.tag.trim() }]
+      : []);
+  }
+
+  function parseFakeIpDomainSuffixes(value) {
+    return [...new Set(String(value || "").split(/[\n,]+/).map((item) => item.trim().toLowerCase()).filter(Boolean).map((item) => item.startsWith(".") ? item : `.${item}`))];
+  }
+
+  function fakeIpRuleQueryOption(type, title, description, selected) {
+    return `<label class="fakeip-query-option"><input type="checkbox" name="fakeip-query-type" value="${type}" ${selected ? "checked" : ""} /><span><b>${title}</b><small>${description}</small>${icon("check")}</span></label>`;
+  }
+
+  function fakeIpDnsRuleFormValues(form) {
+    const data = new FormData(form);
+    const selectedTypes = new Set(data.getAll("fakeip-query-type").map(String));
+    return {
+      suffixes: parseFakeIpDomainSuffixes(data.get("fakeip-domain-suffixes")),
+      queryTypes: ["A", "AAAA"].filter((type) => selectedTypes.has(type)),
+      server: String(data.get("fakeip-rule-server") || ""),
+    };
+  }
+
+  function updateFakeIpDnsRuleForm(form) {
+    const values = fakeIpDnsRuleFormValues(form);
+    const server = fakeIpDnsServers().find((item) => item.tag === values.server);
+    const valid = values.suffixes.length > 0 && values.queryTypes.length > 0 && Boolean(server);
+    const querySummary = form.querySelector("[data-fakeip-query-summary]");
+    const targetSummary = form.querySelector("[data-fakeip-target-summary]");
+    const inet4 = form.querySelector("[data-fakeip-inet4]");
+    const inet6 = form.querySelector("[data-fakeip-inet6]");
+    const validation = form.querySelector("[data-fakeip-rule-validation]");
+    form.querySelectorAll("[data-fakeip-suffix-summary]").forEach((summary) => { summary.textContent = `${values.suffixes.length} 个排除后缀`; });
+    if (querySummary) querySummary.textContent = values.queryTypes.length ? values.queryTypes.join(" / ") : "未选择";
+    if (targetSummary) targetSummary.textContent = values.server || "未配置";
+    if (inet4) inet4.textContent = String(server?.inet4_range || "未配置");
+    if (inet6) inet6.textContent = String(server?.inet6_range || "未配置");
+    if (validation) {
+      validation.classList.toggle("valid", valid);
+      validation.classList.toggle("invalid", !valid);
+      const message = !values.suffixes.length
+        ? "请至少保留一个不进入 Fake-IP 的域名后缀。"
+        : !values.queryTypes.length
+          ? "请至少选择 A 或 AAAA 一种查询类型。"
+          : !server
+            ? "请先配置并选择一个 Fake-IP DNS 服务器。"
+            : `规则有效 · ${values.suffixes.length} 个排除后缀 · ${values.queryTypes.join(" / ")} → ${server.tag}`;
+      validation.innerHTML = `${icon(valid ? "check" : "info")}<span>${escapeHtml(message)}</span>`;
+    }
+    const submit = form.ownerDocument.querySelector("#dns-fakeip-rule-submit");
+    if (submit) submit.disabled = !valid;
+    return { ...values, serverConfig: server, valid };
+  }
+
+  function fakeIpDnsRuleModal(itemKey = null) {
+    const item = itemKey ? dnsRuleItems().find((candidate) => candidate.key === itemKey) : null;
+    if (!item || item.builtIn !== "fakeip") return dnsRuleModal(itemKey);
+    const parts = fakeIpDnsRuleParts(item.rule) || fakeIpDnsRuleParts(defaultFakeIpDnsRule);
+    const servers = fakeIpDnsServers();
+    const selectedServer = servers.some((server) => server.tag === item.rule.server) ? item.rule.server : servers[0]?.tag || "";
+    const server = servers.find((candidate) => candidate.tag === selectedServer);
+    const supportedQueryTypes = ["A", "AAAA"].filter((type) => parts.queryTypes.includes(type));
+    const queryTypes = new Set(supportedQueryTypes);
+    const canSave = parts.suffixes.length > 0 && queryTypes.size > 0 && Boolean(server);
+    const serverOptions = servers.length
+      ? selectOptionsMarkup(servers.map((candidate) => [candidate.tag, candidate.tag]), selectedServer)
+      : '<option value="">没有可用的 Fake-IP 服务器</option>';
+    const stateLabel = item.enabled ? "当前启用" : "当前停用";
+    const body = `<form class="modal-body fakeip-rule-body" id="dns-fakeip-rule-form" data-form="dns-fakeip-rule" data-key="${escapeHtml(item.key)}">
+      <div class="fakeip-rule-hero"><span class="fakeip-rule-hero-icon">${icon("sparkles")}</span><div><span class="fakeip-rule-kicker">系统内置 · ${stateLabel}</span><strong>仅为公网地址查询分配 Fake-IP</strong><p>保留域名继续真实解析，其余 A / AAAA 查询路由到 Fake-IP 地址池。</p></div><span class="fakeip-rule-lock">${icon("lock")}不可删除</span></div>
+      <div class="fakeip-rule-flow" aria-label="Fake-IP 规则匹配逻辑"><div><em>条件 1</em><strong>域名不在排除清单</strong><span data-fakeip-suffix-summary>${parts.suffixes.length} 个排除后缀</span></div><b>AND</b><div><em>条件 2</em><strong>查询地址记录</strong><span data-fakeip-query-summary>${escapeHtml(supportedQueryTypes.join(" / ") || "未选择")}</span></div><i>${icon("chevron")}</i><div class="target"><em>动作</em><strong>路由至 Fake-IP</strong><span data-fakeip-target-summary>${escapeHtml(selectedServer || "未配置")}</span></div></div>
+      <div class="fakeip-rule-editor-grid">
+        <section class="fakeip-rule-panel fakeip-domain-panel"><div class="fakeip-rule-panel-head"><span>${icon("shield")}</span><div><strong>真实解析域名后缀</strong><small>命中这些后缀时反选条件失败，不进入 Fake-IP。</small></div><b data-fakeip-suffix-summary>${parts.suffixes.length} 个排除后缀</b></div><textarea class="field-textarea" name="fakeip-domain-suffixes" data-modal-initial-focus spellcheck="false" aria-label="不进入 Fake-IP 的域名后缀">${escapeHtml(parts.suffixes.join("\n"))}</textarea><p>每行填写一个后缀；省略开头的 <code>.</code> 时会自动补全。</p></section>
+        <section class="fakeip-rule-panel"><div class="fakeip-rule-panel-head"><span>${icon("dns")}</span><div><strong>查询类型</strong><small>Fake-IP 只响应地址记录查询。</small></div></div><div class="fakeip-query-options">${fakeIpRuleQueryOption("A", "A", "IPv4 地址记录", queryTypes.has("A"))}${fakeIpRuleQueryOption("AAAA", "AAAA", "IPv6 地址记录", queryTypes.has("AAAA"))}</div></section>
+        <section class="fakeip-rule-panel"><div class="fakeip-rule-panel-head"><span>${icon("server")}</span><div><strong>目标 Fake-IP 服务器</strong><small>仅展示 type 为 fakeip 的 DNS 服务器。</small></div></div><select class="field-select" name="fakeip-rule-server" ${servers.length ? "" : "disabled"}>${serverOptions}</select><div class="fakeip-range-grid"><span><small>IPv4 地址池</small><code data-fakeip-inet4>${escapeHtml(String(server?.inet4_range || "未配置"))}</code></span><span><small>IPv6 地址池</small><code data-fakeip-inet6>${escapeHtml(String(server?.inet6_range || "未配置"))}</code></span></div></section>
+      </div>
+      <div class="fakeip-rule-structure"><span>${icon("lock")}</span><div><strong>固定结构</strong><p><code>type: logical</code>、<code>mode: and</code>、域名条件 <code>invert: true</code> 与 <code>action: route</code> 由原型保护，避免破坏 Fake-IP 匹配语义。</p></div><a href="https://sing-box.sagernet.org/zh/configuration/dns/server/fakeip/" target="_blank" rel="noreferrer">sing-box 官方说明${icon("external")}</a></div>
+      <div class="custom-json-validation ${canSave ? "valid" : "invalid"}" data-fakeip-rule-validation>${icon(canSave ? "check" : "info")}<span>${canSave ? `规则有效 · ${parts.suffixes.length} 个排除后缀 · ${escapeHtml(supportedQueryTypes.join(" / "))} → ${escapeHtml(selectedServer)}` : "请先补全排除后缀、查询类型与 Fake-IP 服务器。"}</span></div>
+    </form>`;
+    const footer = `<div class="modal-footer"><span class="modal-footer-note fakeip-footer-note">${icon("lock")}内置规则可停用，但不能删除</span><span class="modal-footer-spacer"></span><button class="btn" data-action="close-modal">取消</button><button class="btn btn-primary" id="dns-fakeip-rule-submit" type="submit" form="dns-fakeip-rule-form" ${canSave ? "" : "disabled"}>${icon("save")}保存 Fake-IP 规则</button></div>`;
+    return modalFrame("编辑内置 Fake-IP 规则", "依据 sing-box FakeIP 服务器与 DNS 逻辑规则设计", body, footer, "modal-route-rule modal-fakeip-rule");
   }
 
   function buildDnsRuleConfig(form, existing = {}) {
@@ -2517,7 +2678,7 @@
     state.editingRouteRuleId = type === "route" ? itemId : null;
     state.editingRouteRulesetId = type === "route-ruleset" ? itemId : null;
     state.editingDnsServerIndex = type === "dns-server" && itemId !== null ? Number(itemId) : null;
-    state.editingDnsRuleKey = type === "dns-rule" ? itemId : null;
+    state.editingDnsRuleKey = ["dns-rule", "dns-fakeip-rule"].includes(type) ? itemId : null;
     state.editingSubscriptionId = type === "subscription" ? itemId : null;
     state.editingResourceRulesetId = type === "resource-ruleset" ? itemId : null;
     state.editingConfigSection = type === "config-section" ? itemId : null;
@@ -2537,6 +2698,7 @@
     else if (type === "route-ruleset") content = routeRulesetModal(itemId);
     else if (type === "config-section") content = configSectionModal(itemId);
     else if (type === "dns-rule") content = dnsRuleModal(itemId);
+    else if (type === "dns-fakeip-rule") content = fakeIpDnsRuleModal(itemId);
     else if (type === "dns-server" || type === "dns") content = dnsServerModal(itemId);
     else if (type === "json") content = jsonModal();
     else if (type === "command") content = commandModal();
@@ -2629,15 +2791,22 @@
   }
 
   function setConfigSectionValue(key, value) {
-    syncStructuredStateFromSection(key, value);
+    let nextValue = cloneData(value);
+    if (key === "dns") {
+      const hasActiveFakeIpRule = Array.isArray(nextValue?.rules) && nextValue.rules.some(isDefaultFakeIpDnsRule);
+      if (hasActiveFakeIpRule) state.dnsDisabledRules = state.dnsDisabledRules.filter((item) => !isDefaultFakeIpDnsRule(item?.rule));
+      nextValue = ensureDefaultFakeIpDnsRule(nextValue);
+    }
+    syncStructuredStateFromSection(key, nextValue);
     const config = currentProfileConfigObject();
-    config[key] = cloneData(value);
+    config[key] = nextValue;
     activeProfile().rawConfig = config;
     state.dirty = true;
   }
 
   function clearConfigSectionValue(key) {
     if (key === "experimental") syncStructuredStateFromSection(key, {});
+    if (key === "dns") state.dnsDisabledRules = [];
     const config = currentProfileConfigObject();
     delete config[key];
     activeProfile().rawConfig = config;
@@ -4011,6 +4180,10 @@
       const position = items.findIndex((item) => item.key === key);
       const item = items[position];
       if (!item) return;
+      if (item.builtIn === "fakeip") {
+        showToast("内置规则不能删除", "Fake-IP 规则可以停用，但必须保留在 DNS 规则列表中。", "info");
+        return;
+      }
       const nextItems = [...items];
       nextItems.splice(position, 1);
       if (item.enabled) dns.rules.splice(item.sourceIndex, 1);
@@ -4481,6 +4654,10 @@
   });
 
   document.addEventListener("input", (event) => {
+    if (event.target.matches('[name="fakeip-domain-suffixes"]')) {
+      const form = event.target.closest("#dns-fakeip-rule-form");
+      if (form) updateFakeIpDnsRuleForm(form);
+    }
     if (event.target.matches("[data-config-section-json]")) {
       updateConfigSectionValidation(event.target);
     }
@@ -4532,6 +4709,11 @@
   });
 
   document.addEventListener("change", (event) => {
+    if (event.target.matches('input[name="fakeip-query-type"], select[name="fakeip-rule-server"]')) {
+      const form = event.target.closest("#dns-fakeip-rule-form");
+      if (form) updateFakeIpDnsRuleForm(form);
+      return;
+    }
     if (event.target.matches("[data-dns-field]")) {
       const dns = cloneData(dnsConfigValue());
       const key = event.target.dataset.dnsField;
@@ -4570,7 +4752,11 @@
       storeDnsDisabledRules(nextItems);
       setConfigSectionValue("dns", dns);
       render();
-      showToast(event.target.checked ? "DNS 规则已启用" : "DNS 规则已停用", event.target.checked ? "规则已恢复到实际 DNS JSON。" : "规则只保留在草稿编辑状态中。", "info");
+      if (item.builtIn === "fakeip") {
+        showToast(event.target.checked ? "内置 Fake-IP 规则已启用" : "内置 Fake-IP 规则已停用", event.target.checked ? "规则已恢复到实际 DNS JSON，仍保持不可删除。" : "规则保留在列表中，可随时重新启用。", "info");
+      } else {
+        showToast(event.target.checked ? "DNS 规则已启用" : "DNS 规则已停用", event.target.checked ? "规则已恢复到实际 DNS JSON。" : "规则只保留在草稿编辑状态中。", "info");
+      }
       return;
     }
     if (event.target.matches("[data-dns-rule-type]")) {
@@ -4870,6 +5056,34 @@
       closeModal();
       render();
       showToast(existing ? "DNS 服务器已更新" : "DNS 服务器已添加", `${server.tag}（${server.type}）已写入当前配置草稿。`, "success");
+    } else if (type === "dns-fakeip-rule") {
+      const dns = cloneData(dnsConfigValue());
+      if (!Array.isArray(dns.rules)) dns.rules = [];
+      const items = dnsRuleItems(dns);
+      const key = form.dataset.key || "";
+      const position = items.findIndex((item) => item.key === key);
+      const existingItem = items[position];
+      const values = updateFakeIpDnsRuleForm(form);
+      if (!existingItem || existingItem.builtIn !== "fakeip") {
+        showToast("无法识别内置规则", "请关闭弹窗后重新打开 Fake-IP 规则。", "info");
+        return;
+      }
+      if (!values.valid) {
+        showToast("Fake-IP 规则尚未完成", "请检查排除后缀、查询类型与目标服务器。", "info");
+        return;
+      }
+      const rule = cloneData(defaultFakeIpDnsRule);
+      rule.rules[0].domain_suffix = values.suffixes;
+      rule.rules[1].query_type = values.queryTypes;
+      rule.server = values.server;
+      const nextItems = [...items];
+      if (existingItem.enabled) dns.rules.splice(existingItem.sourceIndex, 1, rule);
+      nextItems[position] = { ...existingItem, rule };
+      storeDnsDisabledRules(nextItems);
+      setConfigSectionValue("dns", dns);
+      closeModal();
+      render();
+      showToast("Fake-IP 规则已更新", `${values.queryTypes.join(" / ")} 查询将路由至 ${values.server}，并排除 ${values.suffixes.length} 个域名后缀。`, "success");
     } else if (type === "dns-rule") {
       const dns = cloneData(dnsConfigValue());
       if (!Array.isArray(dns.rules)) dns.rules = [];

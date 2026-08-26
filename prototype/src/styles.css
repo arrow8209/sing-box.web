@@ -4399,6 +4399,14 @@ svg {
   opacity: 0.48;
 }
 
+.dns-rule-row.is-protected {
+  background: linear-gradient(90deg, color-mix(in srgb, var(--orange-soft) 62%, transparent), transparent 58%);
+}
+
+.dns-rule-row.is-protected.is-disabled {
+  opacity: 0.64;
+}
+
 .dns-rule-switch {
   position: relative;
   display: block;
@@ -4459,6 +4467,13 @@ svg {
   min-width: 0;
 }
 
+.dns-rule-title-line {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 7px;
+}
+
 .dns-rule-copy strong,
 .dns-rule-copy small {
   display: block;
@@ -4468,6 +4483,7 @@ svg {
 }
 
 .dns-rule-copy strong {
+  min-width: 0;
   color: var(--text);
   font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
   font-size: 10px;
@@ -4478,6 +4494,32 @@ svg {
   margin-top: 3px;
   color: var(--text-faint);
   font-size: 8px;
+}
+
+.dns-rule-system-badge {
+  display: inline-flex;
+  min-height: 20px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: var(--orange);
+  background: var(--orange-soft);
+  font-size: 7px;
+  font-weight: 700;
+}
+
+.dns-rule-system-badge .icon {
+  width: 9px;
+  height: 9px;
+}
+
+.dns-row-actions button.dns-rule-protected-action:disabled {
+  color: var(--orange);
+  background: var(--orange-soft);
+  cursor: not-allowed;
+  opacity: 0.72;
 }
 
 .dns-insertion-point {
@@ -4583,6 +4625,421 @@ svg {
 
 .dns-ruleset-choices {
   margin-bottom: 8px;
+}
+
+.fakeip-rule-body {
+  display: grid;
+  gap: 12px;
+  padding-top: 14px;
+}
+
+.fakeip-rule-hero {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+  padding: 13px 14px;
+  border: 1px solid color-mix(in srgb, var(--orange) 19%, var(--line));
+  border-radius: 12px;
+  background: linear-gradient(120deg, var(--orange-soft), color-mix(in srgb, var(--surface) 92%, var(--orange-soft)));
+}
+
+.fakeip-rule-hero-icon {
+  display: grid;
+  width: 39px;
+  height: 39px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 11px;
+  color: var(--orange);
+  background: var(--surface);
+  box-shadow: var(--shadow-sm);
+}
+
+.fakeip-rule-hero-icon .icon {
+  width: 19px;
+  height: 19px;
+}
+
+.fakeip-rule-hero > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.fakeip-rule-kicker,
+.fakeip-rule-hero strong,
+.fakeip-rule-hero p {
+  display: block;
+}
+
+.fakeip-rule-kicker {
+  margin-bottom: 2px;
+  color: var(--orange);
+  font-size: 8px;
+  font-weight: 720;
+}
+
+.fakeip-rule-hero strong {
+  color: var(--text);
+  font-size: 12px;
+}
+
+.fakeip-rule-hero p {
+  margin: 3px 0 0;
+  color: var(--text-soft);
+  font-size: 9px;
+}
+
+.fakeip-rule-lock {
+  display: inline-flex;
+  min-height: 26px;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 8px;
+  border-radius: 999px;
+  color: var(--orange);
+  background: var(--surface);
+  font-size: 8px;
+  font-weight: 680;
+}
+
+.fakeip-rule-lock .icon {
+  width: 11px;
+  height: 11px;
+}
+
+.fakeip-rule-flow {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto minmax(0, 0.8fr) auto minmax(0, 0.8fr);
+  align-items: stretch;
+  gap: 7px;
+  padding: 9px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--surface-soft);
+}
+
+.fakeip-rule-flow > div {
+  display: grid;
+  min-width: 0;
+  min-height: 63px;
+  align-content: center;
+  padding: 9px 10px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+}
+
+.fakeip-rule-flow > div.target {
+  border-color: color-mix(in srgb, var(--orange) 24%, var(--line));
+  background: var(--orange-soft);
+}
+
+.fakeip-rule-flow em,
+.fakeip-rule-flow strong,
+.fakeip-rule-flow span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fakeip-rule-flow em {
+  color: var(--text-faint);
+  font-size: 7px;
+  font-style: normal;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.fakeip-rule-flow strong {
+  margin-top: 2px;
+  color: var(--text);
+  font-size: 9px;
+}
+
+.fakeip-rule-flow span {
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.fakeip-rule-flow > b,
+.fakeip-rule-flow > i {
+  display: grid;
+  width: 28px;
+  place-items: center;
+  align-self: center;
+  color: var(--primary);
+  font-size: 7px;
+  font-style: normal;
+}
+
+.fakeip-rule-flow > b {
+  height: 28px;
+  border-radius: 50%;
+  background: var(--primary-soft);
+}
+
+.fakeip-rule-flow > i .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.fakeip-rule-editor-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1.08fr) minmax(270px, 0.92fr);
+  gap: 9px;
+}
+
+.fakeip-rule-panel {
+  min-width: 0;
+  padding: 11px;
+  border: 1px solid var(--line);
+  border-radius: 11px;
+  background: var(--surface-soft);
+}
+
+.fakeip-domain-panel {
+  grid-row: span 2;
+}
+
+.fakeip-rule-panel-head {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 9px;
+}
+
+.fakeip-rule-panel-head > span {
+  display: grid;
+  width: 29px;
+  height: 29px;
+  flex: 0 0 auto;
+  place-items: center;
+  border-radius: 8px;
+  color: var(--primary);
+  background: var(--primary-soft);
+}
+
+.fakeip-rule-panel-head > span .icon {
+  width: 14px;
+  height: 14px;
+}
+
+.fakeip-rule-panel-head > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.fakeip-rule-panel-head strong,
+.fakeip-rule-panel-head small {
+  display: block;
+}
+
+.fakeip-rule-panel-head strong {
+  color: var(--text);
+  font-size: 10px;
+}
+
+.fakeip-rule-panel-head small {
+  margin-top: 1px;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.fakeip-rule-panel-head > b {
+  flex: 0 0 auto;
+  color: var(--primary);
+  font-size: 8px;
+}
+
+.fakeip-domain-panel textarea {
+  min-height: 172px;
+  resize: vertical;
+  background: var(--surface);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 9px;
+  line-height: 1.6;
+}
+
+.fakeip-domain-panel > p {
+  margin: 7px 1px 0;
+  color: var(--text-faint);
+  font-size: 8px;
+}
+
+.fakeip-domain-panel > p code {
+  color: var(--primary);
+}
+
+.fakeip-query-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 7px;
+}
+
+.fakeip-query-option input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  opacity: 0;
+}
+
+.fakeip-query-option > span {
+  position: relative;
+  display: block;
+  min-height: 53px;
+  padding: 9px 27px 8px 9px;
+  border: 1px solid var(--line);
+  border-radius: 9px;
+  background: var(--surface);
+  cursor: pointer;
+}
+
+.fakeip-query-option b,
+.fakeip-query-option small {
+  display: block;
+}
+
+.fakeip-query-option b {
+  color: var(--text);
+  font-family: ui-monospace, monospace;
+  font-size: 10px;
+}
+
+.fakeip-query-option small {
+  margin-top: 3px;
+  color: var(--text-faint);
+  font-size: 7px;
+}
+
+.fakeip-query-option .icon {
+  position: absolute;
+  top: 9px;
+  right: 9px;
+  width: 13px;
+  height: 13px;
+  color: transparent;
+}
+
+.fakeip-query-option input:checked + span {
+  color: var(--primary);
+  border-color: color-mix(in srgb, var(--primary) 36%, var(--line));
+  background: var(--primary-soft);
+}
+
+.fakeip-query-option input:checked + span .icon {
+  color: var(--primary);
+}
+
+.fakeip-query-option input:focus-visible + span {
+  outline: 3px solid color-mix(in srgb, var(--primary) 20%, transparent);
+}
+
+.fakeip-rule-panel > .field-select {
+  width: 100%;
+  background-color: var(--surface);
+}
+
+.fakeip-range-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 6px;
+  margin-top: 7px;
+}
+
+.fakeip-range-grid > span {
+  min-width: 0;
+  padding: 7px 8px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--surface);
+}
+
+.fakeip-range-grid small,
+.fakeip-range-grid code {
+  display: block;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.fakeip-range-grid small {
+  color: var(--text-faint);
+  font-size: 7px;
+}
+
+.fakeip-range-grid code {
+  margin-top: 3px;
+  color: var(--orange);
+  font-size: 8px;
+}
+
+.fakeip-rule-structure {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  padding: 10px 11px;
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: var(--surface-soft);
+}
+
+.fakeip-rule-structure > .icon {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  margin-top: 1px;
+  color: var(--orange);
+}
+
+.fakeip-rule-structure > div {
+  min-width: 0;
+  flex: 1;
+}
+
+.fakeip-rule-structure strong {
+  display: block;
+  color: var(--text);
+  font-size: 9px;
+}
+
+.fakeip-rule-structure p {
+  margin: 2px 0 0;
+  color: var(--text-faint);
+  font-size: 8px;
+  line-height: 1.55;
+}
+
+.fakeip-rule-structure code {
+  color: var(--primary);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.fakeip-rule-structure a {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 4px;
+  color: var(--primary);
+  font-size: 8px;
+  font-weight: 650;
+}
+
+.fakeip-rule-structure a .icon {
+  width: 11px;
+  height: 11px;
+}
+
+.fakeip-rule-body > .custom-json-validation {
+  margin-top: 0;
+}
+
+.fakeip-footer-note {
+  gap: 5px;
+  color: var(--orange);
 }
 
 /* Subscription */
@@ -8992,6 +9449,14 @@ svg {
 }
 
 @media (max-width: 768px) {
+  .fakeip-rule-editor-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .fakeip-domain-panel {
+    grid-row: auto;
+  }
+
   .dns-workbench-head {
     align-items: flex-start;
     flex-direction: column;
@@ -9032,6 +9497,50 @@ svg {
 }
 
 @media (max-width: 560px) {
+  .fakeip-rule-hero {
+    align-items: flex-start;
+    flex-wrap: wrap;
+    padding: 11px;
+  }
+
+  .fakeip-rule-hero > div {
+    flex-basis: calc(100% - 52px);
+  }
+
+  .fakeip-rule-lock {
+    margin-left: 51px;
+  }
+
+  .fakeip-rule-flow {
+    grid-template-columns: 1fr;
+  }
+
+  .fakeip-rule-flow > b,
+  .fakeip-rule-flow > i {
+    width: 100%;
+    height: 20px;
+  }
+
+  .fakeip-rule-flow > b {
+    border-radius: 6px;
+  }
+
+  .fakeip-rule-flow > i .icon {
+    transform: rotate(90deg);
+  }
+
+  .fakeip-rule-structure {
+    flex-wrap: wrap;
+  }
+
+  .fakeip-rule-structure a {
+    margin-left: 24px;
+  }
+
+  .fakeip-footer-note {
+    display: none;
+  }
+
   .dns-general-section {
     padding: 8px;
   }
@@ -9115,6 +9624,11 @@ svg {
 }
 
 @media (max-width: 380px) {
+  .fakeip-query-options,
+  .fakeip-range-grid {
+    grid-template-columns: 1fr;
+  }
+
   .route-segmented.dns-server-types,
   .route-segmented.four,
   .dns-ruleset-choices {
