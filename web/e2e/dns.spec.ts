@@ -56,8 +56,9 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
   await page.getByLabel("DNS 客户端子网").fill("1.2.3.0/24");
   await page.getByLabel("DNS 客户端子网").press("Tab");
 
-  const sections = page.locator(".dns-section-tabs");
-  await sections.getByRole("button", { name: /服务器/ }).click();
+  await expect(page.locator(".dns-section-tabs")).toHaveCount(0);
+  await expect(page.getByText("上游 DNS 服务器", { exact: true })).toBeVisible();
+  await expect(page.getByText("DNS 规则", { exact: true })).toBeVisible();
   await expect(page.locator(".server-row")).toHaveCount(5);
   await expect(page.locator(".server-row").nth(0)).toContainText("Fake-IP");
   await expect(page.locator(".server-row").nth(0)).toContainText("fake-ip://198.18.0.0/15,fc00::/18");
@@ -71,12 +72,44 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
   await dialog.getByRole("button", { name: "保存" }).click();
   await expect(page.locator(".server-row").nth(3)).toContainText("Remote-DNS-E2E");
 
-  await sections.getByRole("button", { name: /规则/ }).click();
-  await expect(page.locator(".dns-rule-row")).toHaveCount(4);
+  await expect(page.locator(".dns-rule-row")).toHaveCount(5);
   await expect(page.locator(".dns-insertion-point")).toBeVisible();
   await expect(page.locator(".dns-rule-row").nth(0)).toContainText("clash_mode, direct, route, Local-DNS");
   await expect(page.locator(".dns-rule-row").nth(1)).toContainText("clash_mode, global, route, Remote-DNS-E2E");
   await expect(page.locator(".dns-rule-row").nth(2)).toContainText("GeoSite-CN");
+
+  let fakeIpRule = page.locator('[data-dns-rule-kind="fakeip"]');
+  await expect(fakeIpRule).toContainText("Fake-IP 地址映射");
+  await expect(fakeIpRule).toContainText("排除 10 个后缀 · A / AAAA → Fake-IP");
+  await expect(fakeIpRule.getByRole("button", { name: "内置 Fake-IP 规则不能删除" })).toBeDisabled();
+  await fakeIpRule.getByRole("button", { name: "编辑内置 Fake-IP 规则" }).click();
+  dialog = page.getByRole("dialog", { name: "编辑内置 Fake-IP 规则" });
+  await expect(dialog.getByText("系统内置 · 当前启用")).toBeVisible();
+  await expect(dialog.getByLabel("目标 Fake-IP 服务器").locator("option")).toHaveCount(1);
+  await expect(dialog).toContainText("198.18.0.0/15");
+  await dialog.getByLabel("不进入 Fake-IP 的域名后缀").fill("lan\nlocal\nDNS-E2E.EXAMPLE");
+  const aaaaQuery = dialog.getByLabel("Fake-IP 查询类型 AAAA");
+  await aaaaQuery.locator("..").click();
+  await expect(aaaaQuery).not.toBeChecked();
+  await dialog.getByRole("button", { name: "保存 Fake-IP 规则" }).click();
+  fakeIpRule = page.locator('[data-dns-rule-kind="fakeip"]');
+  await expect(fakeIpRule).toContainText("排除 3 个后缀 · A → Fake-IP");
+
+  await fakeIpRule.getByRole("checkbox", { name: "停用内置 Fake-IP 规则" }).locator("..").click();
+  await expect(fakeIpRule).toHaveClass(/is-disabled/);
+  await expect(page.locator(".save-status")).toContainText("草稿已保存");
+  let persisted = await persistedDraft(page);
+  const disabledDns = JSON.parse(persisted.buffers.dns) as { rules: Array<Record<string, unknown>> };
+  expect(disabledDns.rules.some((rule) => rule.type === "logical" && rule.server === "Fake-IP")).toBe(false);
+  expect((persisted.editorState?.dns as { disabledRules?: Array<{ text: string }> })?.disabledRules?.[0]?.text).toContain("dns-e2e.example");
+
+  await page.reload();
+  await page.getByRole("tab", { name: "DNS", exact: true }).click();
+  fakeIpRule = page.locator('[data-dns-rule-kind="fakeip"]');
+  await expect(fakeIpRule).toHaveClass(/is-disabled/);
+  await fakeIpRule.getByRole("checkbox", { name: "启用内置 Fake-IP 规则" }).locator("..").click();
+  await expect(fakeIpRule).not.toHaveClass(/is-disabled/);
+  await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
   await page.getByRole("button", { name: "新增规则" }).click();
   dialog = page.getByRole("dialog", { name: "新增 DNS 规则" });
@@ -84,14 +117,14 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
   await dialog.getByLabel("DNS 匹配内容").fill("dns-e2e.example");
   await dialog.getByLabel("目标 DNS 服务器").selectOption("Remote-DNS-E2E");
   await dialog.getByRole("button", { name: "确认添加" }).click();
-  await expect(page.locator(".dns-rule-row")).toHaveCount(5);
+  await expect(page.locator(".dns-rule-row")).toHaveCount(6);
   let customRule = page.locator(".dns-rule-row").filter({ hasText: "dns-e2e.example" });
   await expect(customRule).toBeVisible();
-  await customRule.getByRole("checkbox", { name: /停用第/ }).uncheck();
+  await customRule.getByRole("checkbox", { name: /停用第/ }).locator("..").click();
   await expect(customRule).toHaveClass(/is-disabled/);
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
-  let persisted = await persistedDraft(page);
+  persisted = await persistedDraft(page);
   let savedDns = JSON.parse(persisted.buffers.dns) as {
     disable_cache: boolean;
     strategy?: string;
@@ -104,17 +137,17 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
   expect(savedDns.servers[3]?.tag).toBe("Remote-DNS-E2E");
   expect(savedDns.rules.some((rule) => rule.domain_suffix === "dns-e2e.example" || (Array.isArray(rule.domain_suffix) && rule.domain_suffix.includes("dns-e2e.example")))).toBe(false);
   expect(savedDns.rules[1]?.server).toBe("Remote-DNS-E2E");
-  expect(savedDns.rules[3]?.server).toBe("Remote-DNS-E2E");
+  expect(savedDns.rules[3]).toMatchObject({ type: "logical", server: "Fake-IP" });
+  expect(savedDns.rules[4]?.server).toBe("Remote-DNS-E2E");
   const dnsState = persisted.editorState?.dns as { insertionPosition?: number; disabledRules?: Array<{ text: string }> } | undefined;
   expect(dnsState?.insertionPosition).toBe(2);
   expect(dnsState?.disabledRules?.[0]?.text).toContain("dns-e2e.example");
 
   await page.reload();
   await page.getByRole("tab", { name: "DNS", exact: true }).click();
-  await page.locator(".dns-section-tabs").getByRole("button", { name: /规则/ }).click();
   customRule = page.locator(".dns-rule-row").filter({ hasText: "dns-e2e.example" });
   await expect(customRule).toHaveClass(/is-disabled/);
-  await customRule.getByRole("checkbox", { name: /启用第/ }).click();
+  await customRule.getByRole("checkbox", { name: /启用第/ }).locator("..").click();
   await expect(customRule).not.toHaveClass(/is-disabled/);
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
@@ -132,7 +165,7 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
   ] as const) {
     await page.setViewportSize({ width: scenario.width, height: scenario.height });
     await page.evaluate((theme) => { document.documentElement.dataset.theme = theme; }, scenario.theme);
-    await expect(page.locator(".dns-workbench")).toBeVisible();
+    await expect(page.locator(".dns-panel")).toBeVisible();
     const layout = await page.evaluate(() => ({
       scrollWidth: document.documentElement.scrollWidth,
       clientWidth: document.documentElement.clientWidth,
@@ -144,6 +177,12 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
       }).slice(0, 5)
     }));
     expect(layout.scrollWidth, JSON.stringify(layout.offenders)).toBeLessThanOrEqual(layout.clientWidth);
+    await page.locator('[data-dns-rule-kind="fakeip"]').getByRole("button", { name: "编辑内置 Fake-IP 规则" }).click();
+    const responsiveFakeIpDialog = page.getByRole("dialog", { name: "编辑内置 Fake-IP 规则" });
+    await expect(responsiveFakeIpDialog.getByLabel("不进入 Fake-IP 的域名后缀")).toBeFocused();
+    expect(await responsiveFakeIpDialog.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
+    await page.keyboard.press("Escape");
+    await expect(responsiveFakeIpDialog).toBeHidden();
     await page.getByRole("button", { name: "新增规则" }).click();
     const responsiveDialog = page.getByRole("dialog", { name: "新增 DNS 规则" });
     await expect(responsiveDialog.getByLabel("DNS 规则类型")).toBeFocused();

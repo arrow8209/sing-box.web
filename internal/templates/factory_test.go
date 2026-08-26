@@ -2,6 +2,7 @@ package templates
 
 import (
 	"bytes"
+	"encoding/json"
 	"os"
 	"testing"
 	"time"
@@ -51,5 +52,35 @@ func TestFactoryDoesNotReadTempAtRuntime(t *testing.T) {
 	}
 	if _, err := factory.NewProfileSeed(time.Now()); err != nil {
 		t.Fatal(err)
+	}
+}
+
+func TestDefaultProfileIncludesProtectedFakeIPRule(t *testing.T) {
+	seed, err := newTestFactory(t).NewProfileSeed(time.Unix(1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var dns struct {
+		Rules []struct {
+			Action string           `json:"action"`
+			Type   string           `json:"type"`
+			Mode   string           `json:"mode"`
+			Server string           `json:"server"`
+			Rules  []map[string]any `json:"rules"`
+		} `json:"rules"`
+	}
+	if err := json.Unmarshal(seed.Config["dns"], &dns); err != nil {
+		t.Fatal(err)
+	}
+	if len(dns.Rules) != 5 {
+		t.Fatalf("default DNS rules=%d, want 5", len(dns.Rules))
+	}
+	fakeIP := dns.Rules[3]
+	if fakeIP.Action != "route" || fakeIP.Type != "logical" || fakeIP.Mode != "and" || fakeIP.Server != "Fake-IP" || len(fakeIP.Rules) != 2 {
+		t.Fatalf("invalid default Fake-IP rule: %+v", fakeIP)
+	}
+	domainSuffixes, ok := fakeIP.Rules[0]["domain_suffix"].([]any)
+	if !ok || len(domainSuffixes) != 10 || fakeIP.Rules[0]["invert"] != true {
+		t.Fatalf("invalid Fake-IP exclusions: %+v", fakeIP.Rules[0])
 	}
 }

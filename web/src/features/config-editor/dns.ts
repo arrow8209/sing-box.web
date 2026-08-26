@@ -54,6 +54,24 @@ export const dnsRuleActionOptions = [
   { value: "predefined", label: "返回预定义响应", shortLabel: "预定义", icon: "dns" }
 ] as const;
 
+export const defaultFakeIpDomainSuffixes = [
+  ".lan",
+  ".localdomain",
+  ".example",
+  ".invalid",
+  ".localhost",
+  ".test",
+  ".local",
+  ".home.arpa",
+  ".msftconnecttest.com",
+  ".msftncsi.com"
+] as const;
+
+export interface FakeIpDnsRuleParts {
+  suffixes: string[];
+  queryTypes: string[];
+}
+
 export interface DisabledDnsRuleState {
   id: string;
   position: number;
@@ -99,6 +117,65 @@ export function parseDnsObjectText(text: string): DnsObject | null {
   const errors: ParseError[] = [];
   const value = parse(text, errors, { allowTrailingComma: false, disallowComments: true });
   return errors.length === 0 && isDnsObject(value) ? value : null;
+}
+
+export function createDefaultFakeIpDnsRule(
+  suffixes: readonly string[] = defaultFakeIpDomainSuffixes,
+  queryTypes: readonly string[] = ["A", "AAAA"],
+  server = "Fake-IP"
+): DnsRule {
+  return {
+    action: "route",
+    type: "logical",
+    mode: "and",
+    rules: [
+      { domain_suffix: [...suffixes], invert: true },
+      { query_type: [...queryTypes] }
+    ],
+    server
+  };
+}
+
+export function fakeIpDnsRuleParts(rule: unknown): FakeIpDnsRuleParts | null {
+  if (!isDnsObject(rule) || rule.action !== "route" || rule.type !== "logical" || rule.mode !== "and" || !Array.isArray(rule.rules) || rule.rules.length !== 2) return null;
+  const [domainRule, queryRule] = rule.rules;
+  if (!isDnsObject(domainRule) || domainRule.invert !== true || !Array.isArray(domainRule.domain_suffix)) return null;
+  if (!isDnsObject(queryRule) || !Array.isArray(queryRule.query_type)) return null;
+  return {
+    suffixes: domainRule.domain_suffix.map(String),
+    queryTypes: queryRule.query_type.map(String)
+  };
+}
+
+export function isDefaultFakeIpDnsRule(rule: unknown): boolean {
+  return fakeIpDnsRuleParts(rule) !== null;
+}
+
+export function parseFakeIpDomainSuffixes(value: unknown): string[] {
+  return [...new Set(String(value ?? "")
+    .split(/[\n,]+/)
+    .map((item) => item.trim().toLowerCase())
+    .filter(Boolean)
+    .map((item) => item.startsWith(".") ? item : `.${item}`))];
+}
+
+function disabledDnsRuleTexts(value: unknown): string[] {
+  if (!isDnsObject(value) || value.version !== 1 || !Array.isArray(value.disabledRules)) return [];
+  return value.disabledRules.flatMap((item) => isDnsObject(item) && typeof item.text === "string" ? [item.text] : []);
+}
+
+export function ensureDefaultFakeIpDnsRuleText(text: string, state?: unknown): string {
+  const source = sourceText(text);
+  const dns = parseDnsObjectText(source);
+  if (!dns || (dns.rules !== undefined && !Array.isArray(dns.rules))) return source;
+  if (dnsRules(dns).some(isDefaultFakeIpDnsRule)) return source;
+  if (disabledDnsRuleTexts(state).some((item) => isDefaultFakeIpDnsRule(parseDnsObjectText(item)))) return source;
+  const rules = dnsRules(dns);
+  const remoteRuleIndex = rules.findIndex((rule) => isDnsObject(rule)
+    && Array.isArray(rule.rule_set)
+    && rule.rule_set.includes("GeoLocation-!CN"));
+  const insertion = remoteRuleIndex >= 0 ? remoteRuleIndex : Math.min(3, rules.length);
+  return insertDnsRuleText(source, insertion, JSON.stringify(createDefaultFakeIpDnsRule(), null, 2));
 }
 
 export function dnsServers(dns: unknown): unknown[] {
@@ -331,6 +408,25 @@ export function restoreDnsEditorState(value: unknown, activeRuleCount: number): 
   return {
     version: 1,
     insertionPosition: Math.max(0, Math.min(requestedInsertion, total)),
+    disabledRules
+  };
+}
+
+export function reconcileDnsEditorState(value: unknown, dns: unknown): DnsEditorState {
+  const activeRules = dnsRules(dns);
+  const restored = restoreDnsEditorState(value, activeRules.length);
+  if (!activeRules.some(isDefaultFakeIpDnsRule)) return restored;
+  const removedPositions = restored.disabledRules
+    .filter((item) => isDefaultFakeIpDnsRule(parseDnsObjectText(item.text)))
+    .map((item) => item.position);
+  if (!removedPositions.length) return restored;
+  const shift = (position: number) => removedPositions.filter((removed) => removed < position).length;
+  const disabledRules = restored.disabledRules
+    .filter((item) => !removedPositions.includes(item.position))
+    .map((item) => ({ ...item, position: item.position - shift(item.position) }));
+  return {
+    version: 1,
+    insertionPosition: Math.max(0, restored.insertionPosition - shift(restored.insertionPosition)),
     disabledRules
   };
 }

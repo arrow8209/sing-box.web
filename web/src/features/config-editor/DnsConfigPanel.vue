@@ -6,6 +6,7 @@ import type { Draft } from "@/features/profiles/types";
 import { useRuleResourceStore } from "@/features/rule-resources/store";
 import DnsRuleEditorDialog from "./DnsRuleEditorDialog.vue";
 import DnsServerEditorDialog from "./DnsServerEditorDialog.vue";
+import FakeIpDnsRuleDialog from "./FakeIpDnsRuleDialog.vue";
 import {
   createDnsStateId,
   dnsArrayItemText,
@@ -20,13 +21,16 @@ import {
   dnsServers,
   dnsServerTags,
   dnsServerType,
+  ensureDefaultFakeIpDnsRuleText,
+  fakeIpDnsRuleParts,
   insertDnsRuleText,
+  isDefaultFakeIpDnsRule,
   isDnsObject,
   parseDnsObjectText,
+  reconcileDnsEditorState,
   removeDnsArrayItem,
   renameDnsServerInRuleText,
   renameDnsServerTagInBuffer,
-  restoreDnsEditorState,
   updateDnsBoolean,
   updateDnsString,
   upsertDnsArrayItemText,
@@ -48,10 +52,10 @@ import {
 const props = defineProps<{ draft: Draft; error?: string }>();
 const emit = defineEmits<{ editJson: []; save: [payload: DnsPanelSave] }>();
 const resourceStore = useRuleResourceStore();
-const activeSection = ref<"general" | "servers" | "rules">("general");
 const serverEditorOpen = ref(false);
 const editingServerIndex = ref<number | null>(null);
 const ruleEditorOpen = ref(false);
+const fakeIpRuleEditorOpen = ref(false);
 const editingRuleKey = ref<string | null>(null);
 const resourceError = ref("");
 const notice = ref("");
@@ -64,6 +68,7 @@ interface DnsRuleViewItem {
   rule: DnsRule | null;
   sourceIndex?: number;
   disabledId?: string;
+  builtIn?: "fakeip";
 }
 
 interface DnsRuleMarker {
@@ -71,7 +76,13 @@ interface DnsRuleMarker {
   marker: true;
 }
 
-const dns = computed<DnsObject>(() => isDnsObject(props.draft.config.dns) ? props.draft.config.dns : {});
+const sourceDns = computed<DnsObject>(() => isDnsObject(props.draft.config.dns) ? props.draft.config.dns : {});
+const sourceBuffer = computed(() => {
+  const source = props.draft.buffers.dns;
+  return source?.trim() ? source : JSON.stringify(sourceDns.value, null, 2);
+});
+const normalizedBuffer = computed(() => ensureDefaultFakeIpDnsRuleText(sourceBuffer.value, props.draft.editorState?.dns));
+const dns = computed<DnsObject>(() => parseDnsObjectText(normalizedBuffer.value) ?? sourceDns.value);
 const invalidDnsObject = computed(() => props.draft.config.dns !== undefined && !isDnsObject(props.draft.config.dns));
 const rawServers = computed(() => dnsServers(dns.value));
 const activeRules = computed(() => dnsRules(dns.value));
@@ -92,7 +103,7 @@ const finalOptions = computed(() => [...new Set([
   ...(finalServer.value && !serverTags.value.includes(finalServer.value) ? [finalServer.value] : []),
   ...serverTags.value
 ])]);
-const editorState = computed(() => restoreDnsEditorState(props.draft.editorState?.dns, activeRules.value.length));
+const editorState = computed(() => reconcileDnsEditorState(props.draft.editorState?.dns, dns.value));
 
 const serverItems = computed(() => rawServers.value.map((value, index) => ({
   index,
@@ -124,7 +135,14 @@ const ruleItems = computed<DnsRuleViewItem[]>(() => {
       rule: parseDnsObjectText(item.text)
     });
   }
-  return result;
+  let builtInAssigned = false;
+  return result.map((item) => {
+    if (!builtInAssigned && isDefaultFakeIpDnsRule(item.rule)) {
+      builtInAssigned = true;
+      return { ...item, builtIn: "fakeip" };
+    }
+    return item;
+  });
 });
 const listItems = computed<Array<DnsRuleViewItem | DnsRuleMarker>>(() => {
   const result: Array<DnsRuleViewItem | DnsRuleMarker> = [...ruleItems.value];
@@ -132,6 +150,7 @@ const listItems = computed<Array<DnsRuleViewItem | DnsRuleMarker>>(() => {
   return result;
 });
 const editingRule = computed(() => ruleItems.value.find((item) => item.key === editingRuleKey.value) ?? null);
+const fakeIpServers = computed<DnsServer[]>(() => serverItems.value.flatMap((item) => item.server && dnsServerType(item.server) === "fakeip" ? [item.server] : []));
 const ruleSetOptions = computed<RouteRuleSetOption[]>(() => {
   const options = buildRouteRuleSetOptions(props.draft.config.route, props.draft.bindings, resourceStore.resources.value);
   const known = new Set(options.map((option) => option.tag));
@@ -158,8 +177,7 @@ function show(message: string, tone: "info" | "error" | "success" = "info"): voi
 }
 
 function bufferText(): string {
-  const source = props.draft.buffers.dns;
-  return source?.trim() ? source : JSON.stringify(dns.value, null, 2);
+  return normalizedBuffer.value;
 }
 
 function bindings() {
@@ -182,8 +200,9 @@ function save(text: string, state = stateFrom(), nextBindings = bindings(), rena
   emit("save", { text, editorState: state, bindings: nextBindings, renamed });
 }
 
-function selectSection(section: "general" | "servers" | "rules"): void {
-  activeSection.value = section;
+function editJson(): void {
+  if (normalizedBuffer.value !== sourceBuffer.value) save(normalizedBuffer.value, editorState.value);
+  emit("editJson");
 }
 
 function toggleGeneral(key: "disable_cache" | "disable_expire" | "independent_cache", value: boolean, label: string): void {
@@ -242,11 +261,13 @@ function openRuleEditor(key: string | null): void {
   const item = key ? ruleItems.value.find((candidate) => candidate.key === key) : null;
   if (key && !item?.rule) return;
   editingRuleKey.value = key;
-  ruleEditorOpen.value = true;
+  if (item?.builtIn === "fakeip") fakeIpRuleEditorOpen.value = true;
+  else ruleEditorOpen.value = true;
 }
 
 function closeRuleEditor(): void {
   ruleEditorOpen.value = false;
+  fakeIpRuleEditorOpen.value = false;
   editingRuleKey.value = null;
 }
 
@@ -268,11 +289,15 @@ function submitRule(result: DnsRuleEditorResult): void {
     state = stateFrom(nextItems, insertion);
   }
   save(text, state, mergeSelectedRuleBindings(props.draft.bindings, ruleSetOptions.value, result.resourceIds));
-  show(item ? "DNS 规则已更新。" : "DNS 规则已添加到插入点之后。", "success");
+  show(item?.builtIn === "fakeip" ? "内置 Fake-IP 规则已更新。" : item ? "DNS 规则已更新。" : "DNS 规则已添加到插入点之后。", "success");
   closeRuleEditor();
 }
 
 function removeRule(item: DnsRuleViewItem): void {
+  if (item.builtIn === "fakeip") {
+    show("内置 Fake-IP 规则可以停用，但不能删除。", "info");
+    return;
+  }
   const position = ruleItems.value.findIndex((candidate) => candidate.key === item.key);
   if (position < 0) return;
   const nextItems = [...ruleItems.value];
@@ -298,7 +323,11 @@ function toggleRule(item: DnsRuleViewItem): void {
     nextItems[position] = { ...item, key: `active:new:${createDnsStateId()}`, enabled: true, sourceIndex, disabledId: undefined };
   }
   save(text, stateFrom(nextItems));
-  show(item.enabled ? "规则已停用，不会写入 sing-box 配置。" : "规则已启用并恢复到 DNS 配置。", "success");
+  if (item.builtIn === "fakeip") {
+    show(item.enabled ? "内置 Fake-IP 规则已停用，可随时重新启用。" : "内置 Fake-IP 规则已启用并恢复到 DNS 配置。", "success");
+  } else {
+    show(item.enabled ? "规则已停用，不会写入 sing-box 配置。" : "规则已启用并恢复到 DNS 配置。", "success");
+  }
 }
 
 function ruleSetTags(rule: unknown): string[] {
@@ -309,11 +338,20 @@ function ruleSetTags(rule: unknown): string[] {
 
 function ruleSummary(item: DnsRuleViewItem): string {
   if (!item.rule) return "无效规则，请使用 JSON 编辑";
+  if (item.builtIn === "fakeip") return "Fake-IP 地址映射";
   const type = dnsRuleType(item.rule);
   const payload = dnsRulePayloadText(item.rule, type) || "全部查询";
   const action = dnsRuleAction(item.rule);
   const target = action === "route" ? dnsRuleServer(item.rule) || finalServer.value || "默认服务器" : action;
   return `${type}, ${payload}, ${action}, ${target}`;
+}
+
+function ruleDetail(item: DnsRuleViewItem): string {
+  if (item.builtIn === "fakeip") {
+    const parts = fakeIpDnsRuleParts(item.rule);
+    return `AND · 排除 ${parts?.suffixes.length ?? 0} 个后缀 · ${parts?.queryTypes.join(" / ") || "未选择查询类型"} → ${dnsRuleServer(item.rule) || "Fake-IP"}`;
+  }
+  return `${actionLabel(item.rule)}${item.rule?.invert === true ? " · 反向匹配" : ""}`;
 }
 
 function actionLabel(rule: unknown): string {
@@ -339,15 +377,13 @@ function serverTone(server: DnsServer | null): string {
 
 <template>
   <section class="dns-panel">
-    <article class="dns-workbench">
-      <header class="dns-head"><div><h2>DNS 设置</h2><p>管理缓存行为、上游解析器与按顺序匹配的 DNS 规则</p></div><div class="head-actions"><span class="summary-badge">{{ rawServers.length }} 个服务器 · {{ activeRules.length }}/{{ ruleItems.length }} 条规则启用</span><button class="json-button" type="button" @click="emit('editJson')"><AppIcon name="code" :size="14" />编辑全部 JSON</button></div></header>
-      <nav class="dns-section-tabs" aria-label="DNS 设置分区">
-        <button type="button" :class="{ active: activeSection === 'general' }" :aria-pressed="activeSection === 'general'" @click="selectSection('general')"><AppIcon name="config" :size="14" />通用</button>
-        <button type="button" :class="{ active: activeSection === 'servers' }" :aria-pressed="activeSection === 'servers'" @click="selectSection('servers')"><AppIcon name="server" :size="14" />服务器<span>{{ rawServers.length }}</span></button>
-        <button type="button" :class="{ active: activeSection === 'rules' }" :aria-pressed="activeSection === 'rules'" @click="selectSection('rules')"><AppIcon name="rules" :size="14" />规则<span>{{ ruleItems.length }}</span></button>
-      </nav>
+    <article class="dns-summary-card dns-workbench">
+      <header class="dns-head"><div><h2>DNS 设置</h2><p>在同一页面管理缓存行为、上游解析器与按顺序匹配的 DNS 规则</p></div><div class="head-actions"><span class="summary-badge">{{ rawServers.length }} 个服务器 · {{ activeRules.length }}/{{ ruleItems.length }} 条规则启用</span><button class="json-button" type="button" @click="editJson"><AppIcon name="code" :size="14" />编辑全部 JSON</button></div></header>
+    </article>
 
-      <div v-if="activeSection === 'general'" class="general-section">
+    <article id="dns-general-section" class="dns-section-card">
+      <header class="section-toolbar"><div class="section-title"><span class="section-title-icon"><AppIcon name="config" :size="15" /></span><div class="section-copy"><strong>通用设置</strong><span>缓存、回退服务器与默认解析策略</span></div></div><div class="section-actions"><span class="summary-badge">全局行为</span></div></header>
+      <div class="general-section">
         <div class="general-toggles">
           <article><span class="setting-icon"><AppIcon name="database" :size="16" /></span><div><strong>禁用 DNS 缓存</strong><small>每次请求都重新查询上游服务器</small></div><button type="button" class="setting-switch" role="switch" aria-label="切换禁用 DNS 缓存" :aria-checked="disableCache" :disabled="generalInteractionDisabled" :class="{ on: disableCache }" @click="toggleGeneral('disable_cache', !disableCache, '禁用 DNS 缓存')"><span /></button></article>
           <article><span class="setting-icon orange"><AppIcon name="clock" :size="16" /></span><div><strong>禁用 DNS 缓存过期</strong><small>缓存记录不会因 TTL 到期而失效</small></div><button type="button" class="setting-switch" role="switch" aria-label="切换禁用 DNS 缓存过期" :aria-checked="disableExpire" :disabled="generalInteractionDisabled" :class="{ on: disableExpire }" @click="toggleGeneral('disable_expire', !disableExpire, '禁用 DNS 缓存过期')"><span /></button></article>
@@ -359,9 +395,10 @@ function serverTone(server: DnsServer | null): string {
           <label><span><strong>客户端子网</strong><small>发送 EDNS Client Subnet；留空表示无</small></span><input aria-label="DNS 客户端子网" :value="clientSubnet" :disabled="generalInteractionDisabled" placeholder="无，例如 1.2.3.4/24" @change="changeGeneral('client_subnet', $event, 'DNS 客户端子网已更新。')" /></label>
         </div>
       </div>
+    </article>
 
-      <div v-else-if="activeSection === 'servers'" class="servers-section">
-        <div class="section-toolbar"><div><strong>上游 DNS 服务器</strong><span>标签可被规则、回退 DNS 与域名解析器引用</span></div><button class="add-button" type="button" :disabled="serverInteractionDisabled" @click="openServerEditor(null)"><AppIcon name="plus" :size="14" />新增服务器</button></div>
+    <article id="dns-servers-section" class="dns-section-card servers-section">
+      <header class="section-toolbar"><div class="section-title"><span class="section-title-icon cyan"><AppIcon name="server" :size="15" /></span><div class="section-copy"><strong>上游 DNS 服务器</strong><span>标签可被规则、回退 DNS 与域名解析器引用</span></div></div><div class="section-actions"><span class="summary-badge">{{ rawServers.length }} 个解析器</span><button class="add-button" type="button" :disabled="serverInteractionDisabled" @click="openServerEditor(null)"><AppIcon name="plus" :size="14" />新增服务器</button></div></header>
         <div class="server-list">
           <article v-for="item in serverItems" :key="item.index" class="server-row" :class="{ invalid: !item.server }">
             <span class="server-icon" :class="serverTone(item.server)"><AppIcon :name="serverIcon(item.server)" :size="17" /></span>
@@ -371,24 +408,23 @@ function serverTone(server: DnsServer | null): string {
           </article>
           <button v-if="!serverItems.length" class="empty-state" type="button" :disabled="serverInteractionDisabled" @click="openServerEditor(null)"><AppIcon name="dns" :size="30" /><strong>尚未配置 DNS 服务器</strong><span>点击添加第一个解析器</span></button>
         </div>
-      </div>
+    </article>
 
-      <div v-else class="rules-section">
-        <div class="section-toolbar"><div><strong>DNS 规则</strong><span>从上到下依次匹配；新增规则会放在插入点之后</span></div><button class="add-button" type="button" :disabled="ruleInteractionDisabled" @click="openRuleEditor(null)"><AppIcon name="plus" :size="14" />新增规则</button></div>
+    <article id="dns-rules-section" class="dns-section-card rules-section">
+      <header class="section-toolbar"><div class="section-title"><span class="section-title-icon violet"><AppIcon name="rules" :size="15" /></span><div class="section-copy"><strong>DNS 规则</strong><span>从上到下依次匹配；新增规则会放在插入点之后</span></div></div><div class="section-actions"><span class="summary-badge">已启用 {{ activeRules.length }}/{{ ruleItems.length }}</span><button class="add-button" type="button" :disabled="ruleInteractionDisabled" @click="openRuleEditor(null)"><AppIcon name="plus" :size="14" />新增规则</button></div></header>
         <div class="dns-rule-list">
           <template v-for="entry in listItems" :key="entry.key">
             <div v-if="'marker' in entry" class="dns-insertion-point"><span /><button type="button" :disabled="ruleInteractionDisabled" @click="openRuleEditor(null)"><AppIcon name="plus" :size="12" />新规则将插入到这里</button><span /></div>
-            <article v-else class="dns-rule-row" :class="{ 'is-disabled': !entry.enabled }">
-              <label class="rule-switch" :title="entry.rule ? entry.enabled ? '停用规则' : '启用规则' : '无法停用非对象规则'"><input type="checkbox" :checked="entry.enabled" :disabled="ruleInteractionDisabled || !entry.rule" :aria-label="`${entry.enabled ? '停用' : '启用'}第 ${Number(displayIndex(entry))} 条 DNS 规则`" @change="toggleRule(entry)" /><span /></label>
+            <article v-else class="dns-rule-row" :class="{ 'is-disabled': !entry.enabled, 'is-protected': entry.builtIn === 'fakeip' }" :data-dns-rule-kind="entry.builtIn">
+              <label class="rule-switch" :title="entry.rule ? entry.enabled ? '停用规则' : '启用规则' : '无法停用非对象规则'"><input type="checkbox" :checked="entry.enabled" :disabled="ruleInteractionDisabled || !entry.rule" :aria-label="entry.builtIn === 'fakeip' ? `${entry.enabled ? '停用' : '启用'}内置 Fake-IP 规则` : `${entry.enabled ? '停用' : '启用'}第 ${Number(displayIndex(entry))} 条 DNS 规则`" @change="toggleRule(entry)" /><span /></label>
               <span class="rule-index">{{ displayIndex(entry) }}</span>
-              <div class="rule-copy"><strong>{{ ruleSummary(entry) }}</strong><small>{{ actionLabel(entry.rule) }}<em v-if="entry.rule?.invert === true">反向匹配</em></small></div>
-              <div class="row-actions"><button type="button" :aria-label="`编辑 DNS 规则 ${Number(displayIndex(entry))}`" title="编辑规则" :disabled="ruleInteractionDisabled || !entry.rule" @click="openRuleEditor(entry.key)"><AppIcon name="edit" :size="14" /></button><button class="danger" type="button" :aria-label="`删除 DNS 规则 ${Number(displayIndex(entry))}`" title="删除规则" :disabled="ruleInteractionDisabled" @click="removeRule(entry)"><AppIcon name="trash" :size="14" /></button></div>
+              <div class="rule-copy"><div class="rule-title-line"><strong>{{ ruleSummary(entry) }}</strong><span v-if="entry.builtIn === 'fakeip'" class="system-badge"><AppIcon name="lock" :size="9" />内置</span></div><small>{{ ruleDetail(entry) }}</small></div>
+              <div class="row-actions"><button type="button" :aria-label="entry.builtIn === 'fakeip' ? '编辑内置 Fake-IP 规则' : `编辑 DNS 规则 ${Number(displayIndex(entry))}`" :title="entry.builtIn === 'fakeip' ? '编辑 Fake-IP 规则' : '编辑规则'" :disabled="ruleInteractionDisabled || !entry.rule" @click="openRuleEditor(entry.key)"><AppIcon name="edit" :size="14" /></button><button v-if="entry.builtIn === 'fakeip'" class="protected-action" type="button" aria-label="内置 Fake-IP 规则不能删除" title="内置 Fake-IP 规则不能删除" disabled><AppIcon name="lock" :size="14" /></button><button v-else class="danger" type="button" :aria-label="`删除 DNS 规则 ${Number(displayIndex(entry))}`" title="删除规则" :disabled="ruleInteractionDisabled" @click="removeRule(entry)"><AppIcon name="trash" :size="14" /></button></div>
             </article>
           </template>
           <button v-if="!ruleItems.length" class="empty-state" type="button" :disabled="ruleInteractionDisabled" @click="openRuleEditor(null)"><AppIcon name="rules" :size="30" /><strong>尚未配置 DNS 规则</strong><span>未命中时会使用回退 DNS</span></button>
         </div>
         <p v-if="editorState.disabledRules.length" class="disabled-note"><AppIcon name="info" :size="13" />停用规则保存在草稿编辑状态中，不会进入实际 DNS JSON 或应用结果。</p>
-      </div>
     </article>
 
     <p v-if="invalidDnsObject" class="panel-warning" role="alert">dns 必须是对象；请使用“编辑全部 JSON”修复后再结构化编辑。</p>
@@ -398,6 +434,7 @@ function serverTone(server: DnsServer | null): string {
     <p v-if="error" class="panel-error" role="alert">{{ error }}</p>
     <DnsServerEditorDialog :open="serverEditorOpen" :server="editingServer" :server-text="editingServerText" :reserved-tags="reservedServerTags" :outbounds="outbounds" :dns-servers="serverTags" @close="closeServerEditor" @submit="submitServer" />
     <DnsRuleEditorDialog :open="ruleEditorOpen" :rule="editingRule?.rule ?? null" :rule-text="editingRule?.text" :servers="serverTags" :options="ruleSetOptions" @close="closeRuleEditor" @submit="submitRule" />
+    <FakeIpDnsRuleDialog :open="fakeIpRuleEditorOpen" :rule="editingRule?.rule ?? null" :enabled="editingRule?.enabled ?? true" :servers="fakeIpServers" @close="closeRuleEditor" @submit="submitRule" />
     <AppToast v-if="notice" :message="notice" :tone="noticeTone" />
   </section>
 </template>
@@ -407,4 +444,6 @@ function serverTone(server: DnsServer | null): string {
 @media (max-width: 920px) { .general-toggles { grid-template-columns: 1fr; }.general-toggles article { min-height: 62px; }.general-fields { grid-template-columns: 1fr; }.general-fields label:last-child { grid-column: auto; } }
 @media (max-width: 760px) { .dns-head { align-items: flex-start; flex-direction: column; gap: 9px; }.head-actions { width: 100%; justify-content: flex-end; }.summary-badge { margin-right: auto; }.server-row { grid-template-columns: auto minmax(0, 1fr) auto; }.server-meta { grid-column: 2; justify-content: flex-start; }.server-row > .row-actions { grid-column: 3; grid-row: 1 / span 2; }.general-fields label { grid-template-columns: 1fr; gap: 7px; } }
 @media (max-width: 560px) { .dns-section-tabs { justify-content: stretch; }.dns-section-tabs button { min-width: 0; flex: 1; justify-content: center; padding-inline: 7px; }.general-section { padding: 8px; }.general-toggles article { padding: 9px; }.setting-icon { display: none; }.section-toolbar { align-items: flex-start; flex-direction: column; }.section-toolbar .add-button { width: 100%; }.server-list, .dns-rule-list { padding-inline: 8px; }.server-row { grid-template-columns: minmax(0, 1fr) auto; }.server-icon { display: none; }.server-copy { grid-column: 1; }.server-meta { grid-column: 1; }.server-row > .row-actions { grid-column: 2; }.dns-rule-row { grid-template-columns: auto minmax(0, 1fr) auto; }.dns-rule-row > .row-actions { grid-column: 3; grid-row: auto; }.rule-index { display: none; }.summary-badge { display: none; }.dns-insertion-point { gap: 6px; }.dns-insertion-point button { white-space: nowrap; } }
+.dns-panel { gap: 12px; }.dns-summary-card, .dns-section-card { min-width: 0; overflow: hidden; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.dns-head { border-bottom: 0; }.general-section, .servers-section, .rules-section { min-height: 0; }.general-section { border-top: 1px solid var(--line); }.servers-section, .rules-section { border-top: 1px solid var(--line); }.section-title { display: flex; min-width: 0; align-items: center; gap: 10px; }.section-title-icon { display: grid; width: 32px; height: 32px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.section-title-icon.cyan { color: var(--cyan); background: var(--cyan-soft); }.section-title-icon.violet { color: var(--violet); background: color-mix(in srgb, var(--violet) 12%, var(--surface)); }.section-copy { min-width: 0; }.section-copy strong, .section-copy span { display: block; }.section-copy span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.section-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }.server-list, .dns-rule-list { background: var(--surface-soft); }.dns-rule-row.is-protected { background: linear-gradient(90deg, color-mix(in srgb, var(--orange-soft) 62%, transparent), transparent 58%); }.dns-rule-row.is-protected.is-disabled { opacity: .64; }.rule-title-line { display: flex; min-width: 0; align-items: center; gap: 7px; }.rule-title-line strong { min-width: 0; }.system-badge { display: inline-flex; min-height: 20px; flex: 0 0 auto; align-items: center; gap: 3px; padding: 2px 6px; border-radius: 999px; color: var(--orange); background: var(--orange-soft); font-size: 7px; font-weight: 700; }.row-actions button.protected-action:disabled { color: var(--orange); background: var(--orange-soft); cursor: not-allowed; opacity: .72; }
+@media (max-width: 560px) { .section-toolbar { align-items: stretch; }.section-actions { width: 100%; }.section-actions .summary-badge { display: inline-flex; margin-right: auto; }.section-actions .add-button { width: auto; flex: 1; } }
 </style>

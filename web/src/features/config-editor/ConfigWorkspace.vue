@@ -14,7 +14,14 @@ import DnsConfigPanel from "./DnsConfigPanel.vue";
 import InboundConfigPanel from "./InboundConfigPanel.vue";
 import ModuleJsonDialog from "./ModuleJsonDialog.vue";
 import OutboundConfigPanel from "./OutboundConfigPanel.vue";
-import { renameDnsServerInRuleText, renameDnsServerTagInBuffer, type DnsPanelSave } from "./dns";
+import {
+  ensureDefaultFakeIpDnsRuleText,
+  parseDnsObjectText,
+  reconcileDnsEditorState,
+  renameDnsServerInRuleText,
+  renameDnsServerTagInBuffer,
+  type DnsPanelSave
+} from "./dns";
 import { renameOutboundTagInBuffer, type OutboundPanelSave } from "./outbound";
 import OverviewPanel from "./OverviewPanel.vue";
 import ReferenceErrors from "./ReferenceErrors.vue";
@@ -42,7 +49,17 @@ const configurationSummary = computed(() => {
   return { configured, inbounds: Array.isArray(config.inbounds) ? config.inbounds.length : 0, outbounds: Array.isArray(config.outbounds) ? config.outbounds.length : 0, rules: Array.isArray(route?.rules) ? route.rules.length : 0 };
 });
 function applyResult(next: Draft, module: string, error?: string): void { store.mutate((current) => Object.assign(current, next)); if (error) errors.value = { ...errors.value, [module]: error }; else { const copy = { ...errors.value }; delete copy[module]; errors.value = copy; } }
-function persist(module: ConfigModule, text: string): boolean { if (!draft.value) return false; const result = saveModuleBuffer(draft.value, module, text); applyResult(result.draft, module, result.error?.message); return !result.error; }
+function persist(module: ConfigModule, text: string): boolean {
+  if (!draft.value) return false;
+  const prepared = module === "dns" ? ensureDefaultFakeIpDnsRuleText(text, draft.value.editorState?.dns) : text;
+  const result = saveModuleBuffer(draft.value, module, prepared);
+  if (module === "dns" && !result.error) {
+    const dns = parseDnsObjectText(prepared);
+    if (dns) result.draft.editorState = { ...(result.draft.editorState ?? {}), dns: reconcileDnsEditorState(result.draft.editorState?.dns, dns) };
+  }
+  applyResult(result.draft, module, result.error?.message);
+  return !result.error;
+}
 function save(module: ConfigModule, text: string): void { if (persist(module, text)) dialogModule.value = null; }
 function saveOutbounds(payload: OutboundPanelSave): void {
   if (!draft.value) return;
@@ -79,7 +96,8 @@ function renameDisabledDnsServerReferences(value: unknown, from: string, to: str
 }
 function saveDns(payload: DnsPanelSave): void {
   if (!draft.value) return;
-  let result = saveModuleBuffer(draft.value, "dns", payload.text);
+  const text = ensureDefaultFakeIpDnsRuleText(payload.text, payload.editorState);
+  let result = saveModuleBuffer(draft.value, "dns", text);
   if (payload.renamed) {
     for (const [module, source] of Object.entries(result.draft.buffers)) {
       if (module === "dns") continue;
@@ -87,7 +105,9 @@ function saveDns(payload: DnsPanelSave): void {
       if (updated !== source) result = saveModuleBuffer(result.draft, module, updated);
     }
   }
-  const editorState: Record<string, unknown> = { ...(result.draft.editorState ?? {}), dns: payload.editorState };
+  const dns = parseDnsObjectText(text);
+  const dnsEditorState = dns ? reconcileDnsEditorState(payload.editorState, dns) : payload.editorState;
+  const editorState: Record<string, unknown> = { ...(result.draft.editorState ?? {}), dns: dnsEditorState };
   if (payload.renamed && editorState.route) {
     editorState.route = renameDisabledDnsServerReferences(editorState.route, payload.renamed.from, payload.renamed.to);
   }

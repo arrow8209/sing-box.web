@@ -3,9 +3,16 @@ import { afterEach, describe, expect, it } from "vitest";
 import DnsConfigPanel from "@/features/config-editor/DnsConfigPanel.vue";
 import DnsRuleEditorDialog from "@/features/config-editor/DnsRuleEditorDialog.vue";
 import DnsServerEditorDialog from "@/features/config-editor/DnsServerEditorDialog.vue";
+import FakeIpDnsRuleDialog from "@/features/config-editor/FakeIpDnsRuleDialog.vue";
 import {
+  createDefaultFakeIpDnsRule,
   dnsServerAddress,
+  ensureDefaultFakeIpDnsRuleText,
+  fakeIpDnsRuleParts,
   insertDnsRuleText,
+  isDefaultFakeIpDnsRule,
+  parseFakeIpDomainSuffixes,
+  reconcileDnsEditorState,
   removeDnsArrayItem,
   renameDnsServerTagInBuffer,
   restoreDnsEditorState,
@@ -33,6 +40,7 @@ const dnsFixture = {
     { action: "route", clash_mode: "direct", server: "Local-DNS" },
     { action: "route", clash_mode: "global", server: "Remote-DNS" },
     { action: "route", rule_set: ["GeoSite-CN"], server: "Local-DNS" },
+    createDefaultFakeIpDnsRule(),
     { action: "route", rule_set: ["GeoLocation-!CN"], server: "Remote-DNS" }
   ],
   disable_cache: false,
@@ -78,6 +86,24 @@ describe("自定义配置 DNS", () => {
     ]);
   });
 
+  it("识别、规范化并补全原型内置 Fake-IP 规则", () => {
+    const rule = createDefaultFakeIpDnsRule([".lan", ".example"], ["A"], "Fake-IP");
+    expect(isDefaultFakeIpDnsRule(rule)).toBe(true);
+    expect(fakeIpDnsRuleParts(rule)).toEqual({ suffixes: [".lan", ".example"], queryTypes: ["A"] });
+    expect(parseFakeIpDomainSuffixes("LAN\n Example.COM,example.com ")).toEqual([".lan", ".example.com"]);
+
+    const source = `{"future":9007199254740993,"rules":[{"clash_mode":"direct","action":"route","server":"Local-DNS"},{"rule_set":["GeoLocation-!CN"],"action":"route","server":"Remote-DNS"}]}`;
+    const changed = ensureDefaultFakeIpDnsRuleText(source);
+    const rules = (JSON.parse(changed) as { rules: Array<Record<string, unknown>> }).rules;
+    expect(changed).toContain("9007199254740993");
+    expect(rules).toHaveLength(3);
+    expect(isDefaultFakeIpDnsRule(rules[1])).toBe(true);
+
+    const disabled = { version: 1, insertionPosition: 1, disabledRules: [{ id: "fakeip-off", position: 1, text: JSON.stringify(rule) }] };
+    expect(ensureDefaultFakeIpDnsRuleText(source, disabled)).toBe(source);
+    expect(reconcileDnsEditorState(disabled, { rules: [rule] }).disabledRules).toEqual([]);
+  });
+
   it("增删 DNS 项目时保留其他字段和大整数 token", () => {
     const source = `{"future":9007199254740993,"servers":[{"tag":"dns-a","type":"udp","server":"1.1.1.1","future":9007199254740995}],"rules":[{"clash_mode":"direct","action":"route","server":"dns-a","future":9007199254740997}]}`;
     const server = upsertDnsArrayItemText(source, "servers", 1, `{"tag":"dns-b","type":"tls","server":"8.8.8.8","server_port":853}`);
@@ -110,14 +136,14 @@ describe("自定义配置 DNS", () => {
   });
 
   it("默认把 DNS 新规则插入点放在前两条规则之后并恢复停用规则", () => {
-    expect(restoreDnsEditorState(undefined, 4)).toEqual({ version: 1, insertionPosition: 2, disabledRules: [] });
+    expect(restoreDnsEditorState(undefined, 5)).toEqual({ version: 1, insertionPosition: 2, disabledRules: [] });
     expect(restoreDnsEditorState({
       version: 1,
       insertionPosition: 99,
       disabledRules: [{ id: "disabled-a", position: 2, text: `{"domain_suffix":["off.example"],"action":"route","server":"dns-a"}` }]
-    }, 4)).toEqual({
+    }, 5)).toEqual({
       version: 1,
-      insertionPosition: 5,
+      insertionPosition: 6,
       disabledRules: [{ id: "disabled-a", position: 2, text: `{"domain_suffix":["off.example"],"action":"route","server":"dns-a"}` }]
     });
   });
@@ -159,35 +185,78 @@ describe("自定义配置 DNS", () => {
     expect(result?.text).toContain("9007199254740993");
   });
 
-  it("页面按参考图呈现通用、五个服务器和四条默认规则", async () => {
+  it("内置 Fake-IP 编辑器只开放安全字段并重建固定逻辑结构", async () => {
+    const wrapper = mount(FakeIpDnsRuleDialog, {
+      props: {
+        open: true,
+        rule: createDefaultFakeIpDnsRule(),
+        enabled: true,
+        servers: dnsFixture.servers
+      }
+    });
+
+    expect(wrapper.text()).toContain("系统内置 · 当前启用");
+    expect(wrapper.findAll('[aria-label="目标 Fake-IP 服务器"] option')).toHaveLength(1);
+    expect(wrapper.text()).toContain("198.18.0.0/15");
+    await wrapper.get('[aria-label="不进入 Fake-IP 的域名后缀"]').setValue("LAN\nExample.COM\nexample.com");
+    await wrapper.get('[aria-label="Fake-IP 查询类型 AAAA"]').setValue(false);
+    await wrapper.get("form").trigger("submit");
+
+    const result = wrapper.emitted("submit")?.[0]?.[0] as DnsRuleEditorResult | undefined;
+    expect(result?.rule).toEqual(createDefaultFakeIpDnsRule([".lan", ".example.com"], ["A"], "Fake-IP"));
+    expect(result?.resourceIds).toEqual([]);
+  });
+
+  it("页面按最新版原型在同一页呈现通用设置、五个服务器和五条默认规则", async () => {
     useRuleResourceStore().resources.value = [resource];
     const wrapper = mount(DnsConfigPanel, { props: { draft: draftFixture() } });
 
     expect(wrapper.get('[aria-label="回退 DNS"]').element).toHaveProperty("value", "Remote-DNS");
     expect(wrapper.findAll('[role="switch"]')).toHaveLength(3);
     expect(wrapper.findAll('[role="switch"]').every((item) => item.attributes("aria-checked") === "false")).toBe(true);
-
-    await wrapper.findAll(".dns-section-tabs button")[1]!.trigger("click");
+    expect(wrapper.find(".dns-section-tabs").exists()).toBe(false);
+    expect(wrapper.findAll(".dns-section-card")).toHaveLength(3);
     expect(wrapper.findAll(".server-row")).toHaveLength(5);
     expect(wrapper.text()).toContain("https://223.5.5.5:443/dns-query");
     expect(wrapper.text()).toContain("🚀 节点选择");
-
-    await wrapper.findAll(".dns-section-tabs button")[2]!.trigger("click");
-    expect(wrapper.findAll(".dns-rule-row")).toHaveLength(4);
+    expect(wrapper.findAll(".dns-rule-row")).toHaveLength(5);
     expect(wrapper.find(".dns-insertion-point").exists()).toBe(true);
     expect(wrapper.text()).toContain("clash_mode, direct, route, Local-DNS");
+    const fakeIpRule = wrapper.get('[data-dns-rule-kind="fakeip"]');
+    expect(fakeIpRule.classes()).toContain("is-protected");
+    expect(fakeIpRule.text()).toContain("Fake-IP 地址映射");
+    expect(fakeIpRule.text()).toContain("排除 10 个后缀 · A / AAAA → Fake-IP");
+    expect(fakeIpRule.get('[aria-label="内置 Fake-IP 规则不能删除"]').attributes("disabled")).toBeDefined();
 
     await wrapper.get(".rule-switch input").setValue(false);
     const result = wrapper.emitted("save")?.at(-1)?.[0] as DnsPanelSave | undefined;
-    expect((JSON.parse(String(result?.text)) as { rules: unknown[] }).rules).toHaveLength(3);
+    expect((JSON.parse(String(result?.text)) as { rules: unknown[] }).rules).toHaveLength(4);
     expect(result?.editorState.disabledRules).toHaveLength(1);
     expect(result?.editorState.disabledRules[0]?.text).toContain("clash_mode");
+  });
+
+  it("内置 Fake-IP 规则可停用但不可删除，并使用专用编辑器", async () => {
+    useRuleResourceStore().resources.value = [resource];
+    const wrapper = mount(DnsConfigPanel, { props: { draft: draftFixture() } });
+    const fakeIpRule = wrapper.get('[data-dns-rule-kind="fakeip"]');
+
+    await fakeIpRule.get('[aria-label="编辑内置 Fake-IP 规则"]').trigger("click");
+    const dialog = wrapper.get('dialog[aria-label="编辑内置 Fake-IP 规则"]');
+    expect(dialog.attributes("open")).toBeDefined();
+    await dialog.get('[aria-label="关闭对话框"]').trigger("click");
+    await fakeIpRule.get('[aria-label="停用内置 Fake-IP 规则"]').setValue(false);
+
+    const result = wrapper.emitted("save")?.at(-1)?.[0] as DnsPanelSave | undefined;
+    const saved = JSON.parse(String(result?.text)) as { rules: unknown[] };
+    expect(saved.rules).toHaveLength(4);
+    expect(saved.rules.some(isDefaultFakeIpDnsRule)).toBe(false);
+    expect(result?.editorState.disabledRules).toHaveLength(1);
+    expect(isDefaultFakeIpDnsRule(JSON.parse(result?.editorState.disabledRules[0]?.text ?? "{}"))).toBe(true);
   });
 
   it("编辑服务器标签时同步 DNS 内部引用并报告改名", async () => {
     useRuleResourceStore().resources.value = [resource];
     const wrapper = mount(DnsConfigPanel, { props: { draft: draftFixture() } });
-    await wrapper.findAll(".dns-section-tabs button")[1]!.trigger("click");
     await wrapper.findAll('.server-row [aria-label^="编辑 DNS 服务器"]')[3]!.trigger("click");
     await wrapper.get('input[name="tag"]').setValue("Remote-DNS-New");
     await wrapper.get("#dns-server-form").trigger("submit");
@@ -197,6 +266,6 @@ describe("自定义配置 DNS", () => {
     expect(result?.renamed).toEqual({ from: "Remote-DNS", to: "Remote-DNS-New" });
     expect(saved.final).toBe("Remote-DNS-New");
     expect(saved.rules[1]?.server).toBe("Remote-DNS-New");
-    expect(saved.rules[3]?.server).toBe("Remote-DNS-New");
+    expect(saved.rules[4]?.server).toBe("Remote-DNS-New");
   });
 });
