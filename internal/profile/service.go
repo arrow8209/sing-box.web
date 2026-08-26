@@ -183,7 +183,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Meta, Draft, e
 	if err != nil {
 		return Meta{}, Draft{}, err
 	}
-	draft := Draft{ProfileID: id, Revision: 1, Config: seed.Config, Buffers: seed.Buffers, Bindings: bindings, SavedAt: seed.CreatedAt.UTC()}
+	draft := Draft{ProfileID: id, Revision: 1, Config: seed.Config, Buffers: seed.Buffers, EditorState: map[string]json.RawMessage{}, Bindings: bindings, SavedAt: seed.CreatedAt.UTC()}
 	if err := validateDraftEnvelope(draft, maxModuleBytes, maxDraftBytes); err != nil {
 		return Meta{}, Draft{}, err
 	}
@@ -313,7 +313,11 @@ func (s *Service) SaveDraft(ctx context.Context, profileID, ifMatch string, inpu
 	for module, buffer := range input.Buffers {
 		nextBuffers[module] = buffer
 	}
-	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, Config: nextConfig, Buffers: nextBuffers, Bindings: append([]RuleBinding(nil), input.Bindings...), SavedAt: s.clock().UTC()}
+	nextEditorState := cloneConfig(draft.EditorState)
+	if input.EditorState != nil {
+		nextEditorState = cloneConfig(input.EditorState)
+	}
+	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, Config: nextConfig, Buffers: nextBuffers, EditorState: nextEditorState, Bindings: append([]RuleBinding(nil), input.Bindings...), SavedAt: s.clock().UTC()}
 	if err := validateDraftEnvelope(next, maxModuleBytes, maxDraftBytes); err != nil {
 		return Draft{}, "", err
 	}
@@ -645,6 +649,14 @@ func validateDraftEnvelope(draft Draft, moduleLimit, totalLimit int) error {
 	for module, value := range draft.Buffers {
 		if len(value) > moduleLimit {
 			return fmt.Errorf("草稿模块过大: %s", module)
+		}
+	}
+	for editor, value := range draft.EditorState {
+		if len(value) > moduleLimit {
+			return fmt.Errorf("编辑器状态过大: %s", editor)
+		}
+		if !json.Valid(value) {
+			return fmt.Errorf("编辑器状态 JSON 无效: %s", editor)
 		}
 	}
 	encoded, err := json.Marshal(draft)

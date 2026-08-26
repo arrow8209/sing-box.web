@@ -74,6 +74,41 @@ func TestDraftRoundTripPreservesUnknownOutboundFields(t *testing.T) {
 	}
 }
 
+func TestDraftEditorStatePersistsOutsideGeneratedConfig(t *testing.T) {
+	service, layout := newTestService(t)
+	meta, _, err := service.Create(context.Background(), CreateInput{Name: "出站编辑状态"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	state := json.RawMessage(`{"version":1,"groups":[{"id":"group-a","tag":"节点选择","type":"selector","hidden":true,"include":"香港","exclude":"","icon":"","references":[],"runtimeTags":[]}],"generatedTags":[]}`)
+	saved, _, err := service.SaveDraft(context.Background(), meta.ID, `"rev-1"`, DraftInput{
+		Buffers:     map[string]string{},
+		EditorState: map[string]json.RawMessage{"outbounds": state},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(saved.EditorState["outbounds"], state) {
+		t.Fatalf("editor state changed: %s", saved.EditorState["outbounds"])
+	}
+	if _, exists := saved.Config["editorState"]; exists {
+		t.Fatal("editor state leaked into generated config")
+	}
+
+	reopened, err := Open(layout, service.templates, service.defaultBindings, testClock, bytes.NewReader(bytes.Repeat([]byte{0x44}, 32)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	draft, _, err := reopened.GetDraft(context.Background(), meta.ID)
+	var compact bytes.Buffer
+	if err == nil {
+		err = json.Compact(&compact, draft.EditorState["outbounds"])
+	}
+	if err != nil || !bytes.Equal(compact.Bytes(), state) {
+		t.Fatalf("editor state was not persisted, err=%v state=%s", err, draft.EditorState["outbounds"])
+	}
+}
+
 func TestDraftRoundTripPreservesUnknownTopLevelModule(t *testing.T) {
 	service, layout := newTestService(t)
 	meta, _, err := service.Create(context.Background(), CreateInput{Name: "未来模块"})

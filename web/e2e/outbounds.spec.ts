@@ -57,7 +57,7 @@ async function addUrlTest(page: Page): Promise<void> {
   await dialog.locator('input[name="interval"]').fill("5m");
   await dialog.locator(".reference-group").first().locator(".reference-tile").filter({ hasText: "e2e-direct" }).locator(".reference-content").click();
   await dialog.getByRole("button", { name: "确认添加" }).click();
-  await expect(page.locator('[data-outbound-tag="E2E 自动选择"]')).toContainText("1 个引用");
+  await expect(page.locator('[data-outbound-tag="E2E 自动选择"]')).toContainText("1 个出站 / 0 个订阅");
 }
 
 async function addSelectorWithSubscription(page: Page): Promise<void> {
@@ -69,7 +69,7 @@ async function addSelectorWithSubscription(page: Page): Promise<void> {
   await dialog.locator(".reference-group").nth(1).locator(".reference-tile").filter({ hasText: subscriptionName }).locator(".reference-content").click();
   await expect(dialog.getByText("已选 2 项 · 3 个出站")).toBeVisible();
   await dialog.getByRole("button", { name: "确认添加" }).click();
-  await expect(page.locator('[data-outbound-tag="节点选择"]')).toContainText("3 个引用");
+  await expect(page.locator('[data-outbound-tag="节点选择"]')).toContainText("1 个出站 / 1 个订阅");
   await expect(page.locator('[data-outbound-tag="新加坡 E2E"]')).toHaveCount(0);
   await expect(page.locator('[data-outbound-tag="香港 E2E"]')).toHaveCount(0);
 }
@@ -86,51 +86,51 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   await addUrlTest(page);
   await addSelectorWithSubscription(page);
 
-  await page.getByRole("button", { name: "新增出站" }).click();
-  const custom = page.getByRole("dialog", { name: "出站" });
-  await custom.getByRole("radio", { name: "完整 JSON" }).check();
-  await custom.getByLabel("出站 JSON").fill(JSON.stringify({
-    type: "future-protocol",
-    tag: "未来节点",
-    server: "future.example.test",
-    token: "visible-custom-value",
-    future: { nested: [1, "x", true] }
-  }, null, 2));
-  await custom.getByRole("button", { name: "确认添加" }).click();
-  await expect(page.locator('[data-outbound-tag="未来节点"]')).toContainText("完整 JSON");
   await expect(page.getByLabel("测试间隔")).toHaveValue("5m");
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
   const persisted = await page.evaluate(async (name) => {
     const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
     const profile = profiles.find((item) => item.name === name);
-    return await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { buffers: Record<string, string> };
+    return await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { buffers: Record<string, string>; editorState: { outbounds: { groups: Array<Record<string, unknown>> } } };
   }, profileName);
   const saved = JSON.parse(persisted.buffers.outbounds) as Array<Record<string, unknown>>;
   expect(saved.find((item) => item.tag === "节点选择")?.outbounds).toEqual(["E2E 自动选择", "新加坡 E2E", "香港 E2E"]);
   expect(saved.find((item) => item.tag === "新加坡 E2E")).toMatchObject({ password: "outbound-e2e-secret", tls: { enabled: true } });
   expect(saved.find((item) => item.tag === "香港 E2E")).toMatchObject({ future: { keep: true } });
-  expect(saved.find((item) => item.tag === "未来节点")).toMatchObject({ token: "visible-custom-value", future: { nested: [1, "x", true] } });
+  expect(saved.find((item) => item.tag === "节点选择")).not.toHaveProperty("hidden");
+  expect(saved.find((item) => item.tag === "节点选择")).not.toHaveProperty("include");
   expect(persisted.buffers.outbounds).not.toContain("subscription-node");
   expect(persisted.buffers.outbounds).not.toContain("sourceId");
+  expect(persisted.editorState.outbounds.groups.find((item) => item.tag === "节点选择")?.references).toMatchObject([
+    { kind: "outbound" },
+    { kind: "subscription" }
+  ]);
 
   await page.reload();
   await page.getByRole("tab", { name: "出站", exact: true }).click();
-  await expect(page.locator(".outbound-card")).toHaveCount(initialOutboundCount + 4);
+  await expect(page.locator(".outbound-card")).toHaveCount(initialOutboundCount + 3);
   const selectorCard = page.locator('[data-outbound-tag="节点选择"]');
   await expect(selectorCard.getByRole("button", { name: "编辑出站 节点选择" })).toBeVisible();
   await expect(selectorCard.getByRole("button", { name: "删除出站 节点选择" })).toBeVisible();
   await page.getByRole("button", { name: "编辑出站 节点选择" }).click();
   const editor = page.getByRole("dialog", { name: "出站" });
   await expect(editor.getByRole("button", { name: "删除出站" })).toHaveCount(0);
-  await expect(editor.getByText("已选 3 项 · 3 个出站")).toBeVisible();
+  await expect(editor.getByText("已选 2 项 · 3 个出站")).toBeVisible();
   await editor.getByLabel("隐藏出站").check();
   await editor.getByRole("button", { name: "保存", exact: true }).click();
   await expect(page.locator('[data-outbound-tag="节点选择"]')).toContainText("隐藏");
 
+  await page.getByRole("button", { name: "编辑出站 E2E 自动选择" }).click();
+  const renameDialog = page.getByRole("dialog", { name: "出站" });
+  await renameDialog.locator('input[name="tag"]').fill("E2E 自动选择-已改");
+  await renameDialog.getByRole("button", { name: "保存", exact: true }).click();
+  await expect(page.locator('[data-outbound-tag="E2E 自动选择-已改"]')).toBeVisible();
+  await expect(page.locator('[data-outbound-tag="节点选择"] [title="E2E 自动选择-已改"]')).toBeVisible();
+
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
-  await page.getByRole("button", { name: "编辑出站 E2E 自动选择" }).click();
+  await page.getByRole("button", { name: "编辑出站 E2E 自动选择-已改" }).click();
   const mobileDialog = page.getByRole("dialog", { name: "出站" });
   await expect(mobileDialog).toBeVisible();
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);

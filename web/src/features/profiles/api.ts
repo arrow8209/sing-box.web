@@ -33,7 +33,7 @@ export const profileApi: ProfileApi = {
     return { data: response.data, etag: requiredETag(response.etag) };
   },
   async saveDraft(id, etag, draft) {
-    const input: DraftInput = { buffers: draft.buffers, bindings: draft.bindings };
+    const input: DraftInput = { buffers: draft.buffers, editorState: draft.editorState ?? {}, bindings: draft.bindings };
     const response = await request<Draft>(`/profiles/${encodeURIComponent(id)}/draft`, {
       method: "PUT",
       headers: { "If-Match": etag },

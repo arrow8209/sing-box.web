@@ -61,13 +61,18 @@ type Draft struct {
 	Revision  uint64                     `json:"revision"`
 	Config    map[string]json.RawMessage `json:"config"`
 	Buffers   map[string]string          `json:"buffers"`
-	Bindings  []RuleBinding              `json:"bindings"`
-	SavedAt   time.Time                  `json:"savedAt"`
+	// EditorState stores UI-only structured editor data. It is deliberately
+	// separate from Config/Buffers so these values are never emitted as
+	// sing-box configuration fields.
+	EditorState map[string]json.RawMessage `json:"editorState,omitempty"`
+	Bindings    []RuleBinding              `json:"bindings"`
+	SavedAt     time.Time                  `json:"savedAt"`
 }
 
 type DraftInput struct {
-	Buffers  map[string]string `json:"buffers"`
-	Bindings []RuleBinding     `json:"bindings"`
+	Buffers     map[string]string          `json:"buffers"`
+	EditorState map[string]json.RawMessage `json:"editorState,omitempty"`
+	Bindings    []RuleBinding              `json:"bindings"`
 }
 
 type CreateInput struct {

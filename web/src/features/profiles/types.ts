@@ -29,13 +29,14 @@ export interface Draft {
   revision: number;
   config: Record<string, unknown>;
   buffers: Record<string, string>;
+  editorState?: Record<string, unknown>;
   bindings: RuleBinding[];
   savedAt: string;
 }
 
 // The server deliberately rebuilds config from buffers. Keep config out of saves:
 // JSON in config can contain values that browsers cannot round-trip safely.
-export type DraftInput = Pick<Draft, "buffers" | "bindings">;
+export type DraftInput = Pick<Draft, "buffers" | "editorState" | "bindings">;
 
 export type SaveState = "idle" | "dirty" | "saving" | "saved" | "offline" | "conflict" | "error";
 

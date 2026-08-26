@@ -147,6 +147,10 @@ func cloneDraft(source Draft) Draft {
 	for key, value := range source.Buffers {
 		result.Buffers[key] = value
 	}
+	result.EditorState = make(map[string]json.RawMessage, len(source.EditorState))
+	for key, value := range source.EditorState {
+		result.EditorState[key] = append(json.RawMessage(nil), value...)
+	}
 	result.Bindings = append([]RuleBinding(nil), source.Bindings...)
 	return result
 }
