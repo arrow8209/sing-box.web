@@ -593,6 +593,8 @@
     ],
   };
 
+  let routeRuleDrag = null;
+
   const profileDraftKeys = [
     "ipv6",
     "fakeIp",
@@ -1654,7 +1656,7 @@
       </article>
 
       <article class="card route-section" id="route-rules-section">
-        <div class="card-head"><div><h3 class="card-title">路由规则</h3><p class="card-subtitle">按从上到下的顺序匹配；新增规则会放在插入点之后</p></div><div class="route-section-actions"><span class="route-section-badge">已启用 ${enabledRules}/${routeRuleCount()}</span><button class="btn btn-sm btn-primary" data-modal="route">${icon("plus")}新增规则</button></div></div>
+        <div class="card-head"><div><h3 class="card-title">路由规则</h3><p class="card-subtitle">按从上到下的顺序匹配；拖动左侧手柄调整优先级，新增规则会放在插入点之后</p></div><div class="route-section-actions"><span class="route-section-badge">已启用 ${enabledRules}/${routeRuleCount()}</span><button class="btn btn-sm btn-primary" data-modal="route">${icon("plus")}新增规则</button></div></div>
         <div class="route-rule-list">${state.routeRules.map((rule, index) => routeRuleCard(rule, index)).join("")}</div>
       </article>
     </div>`;
@@ -1712,19 +1714,146 @@
 
   function routeRuleCard(rule, index) {
     if (rule.type === "insertion") {
-      return `<div class="route-insertion-point"><span></span><button data-modal="route">${icon("plus")}新规则将插入到这里</button><span></span></div>`;
+      return `<div class="route-insertion-point" data-route-rule-id="${escapeHtml(rule.id)}"><span></span><button data-modal="route">${icon("plus")}新规则将插入到这里</button><span></span></div>`;
     }
     const displayIndex = state.routeRules.slice(0, index + 1).filter((item) => item.type !== "insertion").length;
     const payload = routeRulePayloadLabel(rule);
     const actionLabel = routeRuleActionOptions.find(([value]) => value === rule.action)?.[1] || rule.action;
     return `<div class="route-rule-row ${rule.enable ? "" : "is-disabled"}" data-route-rule-id="${escapeHtml(rule.id)}">
-      <span class="entry-drag">${icon("grip")}</span>
+      <button class="entry-drag" type="button" data-route-rule-drag-handle title="拖动调整顺序" aria-label="拖动调整第 ${displayIndex} 条规则顺序，按上下方向键也可调整">${icon("grip")}</button>
       <label class="route-rule-switch" title="${rule.enable ? "停用规则" : "启用规则"}"><input type="checkbox" data-route-rule-enabled data-id="${escapeHtml(rule.id)}" ${rule.enable ? "checked" : ""} /><span></span></label>
       <span class="route-rule-index">${String(displayIndex).padStart(2, "0")}</span>
       <div class="route-rule-copy"><strong>${escapeHtml(rule.type)}<span>,</span>${escapeHtml(payload || "未设置载荷")}${rule.invert ? '<em>反向</em>' : ""}</strong><small>${escapeHtml(actionLabel)} · ${escapeHtml(routeRuleActionLabel(rule))}</small></div>
       <span class="route-action-badge action-${escapeHtml(rule.action)}">${icon(rule.action === "reject" ? "shield" : rule.action.includes("dns") || rule.action === "resolve" ? "dns" : rule.action === "sniff" ? "search" : "route")}${escapeHtml(actionLabel)}</span>
       <div class="entry-actions"><button class="entry-action" data-modal="route" data-id="${escapeHtml(rule.id)}" title="编辑规则">${icon("edit")}</button><button class="entry-action danger" data-route-remove="rule" data-id="${escapeHtml(rule.id)}" title="删除规则">${icon("trash")}</button></div>
     </div>`;
+  }
+
+  function routeRulePosition(ruleId, rules = state.routeRules) {
+    return rules.filter((rule) => rule.type !== "insertion").findIndex((rule) => rule.id === ruleId) + 1;
+  }
+
+  function focusRouteRuleDragHandle(ruleId) {
+    window.requestAnimationFrame(() => {
+      const handle = [...document.querySelectorAll("[data-route-rule-drag-handle]")]
+        .find((item) => item.closest("[data-route-rule-id]")?.dataset.routeRuleId === ruleId);
+      handle?.focus({ preventScroll: true });
+    });
+  }
+
+  function commitRouteRuleOrder(orderedIds, movedRuleId, previousPosition) {
+    const ruleById = new Map(state.routeRules.map((rule) => [rule.id, rule]));
+    const reorderedRules = orderedIds.map((id) => ruleById.get(id)).filter(Boolean);
+    if (reorderedRules.length !== state.routeRules.length) return false;
+    if (reorderedRules.every((rule, index) => rule.id === state.routeRules[index].id)) return false;
+    state.routeRules = reorderedRules;
+    state.dirty = true;
+    const movedRule = ruleById.get(movedRuleId);
+    const nextPosition = routeRulePosition(movedRuleId, reorderedRules);
+    render();
+    focusRouteRuleDragHandle(movedRuleId);
+    const positionMessage = previousPosition === nextPosition
+      ? "已调整规则与新增插入点的相对位置"
+      : `已从第 ${previousPosition} 位移动到第 ${nextPosition} 位`;
+    showToast("规则顺序已更新", `“${movedRule?.type || "规则"}”${positionMessage}，请保存后应用。`, "success");
+    return true;
+  }
+
+  function cleanupRouteRuleDrag() {
+    if (!routeRuleDrag) return;
+    if (routeRuleDrag.scrollFrame) window.cancelAnimationFrame(routeRuleDrag.scrollFrame);
+    try {
+      if (routeRuleDrag.handle.hasPointerCapture(routeRuleDrag.pointerId)) {
+        routeRuleDrag.handle.releasePointerCapture(routeRuleDrag.pointerId);
+      }
+    } catch {
+      // 原型重绘时拖拽节点可能已离开文档，无需继续释放指针。
+    }
+    routeRuleDrag.ghost?.remove();
+    routeRuleDrag.row.classList.remove("is-drag-placeholder");
+    document.body.classList.remove("is-route-rule-dragging");
+    routeRuleDrag = null;
+  }
+
+  function beginRouteRuleDrag() {
+    if (!routeRuleDrag || routeRuleDrag.started) return;
+    const rect = routeRuleDrag.row.getBoundingClientRect();
+    const ghost = routeRuleDrag.row.cloneNode(true);
+    ghost.classList.remove("is-drag-placeholder");
+    ghost.classList.add("route-rule-drag-ghost");
+    ghost.setAttribute("aria-hidden", "true");
+    ghost.inert = true;
+    ghost.style.width = `${rect.width}px`;
+    ghost.style.height = `${rect.height}px`;
+    ghost.style.left = `${rect.left}px`;
+    ghost.style.top = `${rect.top}px`;
+    routeRuleDrag.offsetY = routeRuleDrag.startY - rect.top;
+    routeRuleDrag.ghost = ghost;
+    routeRuleDrag.started = true;
+    routeRuleDrag.row.classList.add("is-drag-placeholder");
+    document.body.classList.add("is-route-rule-dragging");
+    document.body.append(ghost);
+  }
+
+  function placeDraggedRouteRule(clientY) {
+    if (!routeRuleDrag?.started) return;
+    routeRuleDrag.ghost.style.top = `${clientY - routeRuleDrag.offsetY}px`;
+    const nextItem = [...routeRuleDrag.list.children]
+      .filter((item) => item !== routeRuleDrag.row)
+      .find((item) => {
+        const rect = item.getBoundingClientRect();
+        return clientY < rect.top + rect.height / 2;
+      });
+    routeRuleDrag.list.insertBefore(routeRuleDrag.row, nextItem || null);
+  }
+
+  function updateRouteRuleAutoScroll(clientY) {
+    if (!routeRuleDrag?.started) return;
+    if (routeRuleDrag.scrollFrame) window.cancelAnimationFrame(routeRuleDrag.scrollFrame);
+    routeRuleDrag.scrollFrame = null;
+    const edge = Math.min(80, window.innerHeight / 4);
+    const distance = clientY < edge
+      ? clientY - edge
+      : clientY > window.innerHeight - edge
+        ? clientY - (window.innerHeight - edge)
+        : 0;
+    if (!distance) return;
+    const step = () => {
+      if (!routeRuleDrag?.started) return;
+      const speed = Math.sign(distance) * Math.min(18, Math.max(4, Math.abs(distance) / 4));
+      window.scrollBy(0, speed);
+      placeDraggedRouteRule(routeRuleDrag.lastClientY);
+      routeRuleDrag.scrollFrame = window.requestAnimationFrame(step);
+    };
+    routeRuleDrag.scrollFrame = window.requestAnimationFrame(step);
+  }
+
+  function finishRouteRuleDrag(commit) {
+    if (!routeRuleDrag) return;
+    const drag = routeRuleDrag;
+    const orderedIds = drag.started
+      ? [...drag.list.children].map((item) => item.dataset.routeRuleId).filter(Boolean)
+      : [];
+    cleanupRouteRuleDrag();
+    if (commit && drag.started) {
+      commitRouteRuleOrder(orderedIds, drag.ruleId, drag.previousPosition);
+    } else if (drag.started) {
+      render();
+      focusRouteRuleDragHandle(drag.ruleId);
+    }
+  }
+
+  function moveRouteRuleWithKeyboard(ruleId, direction) {
+    const currentPosition = routeRulePosition(ruleId);
+    const orderedRules = state.routeRules.filter((rule) => rule.type !== "insertion");
+    const currentRuleIndex = orderedRules.findIndex((rule) => rule.id === ruleId);
+    const targetRule = orderedRules[currentRuleIndex + direction];
+    if (!targetRule) return;
+    const orderedIds = state.routeRules.map((rule) => rule.id);
+    const currentIndex = orderedIds.indexOf(ruleId);
+    const targetIndex = orderedIds.indexOf(targetRule.id);
+    [orderedIds[currentIndex], orderedIds[targetIndex]] = [orderedIds[targetIndex], orderedIds[currentIndex]];
+    commitRouteRuleOrder(orderedIds, ruleId, currentPosition);
   }
 
   function dnsRouteRule(order, title, type, value, target, tone) {
@@ -3418,6 +3547,51 @@
     }
   });
 
+  document.addEventListener("pointerdown", (event) => {
+    const handle = event.target.closest("[data-route-rule-drag-handle]");
+    if (routeRuleDrag || !handle || (event.pointerType === "mouse" && event.button !== 0)) return;
+    const row = handle.closest(".route-rule-row");
+    const list = row?.closest(".route-rule-list");
+    if (!row || !list) return;
+    event.preventDefault();
+    handle.focus({ preventScroll: true });
+    routeRuleDrag = {
+      pointerId: event.pointerId,
+      handle,
+      row,
+      list,
+      ruleId: row.dataset.routeRuleId,
+      previousPosition: routeRulePosition(row.dataset.routeRuleId),
+      startX: event.clientX,
+      startY: event.clientY,
+      lastClientY: event.clientY,
+      started: false,
+      ghost: null,
+      scrollFrame: null,
+    };
+    handle.setPointerCapture(event.pointerId);
+  });
+
+  document.addEventListener("pointermove", (event) => {
+    if (!routeRuleDrag || event.pointerId !== routeRuleDrag.pointerId) return;
+    event.preventDefault();
+    routeRuleDrag.lastClientY = event.clientY;
+    if (!routeRuleDrag.started && Math.hypot(event.clientX - routeRuleDrag.startX, event.clientY - routeRuleDrag.startY) < 4) return;
+    beginRouteRuleDrag();
+    placeDraggedRouteRule(event.clientY);
+    updateRouteRuleAutoScroll(event.clientY);
+  }, { passive: false });
+
+  document.addEventListener("pointerup", (event) => {
+    if (!routeRuleDrag || event.pointerId !== routeRuleDrag.pointerId) return;
+    finishRouteRuleDrag(true);
+  });
+
+  document.addEventListener("pointercancel", (event) => {
+    if (!routeRuleDrag || event.pointerId !== routeRuleDrag.pointerId) return;
+    finishRouteRuleDrag(false);
+  });
+
   document.addEventListener("click", (event) => {
     const routeRemoveTarget = event.target.closest("[data-route-remove]");
     if (routeRemoveTarget) {
@@ -4435,6 +4609,18 @@
   });
 
   document.addEventListener("keydown", (event) => {
+    const routeDragHandle = event.target.closest("[data-route-rule-drag-handle]");
+    if (routeDragHandle && ["ArrowUp", "ArrowDown"].includes(event.key)) {
+      event.preventDefault();
+      const ruleId = routeDragHandle.closest("[data-route-rule-id]")?.dataset.routeRuleId;
+      if (ruleId) moveRouteRuleWithKeyboard(ruleId, event.key === "ArrowUp" ? -1 : 1);
+      return;
+    }
+    if (event.key === "Escape" && routeRuleDrag) {
+      event.preventDefault();
+      finishRouteRuleDrag(false);
+      return;
+    }
     if (event.target.matches("[data-profile-json]") && event.key === "Tab") {
       event.preventDefault();
       const textarea = event.target;
