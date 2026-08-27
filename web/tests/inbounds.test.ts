@@ -26,29 +26,29 @@ describe("入站配置", () => {
     expect(uniqueInboundTag("mixed-in", ["mixed-in", "mixed-in-2"])).toBe("mixed-in-3");
   });
 
-  it("结构化编辑器展示嗅探兼容项并把资源库意图与入站字段分开提交", async () => {
+  it("结构化编辑器不显示或生成已移除的旧嗅探参数", async () => {
     const wrapper = mount(InboundEditorDialog, {
       props: { open: true, resource: null, existingTags: [] }
     });
     expect(wrapper.findAll(".type-grid > label")).toHaveLength(6);
     await wrapper.get('input[type="radio"][value="http"]').setValue(true);
-    expect(wrapper.get('input[name="sniff-override-destination"]').attributes("disabled")).toBeDefined();
-    await wrapper.get('input[name="sniff"]').setValue(true);
+    expect(wrapper.text()).not.toContain("协议嗅探");
+    expect(wrapper.text()).not.toContain("覆盖目标地址");
     await wrapper.get('input[name="tag"]').setValue("http-lan");
     await wrapper.get('input[required]:not([name="tag"])').setValue("0.0.0.0");
     await wrapper.get('input[type="number"]').setValue("18080");
     await wrapper.get("form").trigger("submit");
-    const submitted = wrapper.emitted("submit")?.[0]?.[0] as { config: Record<string, unknown>; routing: Record<string, unknown> };
+    const submitted = wrapper.emitted("submit")?.[0]?.[0] as { config: Record<string, unknown>; routing?: unknown };
     expect(submitted).toMatchObject({
       mode: "structured",
       config: { type: "http", tag: "http-lan", listen: "0.0.0.0", listen_port: 18080 }
     });
-    expect(submitted.routing).toEqual({ sniff: true, sniffTimeout: "300ms" });
+    expect(submitted).not.toHaveProperty("routing");
     expect(submitted.config).not.toHaveProperty("sniff");
     expect(submitted.config).not.toHaveProperty("sniff_override_destination");
   });
 
-  it("档案结构化编辑按官方规则迁移嗅探，完整 JSON 则原样提交", async () => {
+  it("档案结构化编辑移除旧嗅探字段，完整 JSON 则原样提交", async () => {
     const legacy = {
       type: "mixed", tag: "legacy-in", listen: "127.0.0.1", listen_port: 7891,
       sniff: true, sniff_override_destination: true, sniff_timeout: "1s",
@@ -60,9 +60,11 @@ describe("入站配置", () => {
         resource: { id: "profile-inbound-0", mode: "structured", config: legacy, updatedAt: "2026-08-25T00:00:00Z" }
       }
     });
+    expect(structured.text()).not.toContain("协议嗅探");
+    expect(structured.text()).not.toContain("覆盖目标地址");
     await structured.get("form").trigger("submit");
-    const migrated = structured.emitted("submit")?.[0]?.[0] as { config: Record<string, unknown>; routing: Record<string, unknown> };
-    expect(migrated.routing).toEqual({ sniff: true, sniffTimeout: "1s" });
+    const migrated = structured.emitted("submit")?.[0]?.[0] as { config: Record<string, unknown>; routing?: unknown };
+    expect(migrated).not.toHaveProperty("routing");
     for (const field of ["sniff", "sniff_override_destination", "sniff_timeout", "domain_strategy", "udp_disable_domain_unmapping"]) {
       expect(migrated.config).not.toHaveProperty(field);
     }
@@ -124,14 +126,14 @@ describe("入站配置", () => {
     const id = "b".repeat(32);
     const source = {
       type: "mixed", tag: "mixed-in", listen: "0.0.0.0", listen_port: 19090,
-      future: { keep: true }
+      sniff: true, sniff_override_destination: true, sniff_timeout: "750ms", future: { keep: true }
     };
-    const summary = { id, mode: "structured", type: "mixed", tag: "mixed-in", endpoint: "0.0.0.0:19090", fieldCount: 5, updatedAt: "2026-08-25T02:00:00Z" };
+    const summary = { id, mode: "structured", type: "mixed", tag: "mixed-in", endpoint: "0.0.0.0:19090", fieldCount: 9, updatedAt: "2026-08-25T02:00:00Z" };
     useInboundStore().resources.value = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       const payload = path.endsWith(`/inbound-resources/${id}`)
-        ? { id, mode: "structured", config: source, routing: { sniff: true, sniffTimeout: "750ms" }, updatedAt: summary.updatedAt }
+        ? { id, mode: "structured", config: source, updatedAt: summary.updatedAt }
         : [summary];
       return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
     });

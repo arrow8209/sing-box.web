@@ -74,7 +74,7 @@ func validateInbounds(items []Inbound) error {
 			return fmt.Errorf("inbounds[%d].id 重复", index)
 		}
 		ids[item.ID] = struct{}{}
-		mode, config, routing, header, err := normalizeInput(Input{Mode: item.Mode, Config: item.Config, Routing: item.Routing})
+		mode, config, header, err := normalizeInput(Input{Mode: item.Mode, Config: item.Config})
 		if err != nil {
 			return fmt.Errorf("inbounds[%d]: %w", index, err)
 		}
@@ -83,15 +83,11 @@ func validateInbounds(items []Inbound) error {
 			return fmt.Errorf("inbounds[%d].config 无效: %w", index, err)
 		}
 		totalBytes += compact.Len()
-		if item.Routing != nil {
-			routingJSON, _ := json.Marshal(item.Routing)
-			totalBytes += len(routingJSON)
-		}
 		if totalBytes > maxLibraryBytes {
 			return fmt.Errorf("入站配置资源库不能超过 16 MiB")
 		}
-		if mode != item.Mode || !bytes.Equal(config, compact.Bytes()) || !equalRouting(routing, item.Routing) {
-			return fmt.Errorf("inbounds[%d] 未规范化", index)
+		if mode != item.Mode || !bytes.Equal(config, compact.Bytes()) {
+			return fmt.Errorf("inbounds[%d].config 未规范化", index)
 		}
 		if _, exists := tags[header.Tag]; exists {
 			return fmt.Errorf("inbounds[%d].config.tag 重复: %s", index, header.Tag)
@@ -107,18 +103,7 @@ func validateInbounds(items []Inbound) error {
 func cloneInbound(source Inbound) Inbound {
 	result := source
 	result.Config = append([]byte(nil), source.Config...)
-	if source.Routing != nil {
-		routing := *source.Routing
-		result.Routing = &routing
-	}
 	return result
-}
-
-func equalRouting(left, right *RoutingIntent) bool {
-	if left == nil || right == nil {
-		return left == nil && right == nil
-	}
-	return *left == *right
 }
 
 func cloneInbounds(source []Inbound) []Inbound {

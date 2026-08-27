@@ -58,7 +58,7 @@ data/bin/sing-box check -C config.staging-<profile-id>
 
 自定义配置的“入站”页可以一次选择多个资源导入。导入只把当时的完整对象复制进档案的 `inbounds`，不保存资源 ID 或来源关系；之后修改或删除任一侧都不会联动另一侧。若导入对象的 `tag` 已被当前档案使用，页面会自动生成不冲突的新名称。
 
-结构化入站不会写入 sing-box 1.13 已移除的旧嗅探字段。资源库会把“协议嗅探”作为独立导入意图保存，导入档案或编辑档案副本时按[官方迁移方式](https://sing-box.sagernet.org/migration/#migrate-legacy-inbound-fields-to-rule-actions)生成按 inbound tag 限定的 `route.rules` `sniff` 动作；用户通过“完整 JSON”维护的入站对象不会被自动迁移这些字段。旧版“使用嗅探结果覆盖目标地址”能力在 sing-box 1.13 中已删除且没有替代字段，结构化编辑器仅显示兼容说明，不会生成无效配置。
+结构化入站不会写入 sing-box 1.13 已移除的旧嗅探字段。导入包含历史 `sniff` 字段的结构化资源时，会按[官方迁移方式](https://sing-box.sagernet.org/migration/#migrate-legacy-inbound-fields-to-rule-actions)生成按 inbound tag 限定的 `route.rules` `sniff` 动作；新配置应在“路由”页维护协议嗅探。入站编辑器不提供旧版“协议嗅探”和“使用嗅探结果覆盖目标地址”参数，用户通过“完整 JSON”维护的入站对象也不会被自动迁移这些字段。
 
 ## 开发与验证
 

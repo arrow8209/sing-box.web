@@ -24,9 +24,8 @@ func TestServicePersistsCompleteInboundAndReturnsCredentialFreeSummary(t *testin
 		t.Fatal(err)
 	}
 	summary, err := service.Create(context.Background(), Input{
-		Mode:    ModeStructured,
-		Config:  json.RawMessage(`{"type":" mixed ","tag":" 家庭入口 ","listen":"0.0.0.0","listen_port":7891,"users":[{"username":"admin","password":"keep-me"}],"future":{"enabled":true}}`),
-		Routing: &RoutingIntent{Sniff: true, SniffTimeout: " 750ms "},
+		Mode:   ModeStructured,
+		Config: json.RawMessage(`{"type":" mixed ","tag":" 家庭入口 ","listen":"0.0.0.0","listen_port":7891,"users":[{"username":"admin","password":"keep-me"}],"future":{"enabled":true}}`),
 	})
 	if err != nil {
 		t.Fatal(err)
@@ -51,9 +50,6 @@ func TestServicePersistsCompleteInboundAndReturnsCredentialFreeSummary(t *testin
 	}
 	if config.Type != "mixed" || config.Tag != "家庭入口" || config.Users[0].Password != "keep-me" || !config.Future["enabled"] {
 		t.Fatalf("config fields were lost: %+v", config)
-	}
-	if detail.Routing == nil || !detail.Routing.Sniff || detail.Routing.SniffTimeout != "750ms" {
-		t.Fatalf("routing intent was lost: %+v", detail.Routing)
 	}
 	info, err := os.Stat(layout.InboundResourcesFile)
 	if err != nil {
@@ -83,16 +79,9 @@ func TestServiceEnforcesUniqueTagsAndStructuredTypes(t *testing.T) {
 	if _, err := service.Replace(context.Background(), created.ID, Input{Mode: ModeStructured, Config: json.RawMessage(`{"type":"shadowtls","tag":"other"}`)}); err == nil {
 		t.Fatal("unsupported structured type was accepted")
 	}
-	if _, err := service.Replace(context.Background(), created.ID, Input{Mode: ModeCustom, Config: json.RawMessage(`{"type":"shadowtls","tag":"other"}`), Routing: &RoutingIntent{Sniff: true}}); err == nil {
-		t.Fatal("custom resource routing intent was accepted")
-	}
 	replaced, err := service.Replace(context.Background(), created.ID, Input{Mode: ModeCustom, Config: json.RawMessage(`{"type":"shadowtls","tag":"other","unknown":900}`)})
 	if err != nil || replaced.Type != "shadowtls" || replaced.Mode != ModeCustom {
 		t.Fatalf("replaced=%+v err=%v", replaced, err)
-	}
-	detail, err := service.Get(context.Background(), created.ID)
-	if err != nil || detail.Routing != nil {
-		t.Fatalf("routing intent survived replacement: detail=%+v err=%v", detail, err)
 	}
 	if err := service.Delete(context.Background(), created.ID); err != nil {
 		t.Fatal(err)

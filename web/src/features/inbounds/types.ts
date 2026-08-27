@@ -15,22 +15,13 @@ export interface InboundDetail {
   id: string;
   mode: InboundMode;
   config: InboundConfig;
-  routing?: InboundRoutingIntent;
   updatedAt: string;
 }
 
 export interface InboundInput {
   mode: InboundMode;
   config: InboundConfig;
-  routing?: InboundRoutingIntent;
 }
-
-export interface InboundRoutingIntent {
-  sniff: boolean;
-  sniffTimeout?: string;
-}
-
-export type InboundEditorSubmission = InboundInput;
 
 export interface ValidInboundJson {
   valid: true;

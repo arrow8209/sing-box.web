@@ -7,7 +7,7 @@ import InboundEditorDialog from "@/features/inbounds/InboundEditorDialog.vue";
 import InboundImportDialog from "@/features/inbounds/InboundImportDialog.vue";
 import { editorType, inboundEndpoint, inboundTypes, isInboundConfig, resourceMode, uniqueInboundTag, withoutLegacyInboundFields } from "@/features/inbounds/model";
 import { useInboundStore } from "@/features/inbounds/store";
-import type { InboundConfig, InboundDetail, InboundEditorSubmission } from "@/features/inbounds/types";
+import type { InboundConfig, InboundDetail, InboundInput } from "@/features/inbounds/types";
 import { applyInboundRouteIntents, managedInboundSniff, type InboundPanelSave, type InboundRouteIntent } from "./inbound";
 
 const props = defineProps<{ draft: Draft; profileName: string; error?: string }>();
@@ -18,8 +18,6 @@ const editorOpen = ref(false);
 const importing = ref(false);
 const editingIndex = ref<number | null>(null);
 const editing = ref<InboundDetail | null>(null);
-const editingSniffEnabled = ref(false);
-const editingSniffTimeout = ref("300ms");
 const notice = ref("");
 const noticeTone = ref<"info" | "error" | "success">("info");
 
@@ -52,27 +50,24 @@ function closeEditor(): void {
   editorOpen.value = false;
   editing.value = null;
   editingIndex.value = null;
-  editingSniffEnabled.value = false;
-  editingSniffTimeout.value = "300ms";
 }
 function openEditor(index: number, config: InboundConfig): void {
   editingIndex.value = index;
   editing.value = { id: `profile-inbound-${index}`, mode: resourceMode(config), config: cloneConfig(config), updatedAt: props.draft.savedAt };
-  const managed = managedInboundSniff(props.draft, config.tag);
-  editingSniffEnabled.value = managed.enabled || config.sniff === true;
-  editingSniffTimeout.value = managed.enabled
-    ? managed.timeout
-    : typeof config.sniff_timeout === "string" && config.sniff_timeout.trim() ? config.sniff_timeout : "300ms";
   editorOpen.value = true;
 }
-function submitEdit(input: InboundEditorSubmission): void {
+function submitEdit(input: InboundInput): void {
   if (editingIndex.value === null) return;
   const next = cloneItems();
   next[editingIndex.value] = structuredClone(toRaw(input.config));
   const previousTag = editing.value?.config.tag ?? input.config.tag;
-  const intents = input.mode === "structured" && input.routing
-    ? [{ previousTag, tag: input.config.tag, sniff: input.routing.sniff, sniffTimeout: input.routing.sniffTimeout }]
-    : [];
+  const managed = managedInboundSniff(props.draft, previousTag);
+  const legacySniff = input.mode === "structured" && editing.value?.mode === "structured" && editing.value.config.sniff === true;
+  const legacyTimeout = typeof editing.value?.config.sniff_timeout === "string" && editing.value.config.sniff_timeout.trim()
+    ? editing.value.config.sniff_timeout : "300ms";
+  const intents = managed.enabled
+    ? [{ previousTag, tag: input.config.tag, sniff: true, sniffTimeout: managed.timeout }]
+    : legacySniff ? [{ previousTag, tag: input.config.tag, sniff: true, sniffTimeout: legacyTimeout }] : [];
   if (!saveItems(next, intents)) return;
   const tag = input.config.tag;
   closeEditor();
@@ -105,9 +100,7 @@ async function importSelected(ids: string[]): Promise<void> {
     for (const detail of details) {
       const source = structuredClone(detail.config);
       const legacySniff = detail.mode === "structured" && source.sniff === true;
-      const sniffEnabled = detail.mode === "structured" && (detail.routing?.sniff === true || legacySniff);
-      const sniffTimeout = detail.routing?.sniffTimeout?.trim()
-        || (typeof source.sniff_timeout === "string" && source.sniff_timeout.trim() ? source.sniff_timeout : "300ms");
+      const legacyTimeout = typeof source.sniff_timeout === "string" && source.sniff_timeout.trim() ? source.sniff_timeout : "300ms";
       const config = detail.mode === "structured" ? withoutLegacyInboundFields(source) : source;
       const tag = uniqueInboundTag(config.tag, used);
       if (tag !== config.tag) renamed++;
@@ -116,7 +109,7 @@ async function importSelected(ids: string[]): Promise<void> {
       // Only the complete config object enters the draft. No library ID or
       // source metadata is retained, so future edits and deletes are isolated.
       next.push(config);
-      if (sniffEnabled) intents.push({ tag, sniff: true, sniffTimeout });
+      if (legacySniff) intents.push({ tag, sniff: true, sniffTimeout: legacyTimeout });
     }
     if (!saveItems(next, intents)) return;
     importOpen.value = false;
@@ -138,7 +131,7 @@ async function importSelected(ids: string[]): Promise<void> {
     </div>
     <p v-if="error" class="panel-error" role="alert">{{ error }}</p>
     <InboundImportDialog :open="importOpen" :profile-name="profileName" :current-tags="tags" :busy="importing" @close="importOpen = false" @import="importSelected" />
-    <InboundEditorDialog :open="editorOpen" :resource="editing" :existing-tags="tags" kind="profile" :allow-delete="false" :sniff-enabled="editingSniffEnabled" :sniff-timeout="editingSniffTimeout" @close="closeEditor" @submit="submitEdit" />
+    <InboundEditorDialog :open="editorOpen" :resource="editing" :existing-tags="tags" kind="profile" :allow-delete="false" @close="closeEditor" @submit="submitEdit" />
     <AppToast v-if="notice" :message="notice" :tone="noticeTone" />
   </section>
 </template>

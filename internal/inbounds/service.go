@@ -94,7 +94,7 @@ func (s *Service) Get(ctx context.Context, id string) (Inbound, error) {
 }
 
 func (s *Service) Create(ctx context.Context, input Input) (Summary, error) {
-	mode, config, routing, header, err := normalizeInput(input)
+	mode, config, header, err := normalizeInput(input)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -117,7 +117,7 @@ func (s *Service) Create(ctx context.Context, input Input) (Summary, error) {
 	if err != nil {
 		return Summary{}, err
 	}
-	item := Inbound{ID: id, Mode: mode, Config: config, Routing: routing, UpdatedAt: s.clock().UTC()}
+	item := Inbound{ID: id, Mode: mode, Config: config, UpdatedAt: s.clock().UTC()}
 	items = append([]Inbound{item}, items...)
 	if err := s.store.write(items); err != nil {
 		return Summary{}, err
@@ -126,7 +126,7 @@ func (s *Service) Create(ctx context.Context, input Input) (Summary, error) {
 }
 
 func (s *Service) Replace(ctx context.Context, id string, input Input) (Summary, error) {
-	mode, config, routing, header, err := normalizeInput(input)
+	mode, config, header, err := normalizeInput(input)
 	if err != nil {
 		return Summary{}, err
 	}
@@ -146,7 +146,7 @@ func (s *Service) Replace(ctx context.Context, id string, input Input) (Summary,
 	if tagExists(items, header.Tag, id) {
 		return Summary{}, fmt.Errorf("%w: %s", ErrDuplicateTag, header.Tag)
 	}
-	items[index] = Inbound{ID: id, Mode: mode, Config: config, Routing: routing, UpdatedAt: s.clock().UTC()}
+	items[index] = Inbound{ID: id, Mode: mode, Config: config, UpdatedAt: s.clock().UTC()}
 	if err := s.store.write(items); err != nil {
 		return Summary{}, err
 	}
@@ -171,65 +171,37 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 	return s.store.write(items)
 }
 
-func normalizeInput(input Input) (Mode, json.RawMessage, *RoutingIntent, configHeader, error) {
+func normalizeInput(input Input) (Mode, json.RawMessage, configHeader, error) {
 	if input.Mode != ModeStructured && input.Mode != ModeCustom {
-		return "", nil, nil, configHeader{}, fmt.Errorf("mode 必须是 structured 或 custom")
+		return "", nil, configHeader{}, fmt.Errorf("mode 必须是 structured 或 custom")
 	}
 	if len(input.Config) == 0 || len(input.Config) > maxInboundBytes {
-		return "", nil, nil, configHeader{}, fmt.Errorf("单个入站配置无效或超过 1 MiB")
+		return "", nil, configHeader{}, fmt.Errorf("单个入站配置无效或超过 1 MiB")
 	}
 	var object map[string]json.RawMessage
 	if err := json.Unmarshal(input.Config, &object); err != nil || object == nil {
-		return "", nil, nil, configHeader{}, fmt.Errorf("config 必须是 JSON 对象")
+		return "", nil, configHeader{}, fmt.Errorf("config 必须是 JSON 对象")
 	}
 	typeName, err := requiredString(object, "type", maxTypeRunes)
 	if err != nil {
-		return "", nil, nil, configHeader{}, fmt.Errorf("config.type 必须是非空字符串且不超过 %d 个字符", maxTypeRunes)
+		return "", nil, configHeader{}, fmt.Errorf("config.type 必须是非空字符串且不超过 %d 个字符", maxTypeRunes)
 	}
 	tag, err := requiredString(object, "tag", maxTagRunes)
 	if err != nil {
-		return "", nil, nil, configHeader{}, fmt.Errorf("config.tag 必须是非空字符串且不超过 %d 个字符", maxTagRunes)
+		return "", nil, configHeader{}, fmt.Errorf("config.tag 必须是非空字符串且不超过 %d 个字符", maxTagRunes)
 	}
 	if input.Mode == ModeStructured {
 		if _, supported := structuredTypes[typeName]; !supported {
-			return "", nil, nil, configHeader{}, fmt.Errorf("结构化编辑不支持入站类型: %s", typeName)
+			return "", nil, configHeader{}, fmt.Errorf("结构化编辑不支持入站类型: %s", typeName)
 		}
-	}
-	routing, err := normalizeRouting(input.Mode, input.Routing)
-	if err != nil {
-		return "", nil, nil, configHeader{}, err
 	}
 	object["type"], _ = json.Marshal(typeName)
 	object["tag"], _ = json.Marshal(tag)
 	normalized, err := json.Marshal(object)
 	if err != nil {
-		return "", nil, nil, configHeader{}, err
+		return "", nil, configHeader{}, err
 	}
-	return input.Mode, normalized, routing, configHeader{Type: typeName, Tag: tag}, nil
-}
-
-func normalizeRouting(mode Mode, routing *RoutingIntent) (*RoutingIntent, error) {
-	if routing == nil {
-		return nil, nil
-	}
-	if mode != ModeStructured {
-		return nil, fmt.Errorf("完整 JSON 入站不能附加结构化路由意图")
-	}
-	if !routing.Sniff {
-		return nil, nil
-	}
-	timeout := strings.TrimSpace(routing.SniffTimeout)
-	if timeout == "" {
-		timeout = "300ms"
-	}
-	if !utf8.ValidString(timeout) || utf8.RuneCountInString(timeout) > 64 {
-		return nil, fmt.Errorf("routing.sniffTimeout 不能超过 64 个字符")
-	}
-	duration, err := time.ParseDuration(timeout)
-	if err != nil || duration <= 0 {
-		return nil, fmt.Errorf("routing.sniffTimeout 必须是正数时间长度")
-	}
-	return &RoutingIntent{Sniff: true, SniffTimeout: timeout}, nil
+	return input.Mode, normalized, configHeader{Type: typeName, Tag: tag}, nil
 }
 
 func requiredString(object map[string]json.RawMessage, key string, limit int) (string, error) {
