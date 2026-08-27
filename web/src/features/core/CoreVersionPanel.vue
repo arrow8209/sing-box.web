@@ -12,7 +12,7 @@ const props = defineProps<{
   updateAvailable: boolean;
 }>();
 
-const emit = defineEmits<{ download: []; refresh: [] }>();
+const emit = defineEmits<{ download: [version: string]; refresh: [] }>();
 
 const stageMeta: Record<string, { label: string; progress: number }> = {
   checking_release: { label: "检查官方版本", progress: 8 },
@@ -96,7 +96,7 @@ const actionDisabled = computed(() => props.busy || updating.value || props.chec
 
 function triggerAction(): void {
   if (!props.latest) emit("refresh");
-  else emit("download");
+  else emit("download", props.latest.version);
 }
 </script>
 

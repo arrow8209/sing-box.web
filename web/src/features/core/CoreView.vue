@@ -1,12 +1,10 @@
 <script setup lang="ts">
-import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import { useCoreStore } from "./store";
-import CoreUpdateDialog from "./CoreUpdateDialog.vue";
 import CoreVersionPanel from "./CoreVersionPanel.vue";
 
 const core = useCoreStore();
-const dialogOpen = ref(false);
 const submitting = ref(false);
 const checkingLatest = ref(true);
 const operationActive = computed(() => Boolean(core.update.value?.stage && !["idle", "completed", "failed"].includes(core.update.value.stage)));
@@ -23,17 +21,13 @@ async function refreshLatest(): Promise<void> {
   checkingLatest.value = false;
 }
 
-async function openUpdate(): Promise<void> {
-  dialogOpen.value = true;
-  await nextTick();
-  await refreshLatest();
-}
-
-async function confirm(version: string): Promise<void> {
+async function downloadLatest(version: string): Promise<void> {
   submitting.value = true;
-  await core.startUpdate(version);
-  submitting.value = false;
-  if (!core.error.value) dialogOpen.value = false;
+  try {
+    await core.startUpdate(version);
+  } finally {
+    submitting.value = false;
+  }
 }
 </script>
 
@@ -53,14 +47,12 @@ async function confirm(version: string): Promise<void> {
       :checking="checkingLatest"
       :busy="submitting"
       :update-available="core.updateAvailable.value"
-      @download="openUpdate"
+      @download="downloadLatest"
       @refresh="refreshLatest"
     />
 
     <p v-if="core.status.value?.lastError && !operationActive" class="core-runtime-error" role="alert"><AppIcon name="info" :size="14" /><span><strong>最近一次核心错误</strong>{{ core.status.value.lastError }}</span></p>
-    <p class="core-page-note"><AppIcon name="info" :size="14" /><span>更新仅在管理员确认后执行；安装前会校验文件摘要和现有配置，运行中的核心会在成功后自动恢复。</span></p>
-
-    <CoreUpdateDialog :open="dialogOpen" :current-version="core.status.value?.installedVersion ?? ''" :latest="core.latest.value" :checking="checkingLatest" :busy="submitting" @close="dialogOpen = false" @confirm="confirm" />
+    <p class="core-page-note"><AppIcon name="info" :size="14" /><span>点击下载后会立即开始；安装前会校验文件摘要和现有配置，运行中的核心会在成功后自动恢复。</span></p>
   </section>
 </template>
 

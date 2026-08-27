@@ -1,6 +1,5 @@
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import CoreUpdateDialog from "@/features/core/CoreUpdateDialog.vue";
 import CoreVersionPanel from "@/features/core/CoreVersionPanel.vue";
 import { createCoreStore } from "@/features/core/store";
 import type { CoreApi } from "@/features/core/api";
@@ -26,7 +25,7 @@ describe("核心状态", () => {
     expect(wrapper.text()).toContain("发现新版本");
     expect(wrapper.text()).not.toContain("内存占用");
     await wrapper.get("[data-download-core]").trigger("click");
-    expect(wrapper.emitted("download")).toHaveLength(1);
+    expect(wrapper.emitted("download")).toEqual([["1.12.3"]]);
     await wrapper.setProps({ checking: true });
     expect(wrapper.get("[data-download-core]").text()).toContain("正在检查版本");
     expect(wrapper.get("[data-download-core]").attributes()).toHaveProperty("disabled");
@@ -45,16 +44,6 @@ describe("核心状态", () => {
     expect(wrapper.get("[role='progressbar']").attributes("aria-valuetext")).toContain("安装核心");
     expect(wrapper.text()).toContain("安装核心");
     expect(wrapper.get("[data-download-core]").attributes()).toHaveProperty("disabled");
-  });
-  it("不会在确认前启动更新", async () => {
-    const confirm = vi.fn();
-    const wrapper = mount(CoreUpdateDialog, { props: { open: true, currentVersion: "1.12.2", latest: { version: "1.12.3", arch: "amd64" }, checking: true, busy: false }, attrs: { onConfirm: confirm } });
-    expect(confirm).not.toHaveBeenCalled();
-    await wrapper.get("[data-confirm-update]").trigger("click");
-    expect(confirm).not.toHaveBeenCalled();
-    await wrapper.setProps({ checking: false });
-    await wrapper.get("[data-confirm-update]").trigger("click");
-    expect(confirm).toHaveBeenCalledWith("1.12.3");
   });
   it("更新期间每 500ms 轮询，页面隐藏时暂停", async () => {
     vi.useFakeTimers();
