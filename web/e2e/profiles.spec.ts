@@ -7,13 +7,21 @@ async function login(page: import("@playwright/test").Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "仪表盘" })).toBeVisible();
 }
 
-test("创建、改名和删除档案", async ({ page }) => {
+test("创建、复制、改名和删除档案", async ({ page }) => {
   await login(page);
   await page.goto("/profiles");
   await page.getByRole("button", { name: "新建档案" }).click();
   await page.getByRole("dialog", { name: "新建档案" }).getByLabel("名称").fill("E2E 家庭出口");
   await page.getByRole("dialog", { name: "新建档案" }).getByRole("button", { name: "确认" }).click();
   await expect(page.getByRole("heading", { name: "E2E 家庭出口" })).toBeVisible();
+  await expect(page.getByRole("link", { name: "管理档案" })).toHaveAttribute("href", "/profiles");
+  await expect(page.getByRole("link", { name: /管理 E2E 家庭出口/ })).toHaveCount(0);
+  await expect(page.getByRole("button", { name: "应用", exact: true })).toBeDisabled();
+  await expect(page.getByRole("button", { name: "应用", exact: true })).toHaveAttribute("title", "应用逻辑尚未实现");
+  await page.getByRole("button", { name: "复制" }).click();
+  await expect(page.getByRole("heading", { name: "E2E 家庭出口 副本" })).toBeVisible();
+  await expect(page.locator(".profile-list").getByText("E2E 家庭出口", { exact: true })).toBeVisible();
+  await expect(page.locator(".profile-list").getByText("E2E 家庭出口 副本", { exact: true })).toBeVisible();
   await page.getByRole("button", { name: "重命名" }).click();
   await page.getByRole("dialog", { name: "重命名档案" }).getByLabel("名称").fill("E2E 备用出口");
   await page.getByRole("dialog", { name: "重命名档案" }).getByRole("button", { name: "确认" }).click();
@@ -22,4 +30,10 @@ test("创建、改名和删除档案", async ({ page }) => {
   await page.getByLabel("确认名称").fill("E2E 备用出口");
   await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("button", { name: /E2E 备用出口/ })).toHaveCount(0);
+  await expect(page.locator(".profile-list").getByText("E2E 家庭出口", { exact: true })).toBeVisible();
+  await page.locator(".profile-list .profile").click();
+  await page.getByRole("button", { name: "删除" }).click();
+  await page.getByLabel("确认名称").fill("E2E 家庭出口");
+  await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
+  await expect(page.locator(".profile-list .profile")).toHaveCount(0);
 });

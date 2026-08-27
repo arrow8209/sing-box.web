@@ -194,6 +194,56 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Meta, Draft, e
 	return cloneMeta(meta), cloneDraft(draft), nil
 }
 
+// Duplicate creates an independent revision-1 draft without carrying runtime
+// application or validation state from the source profile.
+func (s *Service) Duplicate(ctx context.Context, profileID string) (Meta, Draft, error) {
+	if err := ctx.Err(); err != nil {
+		return Meta{}, Draft{}, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	metas, err := s.refreshMetas()
+	if err != nil {
+		return Meta{}, Draft{}, err
+	}
+	index := findMeta(metas, profileID)
+	if index < 0 {
+		return Meta{}, Draft{}, ErrNotFound
+	}
+	if metas[index].QuarantinedError != "" {
+		return Meta{}, Draft{}, fmt.Errorf("%w: %s", ErrQuarantined, metas[index].QuarantinedError)
+	}
+	source, err := s.store.readDraft(profileID)
+	if err != nil {
+		return Meta{}, Draft{}, err
+	}
+	if source.Revision != metas[index].DraftRevision {
+		return Meta{}, Draft{}, fmt.Errorf("草稿修订与档案元数据不一致")
+	}
+	id, err := randomHex(s.random, 16)
+	if err != nil {
+		return Meta{}, Draft{}, err
+	}
+	draft := cloneDraft(source)
+	draft.ProfileID = id
+	draft.Revision = 1
+	draft.SavedAt = s.clock().UTC()
+	meta := Meta{
+		ID:                     id,
+		Name:                   duplicateName(metas[index].Name, metas),
+		DraftRevision:          1,
+		AppliedResourceDigests: map[string]string{},
+		NeedsApply:             true,
+	}
+	if err := validateDraftEnvelope(draft, maxModuleBytes, maxDraftBytes); err != nil {
+		return Meta{}, Draft{}, err
+	}
+	if err := s.store.create(meta, draft); err != nil {
+		return Meta{}, Draft{}, err
+	}
+	return cloneMeta(meta), cloneDraft(draft), nil
+}
+
 func (s *Service) Rename(ctx context.Context, profileID string, input RenameInput) (Meta, error) {
 	name, err := validateName(input.Name)
 	if err != nil {
@@ -607,6 +657,29 @@ func validateName(name string) (string, error) {
 		return "", fmt.Errorf("档案名称必须为 1 至 80 个字符")
 	}
 	return normalized, nil
+}
+
+func duplicateName(source string, metas []Meta) string {
+	used := make(map[string]struct{}, len(metas))
+	for _, meta := range metas {
+		used[meta.Name] = struct{}{}
+	}
+	base := []rune(source)
+	for number := 1; ; number++ {
+		suffix := " 副本"
+		if number > 1 {
+			suffix = fmt.Sprintf(" 副本 %d", number)
+		}
+		limit := 80 - utf8.RuneCountInString(suffix)
+		prefix := base
+		if len(prefix) > limit {
+			prefix = prefix[:limit]
+		}
+		candidate := string(prefix) + suffix
+		if _, exists := used[candidate]; !exists {
+			return candidate
+		}
+	}
 }
 
 func randomHex(source io.Reader, size int) (string, error) {

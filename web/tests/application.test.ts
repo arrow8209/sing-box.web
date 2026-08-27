@@ -12,18 +12,18 @@ const profileId = "0123456789abcdef0123456789abcdef";
 const draft = (): Draft => ({ profileId, revision: 4, config: {}, buffers: { log: "{}" }, bindings: [], savedAt: "2026-08-21T00:00:00Z" });
 const profile: ProfileSummary = { id: profileId, name: "A", draftRevision: 4, appliedRevision: null, appliedDigest: "", appliedAt: null, needsApply: true, lastValidation: null };
 function profiles(): ReturnType<typeof createProfileStore> {
-  const api: ProfileApi = { list: vi.fn(async () => [profile]), create: vi.fn(), rename: vi.fn(), remove: vi.fn(), getDraft: vi.fn(async () => ({ data: draft(), etag: "x" })), saveDraft: vi.fn() };
+  const api: ProfileApi = { list: vi.fn(async () => [profile]), create: vi.fn(), duplicate: vi.fn(), rename: vi.fn(), remove: vi.fn(), getDraft: vi.fn(async () => ({ data: draft(), etag: "x" })), saveDraft: vi.fn() };
   return createProfileStore(api);
 }
 
 describe("配置应用", () => {
   const stores: ReturnType<typeof createProfileStore>[] = [];
   afterEach(() => stores.splice(0).forEach((store) => store.dispose()));
-  it("应用逻辑未实现时按钮固定禁用", async () => {
+  it("配置工作台不再提供应用入口", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
     const wrapper = mount(ApplicationBar);
-    expect(wrapper.get("[data-apply]").attributes("disabled")).toBeDefined();
-    expect(wrapper.get("[data-apply]").attributes("title")).toBe("应用逻辑尚未实现");
+    expect(wrapper.find("[data-apply]").exists()).toBe(false);
+    expect(wrapper.findAll("button").map((button) => button.text())).toEqual(["预览", "检查"]);
   });
   it("预览仅呈现模块内容", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);

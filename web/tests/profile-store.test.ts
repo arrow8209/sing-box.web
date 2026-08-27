@@ -9,15 +9,23 @@ function draftFixture(revision = 3): Draft {
 }
 const profile: ProfileSummary = { id: "profile-a", name: "家庭出口", draftRevision: 3, appliedRevision: null, appliedDigest: "", appliedAt: null, needsApply: true, lastValidation: null };
 
-function fakeApi(options: { saveError?: unknown } = {}): ProfileApi & { saveDraft: ReturnType<typeof vi.fn>; clearSaveError: () => void } {
+type FakeProfileApi = ProfileApi & {
+  list: ReturnType<typeof vi.fn>;
+  duplicate: ReturnType<typeof vi.fn>;
+  getDraft: ReturnType<typeof vi.fn>;
+  saveDraft: ReturnType<typeof vi.fn>;
+  clearSaveError: () => void;
+};
+
+function fakeApi(options: { saveError?: unknown } = {}): FakeProfileApi {
   let failure = options.saveError;
   const api = {
-    list: vi.fn(async () => [profile]), create: vi.fn(), rename: vi.fn(), remove: vi.fn(),
+    list: vi.fn(async () => [profile]), create: vi.fn(), duplicate: vi.fn(), rename: vi.fn(), remove: vi.fn(),
     getDraft: vi.fn(async () => ({ data: draftFixture(), etag: '"rev-3"' })),
     saveDraft: vi.fn(async (_id: string, _etag: string, input: Draft) => { if (failure) throw failure; return { data: { ...input, revision: 4, savedAt: "2026-08-21T00:01:00Z" }, etag: '"rev-4"' }; }),
     clearSaveError: () => { failure = undefined; }
   };
-  return api as ProfileApi & { saveDraft: ReturnType<typeof vi.fn>; clearSaveError: () => void };
+  return api as FakeProfileApi;
 }
 
 describe("档案草稿保存", () => {
@@ -66,5 +74,22 @@ describe("档案草稿保存", () => {
     expect(store.saveState.value).toBe("saved");
     expect(api.saveDraft).toHaveBeenCalledTimes(1);
     expect(api.saveDraft.mock.calls[0]?.[2].buffers.inbounds).toContain("mixed-in");
+  });
+
+  it("复制前保存当前草稿并打开新档案", async () => {
+    const copied = { ...profile, id: "profile-copy", name: "家庭出口 副本", draftRevision: 1 };
+    const api = fakeApi();
+    let profiles = [profile];
+    api.list.mockImplementation(async () => profiles);
+    api.duplicate.mockImplementation(async () => { profiles = [profile, copied]; return copied; });
+    api.getDraft.mockImplementation(async (id: string) => ({ data: { ...draftFixture(id === "profile-copy" ? 1 : 3), profileId: id }, etag: id === "profile-copy" ? '"rev-1"' : '"rev-3"' }));
+    const store = createProfileStore(api); stores.push(store);
+    await store.refresh(); await store.open("profile-a");
+    store.mutate((value) => { value.buffers.log = '{"level":"debug"}'; });
+    await store.duplicate("profile-a");
+    expect(api.saveDraft).toHaveBeenCalledTimes(1);
+    expect(api.duplicate).toHaveBeenCalledWith("profile-a");
+    expect(store.activeProfileId.value).toBe("profile-copy");
+    expect(store.draft.value?.revision).toBe(1);
   });
 });

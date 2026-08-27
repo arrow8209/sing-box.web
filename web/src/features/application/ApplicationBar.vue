@@ -8,7 +8,6 @@ const profiles = useProfileStore();
   <div class="application-actions" role="group" aria-label="配置操作">
     <button data-preview type="button" class="secondary" :disabled="profiles.saveState.value !== 'saved'" @click="emit('preview')">预览</button>
     <button data-validate type="button" class="secondary" :disabled="profiles.saveState.value !== 'saved'" @click="emit('validate')">检查</button>
-    <button data-apply type="button" disabled title="应用逻辑尚未实现">应用</button>
   </div>
 </template>
 <style scoped>

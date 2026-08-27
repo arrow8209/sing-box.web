@@ -4,6 +4,7 @@ import type { Draft, DraftInput, ProfileSummary } from "./types";
 export interface ProfileApi {
   list(): Promise<ProfileSummary[]>;
   create(name: string): Promise<ProfileSummary>;
+  duplicate(id: string): Promise<ProfileSummary>;
   rename(id: string, name: string): Promise<ProfileSummary>;
   remove(id: string, confirmName: string, stopCurrent: boolean): Promise<void>;
   getDraft(id: string): Promise<{ data: Draft; etag: string }>;
@@ -21,6 +22,9 @@ export const profileApi: ProfileApi = {
   },
   async create(name) {
     return (await request<ProfileSummary>("/profiles", { method: "POST", body: { name } })).data;
+  },
+  async duplicate(id) {
+    return (await request<ProfileSummary>(`/profiles/${encodeURIComponent(id)}/copy`, { method: "POST" })).data;
   },
   async rename(id, name) {
     return (await request<ProfileSummary>(`/profiles/${encodeURIComponent(id)}`, { method: "PATCH", body: { name } })).data;

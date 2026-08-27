@@ -19,6 +19,7 @@ export interface ProfileStore {
   loadServerVersion(): Promise<void>;
   overwriteServerVersion(): Promise<void>;
   create(name: string): Promise<ProfileSummary>;
+  duplicate(id: string): Promise<ProfileSummary>;
   rename(id: string, name: string): Promise<ProfileSummary>;
   remove(id: string, confirmName: string, stopCurrent: boolean): Promise<void>;
   dispose(): void;
@@ -165,6 +166,15 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
     return created;
   }
 
+  async function duplicate(id: string): Promise<ProfileSummary> {
+    await flush();
+    if (hasPendingChanges.value) throw new Error("请先处理未保存的本地修改，再复制档案。");
+    const created = await api.duplicate(id);
+    await refresh();
+    await open(created.id);
+    return created;
+  }
+
   async function rename(id: string, name: string): Promise<ProfileSummary> {
     const renamed = await api.rename(id, name);
     profiles.value = profiles.value.map((item) => item.id === id ? renamed : item);
@@ -192,7 +202,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
   window.addEventListener("online", onOnline);
   window.addEventListener("beforeunload", onBeforeUnload);
 
-  return { profiles, activeProfileId, draft, etag, saveState, conflict, hasPendingChanges, refresh, open, mutate, flush, loadServerVersion, overwriteServerVersion, create, rename, remove, dispose: () => { cancelTimer(); window.removeEventListener("online", onOnline); window.removeEventListener("beforeunload", onBeforeUnload); } };
+  return { profiles, activeProfileId, draft, etag, saveState, conflict, hasPendingChanges, refresh, open, mutate, flush, loadServerVersion, overwriteServerVersion, create, duplicate, rename, remove, dispose: () => { cancelTimer(); window.removeEventListener("online", onOnline); window.removeEventListener("beforeunload", onBeforeUnload); } };
 }
 
 const defaultStore = createProfileStore();

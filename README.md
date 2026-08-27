@@ -23,7 +23,9 @@ data/bin/sing-box check -C config.staging-<profile-id>
 
 `config.staging-<profile-id>/` 在检查成功或失败后都会保留，后续检查同一配置时更新为最新完整候选，因此管理员可以随时在后台审核。目录及文件权限分别为 `0700` 和 `0600`，属于不会提交到 Git 的运行时数据；其中可能含认证信息等敏感配置，请勿复制到日志、工单或公开位置。
 
-“应用”按钮当前仅保留界面位置并固定禁用，`POST /profiles/{id}/apply` 返回 `501 application_not_implemented`。当前版本不会因为该按钮停止核心、替换正式 `config/` 或启动核心；具体应用语义留待后续讨论和设计。
+“配置档案”页的“应用”按钮当前仅保留界面位置并固定禁用，配置工作台只保留预览与检查；`POST /profiles/{id}/apply` 返回 `501 application_not_implemented`。当前版本不会因为该按钮停止核心、替换正式 `config/` 或启动核心；具体应用语义留待后续讨论和设计。
+
+配置档案可在服务端复制为独立副本；草稿配置、编辑器状态和规则绑定会一并复制，但不继承已应用修订、摘要或检查结果。副本从 revision 1 开始，重复复制时名称会自动编号。
 
 `internal/integration` 的测试会把当前 Go 测试二进制复制为受控 fake sing-box 核心，并只使用本地 `httptest` 规则服务；不会访问公网、启动真实代理或写入仓库工作目录。
 

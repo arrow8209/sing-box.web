@@ -34,6 +34,7 @@ func newTestService(t *testing.T) (*Service, paths.Layout) {
 		t.Fatal(err)
 	}
 	ids := append(bytes.Repeat([]byte{0x22}, 16), bytes.Repeat([]byte{0x33}, 16)...)
+	ids = append(ids, bytes.Repeat([]byte{0x44}, 16)...)
 	service, err := Open(layout, factory, testBindingSource{bindings: []RuleBinding{{ResourceID: "resource-a", Tag: "geosite-cn", Enabled: true}}}, testClock, bytes.NewReader(ids))
 	if err != nil {
 		t.Fatal(err)
@@ -55,6 +56,40 @@ func TestCreateProfileUsesTemplateAndNoProfileDirectory(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(layout.ConfigDir, meta.ID)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("profile config directory exists: %v", err)
+	}
+}
+
+func TestDuplicateProfileDoesNotInheritApplicationState(t *testing.T) {
+	service, _ := newTestService(t)
+	meta, draft, err := service.Create(context.Background(), CreateInput{Name: "家庭出口"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	appliedAt := time.Unix(2, 0).UTC()
+	if err := service.MarkApplied(context.Background(), AppliedResult{
+		ProfileID: meta.ID,
+		Revision:  draft.Revision,
+		Digest:    "source-digest",
+		AppliedAt: appliedAt,
+		Validation: ValidationSummary{
+			Valid: true, Message: "配置检查通过", CheckedAt: appliedAt,
+		},
+	}); err != nil {
+		t.Fatal(err)
+	}
+
+	copiedMeta, copiedDraft, err := service.Duplicate(context.Background(), meta.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if copiedMeta.Name != "家庭出口 副本" || copiedMeta.DraftRevision != 1 || !copiedMeta.NeedsApply {
+		t.Fatalf("copied meta=%+v", copiedMeta)
+	}
+	if copiedMeta.AppliedRevision != nil || copiedMeta.AppliedDigest != "" || copiedMeta.AppliedAt != nil || copiedMeta.LastValidation != nil {
+		t.Fatalf("application state leaked into copy: %+v", copiedMeta)
+	}
+	if copiedDraft.ProfileID != copiedMeta.ID || copiedDraft.Revision != 1 || copiedDraft.Buffers["route"] != draft.Buffers["route"] {
+		t.Fatalf("copied draft=%+v", copiedDraft)
 	}
 }
 

@@ -85,6 +85,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		default:
 			httpapi.MethodNotAllowed(w, http.MethodGet, http.MethodPut)
 		}
+	case len(parts) == 2 && parts[1] == "copy":
+		if r.Method != http.MethodPost {
+			httpapi.MethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		h.duplicate(w, r, profileID)
 	default:
 		notFound(w)
 	}
@@ -133,6 +139,15 @@ func (h *Handler) rename(w http.ResponseWriter, r *http.Request, profileID strin
 		return
 	}
 	httpapi.WriteJSON(w, http.StatusOK, meta)
+}
+
+func (h *Handler) duplicate(w http.ResponseWriter, r *http.Request, profileID string) {
+	meta, _, err := h.service.Duplicate(r.Context(), profileID)
+	if err != nil {
+		writeProfileError(w, err, "copy_profile")
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusCreated, meta)
 }
 
 func (h *Handler) delete(w http.ResponseWriter, r *http.Request, profileID string) {

@@ -85,6 +85,44 @@ func TestProfileCRUDRequiresAuthenticationAndCSRF(t *testing.T) {
 	}
 }
 
+func TestProfileCopyCreatesIndependentDraft(t *testing.T) {
+	handler, session := newAuthenticatedProfileAPI(t)
+	profileID := createProfile(t, handler, session, `{"name":"家庭出口"}`)
+	updated := profileRequest(t, handler, session, http.MethodPut, "/api/v1/profiles/"+profileID+"/draft", `{"buffers":{"log":"{\"level\":\"debug\"}"},"editorState":{"inbounds":{"disabledRules":[1]}},"bindings":[]}`, map[string]string{"If-Match": `"rev-1"`})
+	if updated.Code != http.StatusOK {
+		t.Fatalf("update=%d body=%s", updated.Code, updated.Body.String())
+	}
+
+	first := profileRequest(t, handler, session, http.MethodPost, "/api/v1/profiles/"+profileID+"/copy", "", nil)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("copy=%d body=%s", first.Code, first.Body.String())
+	}
+	var copied Meta
+	if err := json.Unmarshal(first.Body.Bytes(), &copied); err != nil {
+		t.Fatal(err)
+	}
+	if copied.ID == "" || copied.ID == profileID || copied.Name != "家庭出口 副本" || copied.DraftRevision != 1 || !copied.NeedsApply {
+		t.Fatalf("copied=%+v", copied)
+	}
+	draftResponse := profileRequest(t, handler, session, http.MethodGet, "/api/v1/profiles/"+copied.ID+"/draft", "", nil)
+	if draftResponse.Code != http.StatusOK || draftResponse.Header().Get("ETag") != `"rev-1"` {
+		t.Fatalf("draft=%d etag=%q body=%s", draftResponse.Code, draftResponse.Header().Get("ETag"), draftResponse.Body.String())
+	}
+	var draft Draft
+	if err := json.Unmarshal(draftResponse.Body.Bytes(), &draft); err != nil {
+		t.Fatal(err)
+	}
+	if draft.ProfileID != copied.ID || draft.Revision != 1 || draft.Buffers["log"] != `{"level":"debug"}` || !strings.Contains(string(draft.EditorState["inbounds"]), "disabledRules") {
+		t.Fatalf("draft=%+v", draft)
+	}
+
+	second := profileRequest(t, handler, session, http.MethodPost, "/api/v1/profiles/"+profileID+"/copy", "", nil)
+	if second.Code != http.StatusCreated {
+		t.Fatalf("second copy=%d body=%s", second.Code, second.Body.String())
+	}
+	assertProfileJSON(t, second.Body.Bytes(), "name", "家庭出口 副本 2")
+}
+
 func TestProfileDeleteRequiresCoreDecisionByDefault(t *testing.T) {
 	handler, session := newAuthenticatedProfileAPI(t)
 	profileID := createProfile(t, handler, session, `{"name":"活动档案"}`)
