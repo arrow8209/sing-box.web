@@ -11,4 +11,9 @@ test("核心页只展示隔离 fake core 状态并要求人工确认", async ({ 
   const dialog = page.getByRole("dialog");
   await expect(dialog.getByRole("heading", { name: "确认手动更新" })).toBeVisible();
   await expect(dialog.getByText("目标稳定版：1.0.0")).toBeVisible();
+  await dialog.getByRole("button", { name: "确认更新" }).click();
+  const progress = page.getByRole("progressbar", { name: "核心下载进度" });
+  await expect(progress).toHaveAttribute("aria-valuenow", "25");
+  await expect(page.getByText("8 MB / 32 MB")).toBeVisible();
+  await expect(page.getByText("4 MB/s")).toBeVisible();
 });

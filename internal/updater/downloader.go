@@ -1,8 +1,10 @@
 package updater
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"io"
 	"net"
@@ -21,6 +23,7 @@ const (
 	connectTimeout        = 10 * time.Second
 	responseHeaderTimeout = 15 * time.Second
 	totalDownloadTimeout  = 5 * time.Minute
+	progressReportPeriod  = 250 * time.Millisecond
 )
 
 var officialHosts = map[string]struct{}{
@@ -81,6 +84,17 @@ func validateOfficialURL(parsed *url.URL) error {
 }
 
 func (f *Fetcher) Prepare(ctx context.Context, release Release) (prepared PreparedBinary, cleanup func(), err error) {
+	return f.prepare(ctx, release, nil)
+}
+
+// PrepareWithProgress reports only the core archive transfer. The small
+// checksum document, when needed for older releases, is intentionally omitted
+// so progress never jumps backwards between two different response bodies.
+func (f *Fetcher) PrepareWithProgress(ctx context.Context, release Release, report func(DownloadProgress)) (prepared PreparedBinary, cleanup func(), err error) {
+	return f.prepare(ctx, release, report)
+}
+
+func (f *Fetcher) prepare(ctx context.Context, release Release, report func(DownloadProgress)) (prepared PreparedBinary, cleanup func(), err error) {
 	if err := validateRelease(release); err != nil {
 		return PreparedBinary{}, nil, err
 	}
@@ -110,7 +124,7 @@ func (f *Fetcher) Prepare(ctx context.Context, release Release) (prepared Prepar
 		}
 	}
 	archivePath := filepath.Join(directory, release.Asset.Name)
-	archive, err := f.download(ctx, release.Asset.URL, maxArchiveBytes, archivePath)
+	archive, err := f.downloadWithProgress(ctx, release.Asset.URL, maxArchiveBytes, archivePath, release.Asset.Size, report)
 	if err != nil {
 		return PreparedBinary{}, nil, err
 	}
@@ -138,6 +152,12 @@ func validateRelease(release Release) error {
 	if err := validateOfficialURLString(release.Asset.URL); err != nil {
 		return err
 	}
+	if release.Asset.Size < 0 {
+		return fmt.Errorf("核心压缩包大小无效")
+	}
+	if release.Asset.Size > maxArchiveBytes {
+		return ErrResponseTooLarge
+	}
 	if release.ArchiveSHA256 != "" {
 		if _, ok := parseGitHubAssetDigest("sha256:" + release.ArchiveSHA256); !ok {
 			return fmt.Errorf("核心压缩包 SHA-256 无效")
@@ -151,8 +171,15 @@ func validateRelease(release Release) error {
 }
 
 func (f *Fetcher) download(ctx context.Context, rawURL string, maximum int64, destination string) ([]byte, error) {
+	return f.downloadWithProgress(ctx, rawURL, maximum, destination, 0, nil)
+}
+
+func (f *Fetcher) downloadWithProgress(ctx context.Context, rawURL string, maximum int64, destination string, expectedSize int64, report func(DownloadProgress)) ([]byte, error) {
 	if err := validateOfficialURLString(rawURL); err != nil {
 		return nil, err
+	}
+	if expectedSize > maximum {
+		return nil, ErrResponseTooLarge
 	}
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, rawURL, nil)
 	if err != nil {
@@ -169,7 +196,19 @@ func (f *Fetcher) download(ctx context.Context, rawURL string, maximum int64, de
 	if response.ContentLength > maximum {
 		return nil, ErrResponseTooLarge
 	}
-	payload, err := readLimited(response.Body, maximum)
+	total := response.ContentLength
+	if total < 0 {
+		total = 0
+	}
+	if total == 0 && expectedSize > 0 {
+		total = expectedSize
+	}
+	var payload []byte
+	if report == nil {
+		payload, err = readLimited(response.Body, maximum)
+	} else {
+		payload, err = readLimitedWithProgress(response.Body, maximum, total, report)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -192,6 +231,58 @@ func (f *Fetcher) download(ctx context.Context, rawURL string, maximum int64, de
 		return nil, err
 	}
 	return payload, nil
+}
+
+func readLimitedWithProgress(reader io.Reader, maximum, total int64, report func(DownloadProgress)) ([]byte, error) {
+	if report == nil {
+		return readLimited(reader, maximum)
+	}
+	started := time.Now()
+	lastReport := started
+	downloaded := int64(0)
+	report(DownloadProgress{TotalBytes: total})
+	var payload bytes.Buffer
+	buffer := make([]byte, 32<<10)
+	limited := io.LimitReader(reader, maximum+1)
+	for {
+		count, readErr := limited.Read(buffer)
+		if count > 0 {
+			downloaded += int64(count)
+			if downloaded > maximum {
+				reportProgress(report, downloaded, total, started)
+				return nil, ErrResponseTooLarge
+			}
+			_, _ = payload.Write(buffer[:count])
+			now := time.Now()
+			if now.Sub(lastReport) >= progressReportPeriod {
+				reportProgressAt(report, downloaded, total, started, now)
+				lastReport = now
+			}
+		}
+		if readErr != nil {
+			if errors.Is(readErr, io.EOF) {
+				if total == 0 || downloaded > total {
+					total = downloaded
+				}
+				reportProgress(report, downloaded, total, started)
+				return payload.Bytes(), nil
+			}
+			reportProgress(report, downloaded, total, started)
+			return nil, readErr
+		}
+	}
+}
+
+func reportProgress(report func(DownloadProgress), downloaded, total int64, started time.Time) {
+	reportProgressAt(report, downloaded, total, started, time.Now())
+}
+
+func reportProgressAt(report func(DownloadProgress), downloaded, total int64, started, now time.Time) {
+	speed := int64(0)
+	if elapsed := now.Sub(started); downloaded > 0 && elapsed > 0 {
+		speed = int64(float64(downloaded) / elapsed.Seconds())
+	}
+	report(DownloadProgress{DownloadedBytes: downloaded, TotalBytes: total, BytesPerSecond: speed})
 }
 
 func readLimited(reader io.Reader, maximum int64) ([]byte, error) {
