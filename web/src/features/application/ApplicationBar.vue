@@ -1,22 +1,14 @@
 <script setup lang="ts">
-import { computed, onMounted } from "vue";
 import { useProfileStore } from "@/features/profiles/store";
-import { useApplicationStore } from "./store";
 
-const props = withDefaults(defineProps<{ bufferErrors?: string[] }>(), { bufferErrors: () => [] });
-const emit = defineEmits<{ preview: []; validate: []; apply: [] }>();
+const emit = defineEmits<{ preview: []; validate: [] }>();
 const profiles = useProfileStore();
-const app = useApplicationStore();
-const disabled = computed(() => !app.canApply.value || props.bufferErrors.length > 0);
-
-onMounted(() => { void app.refreshCore().catch(() => undefined); });
-function apply(): void { if (!disabled.value) emit("apply"); }
 </script>
 <template>
   <div class="application-actions" role="group" aria-label="配置操作">
     <button data-preview type="button" class="secondary" :disabled="profiles.saveState.value !== 'saved'" @click="emit('preview')">预览</button>
     <button data-validate type="button" class="secondary" :disabled="profiles.saveState.value !== 'saved'" @click="emit('validate')">检查</button>
-    <button data-apply type="button" :disabled="disabled" @click="apply">应用</button>
+    <button data-apply type="button" disabled title="应用逻辑尚未实现">应用</button>
   </div>
 </template>
 <style scoped>

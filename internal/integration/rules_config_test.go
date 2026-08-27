@@ -96,7 +96,7 @@ func (e *integrationEnvironment) InstallFakeCore(t *testing.T, behavior fakeCore
 		t.Fatal(err)
 	}
 	checker := configgen.NewChecker(e.workDir, configgen.ExecRunner{Environment: []string{"SINGBOX_WEB_TEST_HELPER=1", "SINGBOX_WEB_TEST_CONTROL=" + e.control}}, 5*time.Second, 64<<10)
-	e.config = configgen.NewHandler(e.layout, e.profiles, e.rules, nil, checker, nil, time.Now, rand.Reader)
+	e.config = configgen.NewHandler(e.layout, e.profiles, e.rules, nil, checker, nil, time.Now)
 }
 
 func (e *integrationEnvironment) CreateRuleResource(t *testing.T, url string) string {
@@ -173,9 +173,11 @@ func TestRuleDownloadPreviewAndValidateFlow(t *testing.T) {
 	if !validated.Valid {
 		t.Fatalf("validate=%+v", validated)
 	}
-	if got := env.FakeCoreArguments(t); len(got) != 3 || !slices.Equal(got[:2], []string{"check", "-C"}) || !strings.HasPrefix(got[2], "config.staging-") || filepath.IsAbs(got[2]) {
+	wantStaging := "config.staging-" + profileID
+	if got := env.FakeCoreArguments(t); len(got) != 3 || !slices.Equal(got[:2], []string{"check", "-C"}) || got[2] != wantStaging || filepath.IsAbs(got[2]) {
 		t.Fatalf("fake core args=%v", got)
 	}
+	assertPersistentStaging(t, env.workDir, profileID)
 	assertNoTransactionDirs(t, env.workDir)
 	metas, err := env.profiles.List(context.Background())
 	if err != nil {
@@ -213,6 +215,10 @@ func TestManualRulePreviewAndValidateFlow(t *testing.T) {
 	if !validated.Valid {
 		t.Fatalf("validate=%+v", validated)
 	}
+	if validated.ConfigDirectory != "config.staging-"+profileID {
+		t.Fatalf("config directory=%q", validated.ConfigDirectory)
+	}
+	assertPersistentStaging(t, env.workDir, profileID)
 	payload, err := os.ReadFile(filepath.Join(env.layout.RuleSetsDir, resource.ID+".json"))
 	if err != nil || !bytes.Contains(payload, []byte("example.org")) {
 		t.Fatalf("manual payload=%s err=%v", payload, err)
@@ -237,8 +243,20 @@ func assertNoTransactionDirs(t *testing.T, workDir string) {
 		t.Fatal(err)
 	}
 	for _, entry := range entries {
-		if strings.HasPrefix(entry.Name(), "config.staging-") || strings.HasPrefix(entry.Name(), "config.rollback-") {
+		if strings.HasPrefix(entry.Name(), "config.rollback-") || strings.HasSuffix(entry.Name(), ".preparing") || strings.HasSuffix(entry.Name(), ".previous") {
 			t.Fatalf("残留事务目录: %s", entry.Name())
 		}
+	}
+}
+
+func assertPersistentStaging(t *testing.T, workDir, profileID string) {
+	t.Helper()
+	directory := filepath.Join(workDir, "config.staging-"+profileID)
+	info, err := os.Stat(directory)
+	if err != nil || !info.IsDir() || info.Mode().Perm() != 0o700 {
+		t.Fatalf("persistent staging=%s info=%v err=%v", directory, info, err)
+	}
+	if _, err := os.Stat(filepath.Join(directory, "80-route.json")); err != nil {
+		t.Fatalf("persistent staging missing generated config: %v", err)
 	}
 }

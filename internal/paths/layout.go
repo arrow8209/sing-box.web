@@ -29,21 +29,20 @@ type Layout struct {
 	ConfigDir            string
 }
 
-// StagingConfigDir returns a new, fixed-name staging directory directly below
-// WorkDir. Keeping it outside data prevents a checked configuration from
-// accidentally resolving data/rulesets relative to a different directory.
-func (layout Layout) StagingConfigDir(token string) (string, error) {
-	if len(token) != 32 {
-		return "", fmt.Errorf("临时配置令牌无效")
+// StagingConfigDir returns the persistent core-check directory for one profile.
+// Keeping it outside data ensures data/rulesets paths resolve from WorkDir.
+func (layout Layout) StagingConfigDir(profileID string) (string, error) {
+	if len(profileID) != 32 {
+		return "", fmt.Errorf("档案 ID 无效")
 	}
-	for _, character := range token {
+	for _, character := range profileID {
 		if (character < '0' || character > '9') && (character < 'a' || character > 'f') {
-			return "", fmt.Errorf("临时配置令牌无效")
+			return "", fmt.Errorf("档案 ID 无效")
 		}
 	}
-	path := filepath.Join(layout.WorkDir, "config.staging-"+token)
+	path := filepath.Join(layout.WorkDir, "config.staging-"+profileID)
 	if !isWithin(layout.WorkDir, path) || filepath.Dir(path) != layout.WorkDir {
-		return "", fmt.Errorf("临时配置路径越出工作目录")
+		return "", fmt.Errorf("档案检查路径越出工作目录")
 	}
 	return path, nil
 }

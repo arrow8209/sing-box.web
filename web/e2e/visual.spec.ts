@@ -85,6 +85,8 @@ for (const scenario of scenarios) {
     const applicationActions = contextBar.getByRole("group", { name: "配置操作" });
     await expect(contextBar).toBeVisible();
     await expect(applicationActions.getByRole("button")).toHaveText(["预览", "检查", "应用"]);
+    await expect(applicationActions.getByRole("button", { name: "应用" })).toBeDisabled();
+    await expect(applicationActions.getByRole("button", { name: "应用" })).toHaveAttribute("title", "应用逻辑尚未实现");
     await expect(page.locator(".application-actions")).toHaveCount(1);
     await expect(page.getByRole("tab")).toHaveCount(7);
     await expect(page.getByRole("tab", { name: "端点" })).toHaveCount(0);

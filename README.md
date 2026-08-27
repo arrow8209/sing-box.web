@@ -13,15 +13,17 @@ sh scripts/build.sh
 ./dist/singbox-web serve
 ```
 
-服务监听所有 IPv4 网卡的 `0.0.0.0:50016`。Web 服务作为唯一父进程管理 sing-box 子进程；应用档案会自动执行停止、`check` 和重启。核心更新只能经管理员确认后手动触发。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
+服务监听所有 IPv4 网卡的 `0.0.0.0:50016`。Web 服务可以管理 sing-box 核心程序并对各档案候选配置执行真实 `check`；核心更新只能经管理员确认后手动触发。配置应用与核心切换逻辑当前尚未实现。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
 
-应用时检查的不是单个 `config.json`，而是本次草稿生成的完整多文件目录。服务以工作目录为当前目录，使用相对路径执行 `data/bin/sing-box check -C config.staging-<random>`；检查成功后该目录会原子切换为正式的 `config/`。检查失败时，页面只显示相对工作目录的命令和路径，并同时显示退出码、stdout、stderr 与文件名；最新一份失败配置会移动到权限受限的 `config.check-failed/`，方便管理员在服务端审核并复查：
+配置检查针对草稿生成的完整多文件目录，不是单个 `config.json`。每个自定义配置固定使用自身 ID 对应的目录，服务以工作目录为当前目录执行：
 
 ```bash
-data/bin/sing-box check -C config.check-failed
+data/bin/sing-box check -C config.staging-<profile-id>
 ```
 
-下一次检查失败会替换此前的审核副本。该目录属于运行时数据，不会提交到 Git；其中可能含认证信息等敏感配置，请勿复制到日志、工单或公开位置。
+`config.staging-<profile-id>/` 在检查成功或失败后都会保留，后续检查同一配置时更新为最新完整候选，因此管理员可以随时在后台审核。目录及文件权限分别为 `0700` 和 `0600`，属于不会提交到 Git 的运行时数据；其中可能含认证信息等敏感配置，请勿复制到日志、工单或公开位置。
+
+“应用”按钮当前仅保留界面位置并固定禁用，`POST /profiles/{id}/apply` 返回 `501 application_not_implemented`。当前版本不会因为该按钮停止核心、替换正式 `config/` 或启动核心；具体应用语义留待后续讨论和设计。
 
 `internal/integration` 的测试会把当前 Go 测试二进制复制为受控 fake sing-box 核心，并只使用本地 `httptest` 规则服务；不会访问公网、启动真实代理或写入仓库工作目录。
 

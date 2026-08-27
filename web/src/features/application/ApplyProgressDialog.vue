@@ -1,3 +1,0 @@
-<script setup lang="ts">import { computed } from "vue"; import { stageLabels, type CoreStatus } from "./types"; const props = defineProps<{ open: boolean; core: CoreStatus | null }>(); const label = computed(() => stageLabels[props.core?.operation.stage ?? "snapshot"] ?? "正在应用");</script>
-<template><div v-if="open" class="backdrop" role="status"><section><h2>正在应用配置</h2><p>{{ label }}</p><p>请勿关闭页面，完成后会重新读取服务器状态。</p></section></div></template>
-<style scoped>.backdrop { position:fixed; inset:0; z-index:30; display:grid; place-items:center; background:#0008; }.backdrop section { padding:22px; border-radius:var(--radius); background:var(--surface); }.backdrop h2 { margin-top:0; }</style>

@@ -2,7 +2,6 @@ package integration
 
 import (
 	"context"
-	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -13,7 +12,6 @@ import (
 	"singbox-web/internal/app"
 	"singbox-web/internal/application"
 	"singbox-web/internal/auth"
-	"singbox-web/internal/configgen"
 	"singbox-web/internal/core"
 	"singbox-web/internal/profile"
 )
@@ -38,69 +36,24 @@ func createApplicationProfile(t *testing.T, env *integrationEnvironment) (string
 	return meta.ID, updated.Revision
 }
 
-func newCoordinatorForTest(t *testing.T, env *integrationEnvironment, checkExit int) (*application.Coordinator, *core.Store) {
-	t.Helper()
-	writeCoreScript(t, env.layout.CoreBinary, "1.12.0", checkExit, false)
-	checker := configgen.NewChecker(env.workDir, configgen.ExecRunner{}, time.Second, 64<<10)
-	store := core.NewStore(env.layout.CoreFile)
-	manager := core.NewManagerWithFactory(env.layout, store, nil, core.NewOperationLock(), &testProcessFactory{})
-	return application.NewCoordinator(env.profiles, env.rules, nil, checker, manager, core.NewOperationLock()), store
-}
-
-func TestApplicationCheckFailureLeavesFormalConfigUntouched(t *testing.T) {
+func TestValidationFailureRetainsProfileStagingDirectory(t *testing.T) {
 	env := newIntegrationEnvironment(t)
+	env.InstallFakeCore(t, fakeCoreBehavior{Version: "sing-box version 1.13.0", CheckExit: 7, Stderr: "FATAL invalid inbound"})
 	profileID, revision := createApplicationProfile(t, env)
-	coordinator, _ := newCoordinatorForTest(t, env, 7)
-	_, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
-	if !errors.Is(err, application.ErrCheckFailed) {
-		t.Fatalf("err=%v", err)
-	}
-	var failure *application.CheckFailure
-	if !errors.As(err, &failure) {
-		t.Fatalf("missing detailed check failure: %v", err)
-	}
-	if failure.Result.ExitCode != 7 || failure.CheckedConfigDirectory == "" {
-		t.Fatalf("failure=%+v", failure)
-	}
-	if failure.ProfileID != profileID || failure.Revision != revision || failure.ConfigDigest == "" {
-		t.Fatalf("candidate identity=%+v", failure)
-	}
-	wantReview := filepath.Join(env.workDir, "config.check-failed")
-	if failure.ReviewConfigDirectory != wantReview || failure.ReviewError != nil {
-		t.Fatalf("review=%q err=%v", failure.ReviewConfigDirectory, failure.ReviewError)
-	}
-	if _, statErr := os.Stat(filepath.Join(wantReview, "60-inbounds.json")); statErr != nil {
-		t.Fatalf("failed candidate was not retained: %v", statErr)
-	}
-	if _, statErr := os.Stat(env.layout.ConfigDir); !os.IsNotExist(statErr) {
-		t.Fatalf("failed check installed config: %v", statErr)
-	}
-	assertNoTransactionDirs(t, env.workDir)
-	metas, err := env.profiles.List(context.Background())
-	if err != nil || len(metas) != 1 || !metas[0].NeedsApply {
-		t.Fatalf("metas=%+v err=%v", metas, err)
-	}
-}
-
-func TestApplicationRefusesExternalConfigDriftBeforeStop(t *testing.T) {
-	env := newIntegrationEnvironment(t)
-	profileID, revision := createApplicationProfile(t, env)
-	coordinator, store := newCoordinatorForTest(t, env, 0)
-	if err := os.MkdirAll(env.layout.ConfigDir, 0o700); err != nil {
+	result, err := env.config.Validate(context.Background(), profileID, revision)
+	if err != nil {
 		t.Fatal(err)
 	}
-	if err := os.WriteFile(filepath.Join(env.layout.ConfigDir, "host.json"), []byte("host-edit"), 0o600); err != nil {
-		t.Fatal(err)
+	wantDirectory := "config.staging-" + profileID
+	if result.Valid || result.ExitCode != 7 || result.ConfigDirectory != wantDirectory || result.Stderr != "FATAL invalid inbound" {
+		t.Fatalf("result=%+v", result)
 	}
-	if _, err := store.Update(func(state *core.PersistentState) error { state.ConfigDirectoryDigest = "different"; return nil }); err != nil {
-		t.Fatal(err)
+	if len(result.Command) != 4 || result.Command[3] != wantDirectory {
+		t.Fatalf("command=%v", result.Command)
 	}
-	_, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
-	if !errors.Is(err, application.ErrExternalDrift) {
-		t.Fatalf("err=%v", err)
-	}
-	if _, statErr := os.Stat(filepath.Join(env.layout.ConfigDir, "host.json")); statErr != nil {
-		t.Fatalf("drift config changed: %v", statErr)
+	assertPersistentStaging(t, env.workDir, profileID)
+	if _, err := os.Stat(env.layout.ConfigDir); !os.IsNotExist(err) {
+		t.Fatalf("validation touched formal config: %v", err)
 	}
 }
 

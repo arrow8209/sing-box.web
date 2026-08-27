@@ -39,7 +39,7 @@ func TestRecoverConfigTransactionsRestoresCommittedRollback(t *testing.T) {
 	}
 }
 
-func TestRecoverConfigTransactionsRefusesAmbiguity(t *testing.T) {
+func TestRecoverConfigTransactionsPreservesProfileStagingDirectories(t *testing.T) {
 	work := t.TempDir()
 	layout, err := paths.Resolve(work)
 	if err != nil {
@@ -50,7 +50,12 @@ func TestRecoverConfigTransactionsRefusesAmbiguity(t *testing.T) {
 			t.Fatal(err)
 		}
 	}
-	if err := RecoverConfigTransactions(layout, ""); err == nil {
-		t.Fatal("expected ambiguity refusal")
+	if err := RecoverConfigTransactions(layout, ""); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range []string{"config.staging-0123456789abcdef0123456789abcdef", "config.staging-fedcba9876543210fedcba9876543210"} {
+		if _, err := os.Stat(filepath.Join(work, name)); err != nil {
+			t.Fatalf("persistent staging removed %s: %v", name, err)
+		}
 	}
 }

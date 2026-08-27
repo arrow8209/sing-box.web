@@ -13,3 +13,4 @@ test-results/
 data/
 config/
 config.check-failed/
+config.staging-*/

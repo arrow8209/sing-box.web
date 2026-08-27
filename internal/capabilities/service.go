@@ -20,7 +20,7 @@ var PhaseOne = Response{
 	InboundResources: true,
 	Subscriptions:    true,
 	RuleResources:    true,
-	Application:      true,
+	Application:      false,
 	CoreUpdate:       true,
 	Runtime:          false,
 	Traffic:          false,

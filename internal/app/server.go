@@ -179,9 +179,12 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err := profileService.ReconcileResourceDigests(context.Background(), currentDigests); err != nil {
 		return nil, err
 	}
+	if err := configgen.RecoverStagingDirectories(layout.WorkDir); err != nil {
+		return nil, fmt.Errorf("恢复档案检查目录: %w", err)
+	}
 	checker := configgen.NewChecker(layout.WorkDir, configgen.ExecRunner{Environment: append([]string(nil), deps.CoreEnvironment...)}, 30*time.Second, 64<<10)
 	operation := core.NewOperationLock()
-	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, operation, clock, randomSource)
+	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, operation, clock)
 	coreStore := core.NewStore(layout.CoreFile)
 	coreLog, err := core.NewBoundedLog(layout.CoreLog, 1<<20, 16<<10)
 	if err != nil {
@@ -228,7 +231,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		checker,
 		operation,
 	)
-	coordinator := application.NewCoordinator(profileService, ruleService, nil, checker, coreManager, operation)
+	coordinator := application.NewCoordinator(coreManager, operation)
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
@@ -237,7 +240,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		InboundHandler:      inbounds.NewHandler(inboundService),
 		RuleResourceHandler: rules.NewHandler(ruleService, ruleCatalog),
 		ConfigHandler:       configHandler,
-		ApplicationHandler:  application.NewHandler(coordinator),
+		ApplicationHandler:  application.NewHandler(),
 		CoreHandler:         core.NewHandler(coreManager),
 		UpdaterHandler:      updater.NewHandler(updateService),
 		SettingsHandler:     settings.NewHandler(settingsStore),

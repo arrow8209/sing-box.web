@@ -34,46 +34,27 @@ function formatCommand(command?: string[]): string {
       <button v-if="error.fieldPath" type="button" @click="emit('jump', error.fieldPath)">{{ error.fieldPath }}</button>
     </p>
 
-    <dl v-if="error?.details" class="check-details">
-      <template v-if="error.details.command?.length">
+    <dl v-if="validation && !validation.valid && validation.configDirectory" class="check-details">
+      <template v-if="validation.command?.length">
         <dt>实际检查命令</dt>
-        <dd><code>{{ formatCommand(error.details.command) }}</code></dd>
+        <dd><code>{{ formatCommand(validation.command) }}</code></dd>
       </template>
-      <template v-if="error.details.checkedConfigDirectory">
-        <dt>实际送检目录</dt>
-        <dd><code>{{ error.details.checkedConfigDirectory }}</code><small>相对服务工作目录；检查结束后已移至审核副本。</small></dd>
-      </template>
-      <template v-if="error.details.reviewConfigDirectory">
-        <dt>后台审核目录</dt>
-        <dd><code>{{ error.details.reviewConfigDirectory }}</code><small>相对服务工作目录。</small></dd>
-      </template>
-      <template v-if="error.details.reviewCommand?.length">
-        <dt>后台复查命令</dt>
-        <dd><code>{{ formatCommand(error.details.reviewCommand) }}</code></dd>
-      </template>
-      <template v-if="error.details.configFiles?.length">
+      <dt>送检配置目录</dt>
+      <dd><code>{{ validation.configDirectory }}</code><small>相对服务工作目录；该目录会保留，并在下次检查同一配置时更新。</small></dd>
+      <template v-if="validation.files?.length">
         <dt>送检配置文件</dt>
-        <dd><code>{{ error.details.configFiles.join(", ") }}</code></dd>
+        <dd><code>{{ validation.files.map((file) => file.name).join(", ") }}</code></dd>
       </template>
-      <template v-if="error.details.profileId || error.details.revision !== undefined">
-        <dt>生成来源</dt>
-        <dd><code v-if="error.details.profileId">档案 ID {{ error.details.profileId }}</code><span v-if="error.details.revision !== undefined">revision {{ error.details.revision }}</span><code v-if="error.details.configDigest">配置摘要 {{ error.details.configDigest }}</code></dd>
-      </template>
-      <template v-if="error.details.exitCode !== undefined">
-        <dt>进程结果</dt>
-        <dd>退出码 {{ error.details.exitCode }}<span v-if="error.details.timedOut">，执行超时</span></dd>
-      </template>
+      <dt>草稿修订</dt>
+      <dd>revision {{ validation.revision }}<code v-if="validation.digest">配置摘要 {{ validation.digest }}</code></dd>
+      <dt>进程结果</dt>
+      <dd>退出码 {{ validation.exitCode }}<span v-if="validation.timedOut">，执行超时</span></dd>
     </dl>
 
-    <p v-if="error?.details?.reviewError" class="detail-warning">未能保留审核副本：{{ error.details.reviewError }}</p>
     <p v-if="validation?.outputTruncated" class="detail-warning">核心输出超过 64 KiB，以下内容已截断。</p>
-    <p v-if="error?.details?.outputTruncated" class="detail-warning">核心输出超过 64 KiB，以下内容已截断。</p>
     <div v-if="validation?.stdout" class="process-output"><h3>标准输出（stdout）</h3><pre>{{ validation.stdout }}</pre></div>
     <div v-if="validation?.stderr" class="process-output"><h3>标准错误（stderr）</h3><pre>{{ validation.stderr }}</pre></div>
-    <div v-if="error?.details?.stdout" class="process-output"><h3>标准输出（stdout）</h3><pre>{{ error.details.stdout }}</pre></div>
-    <div v-if="error?.details?.stderr" class="process-output"><h3>标准错误（stderr）</h3><pre>{{ error.details.stderr }}</pre></div>
-    <div v-if="error?.details?.processError" class="process-output"><h3>进程错误</h3><pre>{{ error.details.processError }}</pre></div>
-    <pre v-else-if="error?.output && !error.details?.stdout && !error.details?.stderr">{{ error.output }}</pre>
+    <pre v-if="error?.output">{{ error.output }}</pre>
   </section>
 </template>
 

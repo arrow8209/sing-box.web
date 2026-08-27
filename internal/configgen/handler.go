@@ -2,12 +2,9 @@ package configgen
 
 import (
 	"context"
-	"crypto/rand"
 	"encoding/hex"
 	"errors"
-	"io"
 	"net/http"
-	"os"
 	"strings"
 	"time"
 
@@ -38,20 +35,22 @@ type PreviewResult struct {
 
 type ValidateResult struct {
 	PreviewResult
-	Valid           bool   `json:"valid"`
-	Stage           string `json:"stage"`
-	Message         string `json:"message,omitempty"`
-	Code            string `json:"code,omitempty"`
-	Stdout          string `json:"stdout,omitempty"`
-	Stderr          string `json:"stderr,omitempty"`
-	ExitCode        int    `json:"exitCode"`
-	TimedOut        bool   `json:"timedOut,omitempty"`
-	OutputTruncated bool   `json:"outputTruncated,omitempty"`
+	Valid           bool     `json:"valid"`
+	Stage           string   `json:"stage"`
+	Message         string   `json:"message,omitempty"`
+	Code            string   `json:"code,omitempty"`
+	Stdout          string   `json:"stdout,omitempty"`
+	Stderr          string   `json:"stderr,omitempty"`
+	ExitCode        int      `json:"exitCode"`
+	TimedOut        bool     `json:"timedOut,omitempty"`
+	OutputTruncated bool     `json:"outputTruncated,omitempty"`
+	Command         []string `json:"command,omitempty"`
+	ConfigDirectory string   `json:"configDirectory,omitempty"`
 }
 
-// Handler coordinates a read-only preview and a short-lived full core check.
-// It deliberately has no core lifecycle dependency: validation never stops or
-// starts sing-box and never writes layout.ConfigDir.
+// Handler coordinates a read-only preview and a full core check whose generated
+// candidate remains in config.staging-<profileID>. It has no core lifecycle
+// dependency and never writes layout.ConfigDir.
 type Handler struct {
 	layout    paths.Layout
 	profiles  *profile.Service
@@ -60,10 +59,9 @@ type Handler struct {
 	checker   *Checker
 	gate      OperationGate
 	clock     func() time.Time
-	random    io.Reader
 }
 
-func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules.Service, generator *Generator, checker *Checker, gate OperationGate, clock func() time.Time, randomSource io.Reader) *Handler {
+func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules.Service, generator *Generator, checker *Checker, gate OperationGate, clock func() time.Time) *Handler {
 	if generator == nil {
 		generator = NewGenerator()
 	}
@@ -76,10 +74,7 @@ func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules
 	if clock == nil {
 		clock = time.Now
 	}
-	if randomSource == nil {
-		randomSource = rand.Reader
-	}
-	return &Handler{layout: layout, profiles: profiles, rules: resources, generator: generator, checker: checker, gate: gate, clock: clock, random: randomSource}
+	return &Handler{layout: layout, profiles: profiles, rules: resources, generator: generator, checker: checker, gate: gate, clock: clock}
 }
 
 func (h *Handler) Preview(ctx context.Context, profileID string, revision uint64) (PreviewResult, error) {
@@ -131,18 +126,17 @@ func (h *Handler) Validate(ctx context.Context, profileID string, revision uint6
 		return ValidateResult{}, err
 	}
 	result = ValidateResult{PreviewResult: previewResult(revision, output), Stage: "core_check"}
-	token, err := randomToken(h.random)
+	staging, err := h.layout.StagingConfigDir(profileID)
 	if err != nil {
 		return ValidateResult{}, err
 	}
-	staging, err := h.layout.StagingConfigDir(token)
-	if err != nil {
+	if err := h.generator.ReplaceStagingDirectory(ctx, output, staging); err != nil {
 		return ValidateResult{}, err
 	}
-	if err := h.generator.WriteDirectory(ctx, output, staging); err != nil {
-		return ValidateResult{}, err
+	result.Command, _ = CheckCommand(h.layout.WorkDir, h.layout.CoreBinary, staging)
+	if len(result.Command) == 4 {
+		result.ConfigDirectory = result.Command[3]
 	}
-	defer os.RemoveAll(staging)
 	check, checkErr := h.checker.Check(ctx, h.layout.CoreBinary, staging)
 	result.Stdout, result.Stderr = check.Stdout, check.Stderr
 	result.ExitCode, result.TimedOut, result.OutputTruncated = check.ExitCode, check.TimedOut, check.OutputTruncated
@@ -181,14 +175,6 @@ func (h *Handler) loadSnapshot(ctx context.Context, profileID string, revision u
 
 func previewResult(revision uint64, output Output) PreviewResult {
 	return PreviewResult{Revision: revision, Files: output.Files, Digest: output.Digest, ResourceDigests: output.ResourceDigests}
-}
-
-func randomToken(source io.Reader) (string, error) {
-	bytes := make([]byte, 16)
-	if _, err := io.ReadFull(source, bytes); err != nil {
-		return "", err
-	}
-	return hex.EncodeToString(bytes), nil
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {

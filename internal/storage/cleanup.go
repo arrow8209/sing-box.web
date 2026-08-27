@@ -7,7 +7,7 @@ import (
 	"regexp"
 )
 
-var transactionDirectoryName = regexp.MustCompile(`^config\.(?:staging|rollback)-[0-9a-f]{32}$`)
+var transactionDirectoryName = regexp.MustCompile(`^config\.rollback-[0-9a-f]{32}$`)
 
 func ListTransactionDirs(workDir string) ([]string, error) {
 	if err := RejectSymlinkPath(workDir); err != nil {

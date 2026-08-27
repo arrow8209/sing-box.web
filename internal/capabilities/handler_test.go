@@ -27,4 +27,7 @@ func TestHandlerReturnsPhaseOneCapabilities(t *testing.T) {
 	if !response.Subscriptions || !response.InboundResources {
 		t.Fatalf("resource capabilities must be enabled: %+v", response)
 	}
+	if response.Application {
+		t.Fatalf("application capability must remain disabled until its semantics are designed: %+v", response)
+	}
 }

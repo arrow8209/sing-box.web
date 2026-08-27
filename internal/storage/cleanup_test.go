@@ -22,17 +22,17 @@ func TestListTransactionDirsListsOnlyDirectMatchingDirectories(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(got) != 2 || got[0] != filepath.Join(root, "config.rollback-fedcba9876543210fedcba9876543210") || got[1] != filepath.Join(root, "config.staging-0123456789abcdef0123456789abcdef") {
+	if len(got) != 1 || got[0] != filepath.Join(root, "config.rollback-fedcba9876543210fedcba9876543210") {
 		t.Fatalf("dirs = %v", got)
 	}
 }
 
-func TestListTransactionDirsRejectsSymlink(t *testing.T) {
+func TestListTransactionDirsIgnoresPersistentStagingSymlink(t *testing.T) {
 	root, outside := t.TempDir(), t.TempDir()
 	if err := os.Symlink(outside, filepath.Join(root, "config.staging-0123456789abcdef0123456789abcdef")); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := storage.ListTransactionDirs(root); err == nil {
-		t.Fatal("symlinked transaction directory was accepted")
+	if got, err := storage.ListTransactionDirs(root); err != nil || len(got) != 0 {
+		t.Fatalf("persistent staging affected transaction scan: dirs=%v err=%v", got, err)
 	}
 }

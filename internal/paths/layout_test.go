@@ -58,6 +58,26 @@ func TestRuleSetPathUsesIDAndFormatOnly(t *testing.T) {
 	}
 }
 
+func TestStagingConfigDirUsesProfileID(t *testing.T) {
+	layout, err := paths.Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	profileID := "0123456789abcdef0123456789abcdef"
+	got, err := layout.StagingConfigDir(profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != filepath.Join(layout.WorkDir, "config.staging-"+profileID) {
+		t.Fatalf("staging=%q", got)
+	}
+	for _, invalid := range []string{"short", "0123456789abcdef0123456789abcdeg", "../0123456789abcdef0123456789abcdef"} {
+		if _, err := layout.StagingConfigDir(invalid); err == nil {
+			t.Fatalf("accepted profile ID %q", invalid)
+		}
+	}
+}
+
 func assertPath(t *testing.T, actual, expected string) {
 	t.Helper()
 	if actual != expected {
