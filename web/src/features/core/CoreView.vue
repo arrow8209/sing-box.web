@@ -1,30 +1,76 @@
 <script setup lang="ts">
-import { onBeforeUnmount, onMounted, ref } from "vue";
+import { computed, nextTick, onBeforeUnmount, onMounted, ref } from "vue";
+import AppIcon from "@/layout/AppIcon.vue";
 import { useCoreStore } from "./store";
-import CoreStatusCard from "./CoreStatusCard.vue";
 import CoreUpdateDialog from "./CoreUpdateDialog.vue";
+import CoreVersionPanel from "./CoreVersionPanel.vue";
 
 const core = useCoreStore();
 const dialogOpen = ref(false);
 const submitting = ref(false);
-onMounted(() => { core.startPolling(); void core.refreshLatest(); });
+const checkingLatest = ref(true);
+const operationActive = computed(() => Boolean(core.update.value?.stage && !["idle", "completed", "failed"].includes(core.update.value.stage)));
+
+onMounted(() => {
+  core.startPolling();
+  void refreshLatest();
+});
 onBeforeUnmount(core.stopPolling);
-async function openUpdate(): Promise<void> { await core.refreshLatest(); dialogOpen.value = true; }
-async function confirm(version: string): Promise<void> { submitting.value = true; await core.startUpdate(version); submitting.value = false; dialogOpen.value = false; }
-const stageLabels: Record<string, string> = { checking_release: "检查版本", downloading: "下载", verifying_checksum: "摘要校验", verifying_binary: "程序验证", checking_config: "配置预检", stopping_core: "停止核心", installing: "安装", restarting_core: "重启", completed: "完成", failed: "失败" };
+
+async function refreshLatest(): Promise<void> {
+  checkingLatest.value = true;
+  await core.refreshLatest();
+  checkingLatest.value = false;
+}
+
+async function openUpdate(): Promise<void> {
+  dialogOpen.value = true;
+  await nextTick();
+  await refreshLatest();
+}
+
+async function confirm(version: string): Promise<void> {
+  submitting.value = true;
+  await core.startUpdate(version);
+  submitting.value = false;
+  if (!core.error.value) dialogOpen.value = false;
+}
 </script>
 
 <template>
-  <section class="core-page"><header class="page-intro"><div><h1>核心管理</h1><p>仅显示服务端返回的核心进程状态；更新必须由管理员手动确认。</p></div><button data-open-update class="primary-action" type="button" :disabled="submitting" @click="openUpdate">手动更新</button></header>
-    <p v-if="core.error" class="error">{{ core.error }}</p>
-    <section v-if="core.status.value?.state === 'not_installed'" class="missing"><h2>尚未安装 sing-box</h2><p>安装核心后仍可继续编辑档案和规则资源。</p><button data-download-core type="button" @click="openUpdate">手动下载</button></section>
-    <CoreStatusCard :status="core.status.value" />
-    <section v-if="core.update.value && core.update.value.stage" class="operation"><h2>更新操作</h2><p>{{ stageLabels[core.update.value.stage] ?? core.update.value.stage }}{{ core.update.value.targetVersion ? `：${core.update.value.targetVersion}` : "" }}</p><p v-if="core.update.value.message">{{ core.update.value.message }}</p></section>
-    <CoreUpdateDialog :open="dialogOpen" :current-version="core.status.value?.installedVersion ?? ''" :latest="core.latest.value" :busy="submitting" @close="dialogOpen = false" @confirm="confirm" />
+  <section class="core-management-page">
+    <header class="page-intro">
+      <h1>核心管理</h1>
+      <p>查看 sing-box 版本，并按需下载最新稳定版本。</p>
+    </header>
+
+    <p v-if="core.error.value" class="core-error" role="alert"><AppIcon name="info" :size="15" />{{ core.error.value }}</p>
+
+    <CoreVersionPanel
+      :status="core.status.value"
+      :latest="core.latest.value"
+      :update="core.update.value"
+      :checking="checkingLatest"
+      :busy="submitting"
+      :update-available="core.updateAvailable.value"
+      @download="openUpdate"
+      @refresh="refreshLatest"
+    />
+
+    <p v-if="core.status.value?.lastError && !operationActive" class="core-runtime-error" role="alert"><AppIcon name="info" :size="14" /><span><strong>最近一次核心错误</strong>{{ core.status.value.lastError }}</span></p>
+    <p class="core-page-note"><AppIcon name="info" :size="14" /><span>更新仅在管理员确认后执行；安装前会校验文件摘要和现有配置，运行中的核心会在成功后自动恢复。</span></p>
+
+    <CoreUpdateDialog :open="dialogOpen" :current-version="core.status.value?.installedVersion ?? ''" :latest="core.latest.value" :checking="checkingLatest" :busy="submitting" @close="dialogOpen = false" @confirm="confirm" />
   </section>
 </template>
 
 <style scoped>
-.core-page { display: grid; gap: 14px; max-width: 980px; }.page-intro { display: flex; align-items: end; justify-content: space-between; gap: 16px; }.page-intro h1, h2 { margin: 0; }.page-intro h1 { font-size: 22px; letter-spacing: -.4px; }.page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: 12px; }.primary-action { min-height: 35px; padding: 7px 12px; border-radius: 8px; font-size: 11px; }.missing, .operation { padding: 16px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.missing h2, .operation h2 { margin-bottom: 6px; font-size: 14px; }.missing p, .operation p { color: var(--text-soft); font-size: 11px; }.error { margin: 0; padding: 10px 12px; border-radius: 9px; color: var(--red); background: var(--red-soft); }
-@media (max-width: 640px) { .page-intro { display: block; }.primary-action { width: 100%; margin-top: 12px; } }
+.core-management-page { display: grid; max-width: 1040px; gap: 14px; }
+.page-intro h1 { margin: 0; font-size: 22px; letter-spacing: -.4px; }
+.page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: 12px; }
+.core-error, .core-runtime-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 9px; color: var(--red); background: var(--red-soft); font-size: 10px; }
+.core-runtime-error span, .core-runtime-error strong { display: block; }
+.core-runtime-error strong { margin-bottom: 2px; font-size: 10px; }
+.core-page-note { display: flex; align-items: center; gap: 7px; margin: -2px 3px 0; color: var(--text-faint); font-size: 9px; }
+.core-page-note :deep(.icon) { flex: 0 0 auto; color: var(--primary); }
 </style>

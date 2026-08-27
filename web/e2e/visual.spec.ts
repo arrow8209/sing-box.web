@@ -121,5 +121,13 @@ for (const scenario of scenarios) {
     await expect(page.locator(".subscription-card")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-subscriptions.png`, { fullPage: true });
+
+    await page.goto("/core");
+    await setTheme(page, scenario.theme);
+    const versionPanel = page.getByLabel("版本管理");
+    await expect(versionPanel.getByRole("article", { name: "当前版本" })).toContainText("1.0.0");
+    await expect(versionPanel.getByRole("article", { name: "最新版本" })).toContainText("1.0.0");
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
+    await expect(page).toHaveScreenshot(`${scenario.name}-core.png`, { fullPage: true });
   });
 }

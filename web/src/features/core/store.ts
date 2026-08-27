@@ -26,6 +26,7 @@ export function createCoreStore(api: CoreApi = coreApi): CoreStore {
   let updateTimer: ReturnType<typeof setInterval> | undefined;
   let active = false;
   const updateAvailable = computed(() => Boolean(latest.value && (latest.value.updateAvailable ?? (latest.value.version !== status.value?.installedVersion))));
+  const updateInProgress = (value: CoreUpdateStatus | null): boolean => Boolean(value?.stage && value.stage !== "idle" && !value.finishedAt && !["completed", "failed"].includes(value.stage));
 
   const capture = async (action: () => Promise<void>): Promise<void> => {
     try { await action(); error.value = null; } catch (cause) { error.value = cause instanceof Error ? cause.message : "无法读取核心状态"; }
@@ -33,24 +34,31 @@ export function createCoreStore(api: CoreApi = coreApi): CoreStore {
   async function refresh(): Promise<void> { await capture(async () => { status.value = await api.status(); }); }
   async function refreshLatest(): Promise<void> { await capture(async () => { latest.value = await api.latest(); }); }
   async function refreshUpdate(): Promise<void> {
-    await capture(async () => { update.value = await api.updateStatus(); });
-    const finished = update.value?.finishedAt || ["completed", "failed", ""].includes(update.value?.stage ?? "");
+    let succeeded = false;
+    await capture(async () => { update.value = await api.updateStatus(); succeeded = true; });
+    if (!succeeded) return;
+    const finished = update.value?.finishedAt || ["completed", "failed"].includes(update.value?.stage ?? "");
     if (finished) {
       stopUpdatePolling();
       await Promise.all([refresh(), refreshLatest()]);
+    } else if (active && updateInProgress(update.value)) {
+      startUpdatePolling();
+    } else {
+      stopUpdatePolling();
     }
   }
   function tick(): void { if (active && !document.hidden) void refresh(); }
   function startUpdatePolling(): void { if (!updateTimer) updateTimer = setInterval(() => { if (active && !document.hidden) void refreshUpdate(); }, 500); }
   function stopUpdatePolling(): void { if (updateTimer) clearInterval(updateTimer); updateTimer = undefined; }
   function onVisibility(): void {
-    if (!document.hidden && active) { void refresh(); if (update.value && !update.value.finishedAt) void refreshUpdate(); }
+    if (!document.hidden && active) { void refresh(); if (updateInProgress(update.value)) void refreshUpdate(); }
   }
   function startPolling(): void {
     active = true;
     document.addEventListener("visibilitychange", onVisibility);
     if (!coreTimer) coreTimer = setInterval(tick, 2000);
     void refresh();
+    void refreshUpdate();
   }
   function stopPolling(): void {
     active = false;
