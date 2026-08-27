@@ -37,10 +37,10 @@ describe("配置应用", () => {
   it("应用检查失败时保留核心输出和后台审核位置", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open("profile-a");
     const details = {
-      command: ["/service/data/bin/sing-box", "check", "-C", "/service/config.staging-token"],
-      checkedConfigDirectory: "/service/config.staging-token",
-      reviewCommand: ["/service/data/bin/sing-box", "check", "-C", "/service/config.check-failed"],
-      reviewConfigDirectory: "/service/config.check-failed",
+      command: ["data/bin/sing-box", "check", "-C", "config.staging-token"],
+      checkedConfigDirectory: "config.staging-token",
+      reviewCommand: ["data/bin/sing-box", "check", "-C", "config.check-failed"],
+      reviewConfigDirectory: "config.check-failed",
       configFiles: ["10-log.json", "60-inbounds.json"],
       profileId: "profile-a",
       revision: 4,
@@ -55,12 +55,12 @@ describe("配置应用", () => {
       apply: vi.fn(async () => { throw new ApiError(422, { code: "config_check_failed", message: "sing-box 配置检查失败（退出码 1）", stage: "check_config", details }); })
     };
     const store = createApplicationStore(profileStore, api); await store.refreshCore(); await store.apply();
-    expect(store.error.value?.details).toMatchObject({ reviewConfigDirectory: "/service/config.check-failed", exitCode: 1, stderr: details.stderr });
+    expect(store.error.value?.details).toMatchObject({ reviewConfigDirectory: "config.check-failed", exitCode: 1, stderr: details.stderr });
 
     const wrapper = mount(ValidationErrors, { props: { validation: null, error: store.error.value } });
     expect(wrapper.text()).toContain("检查配置：sing-box 配置检查失败（退出码 1）");
     expect(wrapper.text()).toContain("后台审核目录");
-    expect(wrapper.text()).toContain("/service/config.check-failed");
+    expect(wrapper.text()).toContain("config.check-failed");
     expect(wrapper.text()).toContain("10-log.json, 60-inbounds.json");
     expect(wrapper.text()).toContain("档案 ID profile-a");
     expect(wrapper.text()).toContain("revision 4");

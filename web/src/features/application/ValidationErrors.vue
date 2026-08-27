@@ -41,11 +41,11 @@ function formatCommand(command?: string[]): string {
       </template>
       <template v-if="error.details.checkedConfigDirectory">
         <dt>实际送检目录</dt>
-        <dd><code>{{ error.details.checkedConfigDirectory }}</code><small>检查结束后已移至审核副本。</small></dd>
+        <dd><code>{{ error.details.checkedConfigDirectory }}</code><small>相对服务工作目录；检查结束后已移至审核副本。</small></dd>
       </template>
       <template v-if="error.details.reviewConfigDirectory">
         <dt>后台审核目录</dt>
-        <dd><code>{{ error.details.reviewConfigDirectory }}</code></dd>
+        <dd><code>{{ error.details.reviewConfigDirectory }}</code><small>相对服务工作目录。</small></dd>
       </template>
       <template v-if="error.details.reviewCommand?.length">
         <dt>后台复查命令</dt>

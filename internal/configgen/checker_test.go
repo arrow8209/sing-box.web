@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 	"time"
 )
@@ -24,7 +25,7 @@ func (r *recordingRunner) Run(_ context.Context, spec CommandSpec, timeout time.
 	return r.result, r.err
 }
 
-func TestCheckerUsesArgumentArrayAndBoundsEachStream(t *testing.T) {
+func TestCheckerUsesRelativeArgumentArrayAndBoundsEachStream(t *testing.T) {
 	work := t.TempDir()
 	binary := filepath.Join(work, "sing-box")
 	if err := os.WriteFile(binary, []byte("test"), 0o700); err != nil {
@@ -36,7 +37,7 @@ func TestCheckerUsesArgumentArrayAndBoundsEachStream(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	want := []string{binary, "check", "-C", filepath.Join(work, "config.staging-a1")}
+	want := []string{"sing-box", "check", "-C", "config.staging-a1"}
 	if !reflect.DeepEqual(runner.spec.Args, want) || runner.spec.Dir != work {
 		t.Fatalf("spec=%+v want args=%v dir=%s", runner.spec, want, work)
 	}
@@ -66,15 +67,44 @@ func TestExecRunnerReportsTimeout(t *testing.T) {
 }
 
 func TestCheckerRejectsMissingOrNonExecutableCore(t *testing.T) {
-	checker := NewChecker(t.TempDir(), &recordingRunner{}, time.Second, 1024)
-	if _, err := checker.Check(context.Background(), filepath.Join(t.TempDir(), "missing"), "config"); !errors.Is(err, ErrCoreNotInstalled) {
+	work := t.TempDir()
+	checker := NewChecker(work, &recordingRunner{}, time.Second, 1024)
+	if _, err := checker.Check(context.Background(), filepath.Join(work, "missing"), "config"); !errors.Is(err, ErrCoreNotInstalled) {
 		t.Fatalf("err=%v", err)
 	}
-	file := filepath.Join(t.TempDir(), "not-executable")
+	file := filepath.Join(work, "not-executable")
 	if err := os.WriteFile(file, []byte("x"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err := checker.Check(context.Background(), file, "config"); !errors.Is(err, ErrCoreNotInstalled) {
 		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestCheckerRejectsPathsOutsideWorkDirectory(t *testing.T) {
+	work := t.TempDir()
+	outside := filepath.Join(t.TempDir(), "sing-box")
+	if err := os.WriteFile(outside, []byte("test"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	checker := NewChecker(work, &recordingRunner{}, time.Second, 1024)
+	if _, err := checker.Check(context.Background(), outside, filepath.Join(work, "config")); !errors.Is(err, ErrCheckFailed) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
+func TestCheckerRedactsAbsoluteWorkDirectoryFromCoreOutput(t *testing.T) {
+	work := t.TempDir()
+	binary := filepath.Join(work, "sing-box")
+	if err := os.WriteFile(binary, []byte("test"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	runner := &recordingRunner{result: ProcessResult{Stderr: []byte("decode " + filepath.Join(work, "config.staging-a1", "60-inbounds.json"))}}
+	result, err := NewChecker(work, runner, time.Second, 1024).Check(context.Background(), binary, filepath.Join(work, "config.staging-a1"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(result.Stderr, work) || result.Stderr != "decode config.staging-a1/60-inbounds.json" {
+		t.Fatalf("stderr=%q", result.Stderr)
 	}
 }

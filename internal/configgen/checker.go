@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"path/filepath"
+	"strings"
 	"syscall"
 	"time"
 )
@@ -132,22 +134,38 @@ func NewChecker(workDir string, runner Runner, timeout time.Duration, limit int)
 	return &Checker{workDir: workDir, runner: runner, timeout: timeout, limit: limit}
 }
 
-// CheckCommand returns the exact argument array used for a core check. Keeping
-// diagnostics and execution on the same constructor prevents the UI from
-// reporting a command that differs from the one actually invoked.
-func CheckCommand(binaryPath, configDir string) []string {
-	return []string{binaryPath, "check", "-C", configDir}
+// CheckCommand returns the exact argument array used for a core check. Every
+// path is relative to workDir: the process already runs there, and keeping
+// absolute host paths out of argv also keeps them out of core diagnostics.
+func CheckCommand(workDir, binaryPath, configDir string) ([]string, error) {
+	_, binary, err := relativeCheckPath(workDir, binaryPath)
+	if err != nil {
+		return nil, err
+	}
+	_, config, err := relativeCheckPath(workDir, configDir)
+	if err != nil {
+		return nil, err
+	}
+	return []string{binary, "check", "-C", config}, nil
 }
 
 func (c *Checker) Check(ctx context.Context, binaryPath, configDir string) (CheckResult, error) {
-	info, err := os.Lstat(binaryPath)
+	absoluteBinary, _, pathErr := relativeCheckPath(c.workDir, binaryPath)
+	if pathErr != nil {
+		return CheckResult{}, fmt.Errorf("%w: 检查路径必须位于服务工作目录", ErrCheckFailed)
+	}
+	command, pathErr := CheckCommand(c.workDir, binaryPath, configDir)
+	if pathErr != nil {
+		return CheckResult{}, fmt.Errorf("%w: 检查路径必须位于服务工作目录", ErrCheckFailed)
+	}
+	info, err := os.Lstat(absoluteBinary)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
 		return CheckResult{}, ErrCoreNotInstalled
 	}
-	result, err := c.runner.Run(ctx, CommandSpec{Args: CheckCommand(binaryPath, configDir), Dir: c.workDir}, c.timeout, c.limit)
+	result, err := c.runner.Run(ctx, CommandSpec{Args: command, Dir: c.workDir}, c.timeout, c.limit)
 	outputTruncated := result.OutputTruncated || len(result.Stdout) > c.limit || len(result.Stderr) > c.limit
 	result.Stdout, result.Stderr, result.OutputTruncated = boundOutput(result.Stdout, c.limit), boundOutput(result.Stderr, c.limit), outputTruncated
-	checked := CheckResult{Stdout: string(result.Stdout), Stderr: string(result.Stderr), ExitCode: result.ExitCode, TimedOut: result.TimedOut, OutputTruncated: result.OutputTruncated}
+	checked := CheckResult{Stdout: redactWorkDirectory(string(result.Stdout), c.workDir), Stderr: redactWorkDirectory(string(result.Stderr), c.workDir), ExitCode: result.ExitCode, TimedOut: result.TimedOut, OutputTruncated: result.OutputTruncated}
 	if errors.Is(err, ErrCheckTimeout) {
 		return checked, ErrCheckTimeout
 	}
@@ -155,6 +173,39 @@ func (c *Checker) Check(ctx context.Context, binaryPath, configDir string) (Chec
 		return checked, fmt.Errorf("%w: %v", ErrCheckFailed, err)
 	}
 	return checked, nil
+}
+
+func relativeCheckPath(workDir, path string) (string, string, error) {
+	workDirectory, err := filepath.Abs(workDir)
+	if err != nil {
+		return "", "", err
+	}
+	absolute := path
+	if !filepath.IsAbs(absolute) {
+		absolute = filepath.Join(workDirectory, absolute)
+	}
+	absolute, err = filepath.Abs(absolute)
+	if err != nil {
+		return "", "", err
+	}
+	relative, err := filepath.Rel(workDirectory, absolute)
+	if err != nil || relative == ".." || strings.HasPrefix(relative, ".."+string(filepath.Separator)) || filepath.IsAbs(relative) {
+		return "", "", fmt.Errorf("检查路径越出服务工作目录")
+	}
+	return absolute, filepath.ToSlash(relative), nil
+}
+
+func redactWorkDirectory(value, workDir string) string {
+	if value == "" || workDir == "" {
+		return value
+	}
+	clean := strings.TrimRight(filepath.Clean(workDir), string(filepath.Separator))
+	if clean == "" || clean == "." || !filepath.IsAbs(clean) {
+		return value
+	}
+	value = strings.ReplaceAll(value, clean+string(filepath.Separator), "")
+	value = strings.ReplaceAll(value, filepath.ToSlash(clean)+"/", "")
+	return strings.ReplaceAll(value, clean, ".")
 }
 
 func boundOutput(value []byte, limit int) []byte {

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -104,10 +105,10 @@ type checkFailureDetails struct {
 }
 
 func newCheckFailureDetails(failure *CheckFailure) checkFailureDetails {
+	command, _ := configgen.CheckCommand(failure.WorkDir, failure.BinaryPath, failure.CheckedConfigDirectory)
 	details := checkFailureDetails{
-		Command:                configgen.CheckCommand(failure.BinaryPath, failure.CheckedConfigDirectory),
-		CheckedConfigDirectory: failure.CheckedConfigDirectory,
-		ReviewConfigDirectory:  failure.ReviewConfigDirectory,
+		Command:                command,
+		CheckedConfigDirectory: checkedDirectory(command),
 		ConfigFiles:            append([]string(nil), failure.ConfigFiles...),
 		ProfileID:              failure.ProfileID,
 		Revision:               failure.Revision,
@@ -115,19 +116,53 @@ func newCheckFailureDetails(failure *CheckFailure) checkFailureDetails {
 		ExitCode:               failure.Result.ExitCode,
 		TimedOut:               failure.Result.TimedOut,
 		OutputTruncated:        failure.Result.OutputTruncated,
-		Stdout:                 failure.Result.Stdout,
-		Stderr:                 failure.Result.Stderr,
+		Stdout:                 redactWorkDirectory(failure.Result.Stdout, failure.WorkDir),
+		Stderr:                 redactWorkDirectory(failure.Result.Stderr, failure.WorkDir),
 	}
 	if failure.ReviewConfigDirectory != "" {
-		details.ReviewCommand = configgen.CheckCommand(failure.BinaryPath, failure.ReviewConfigDirectory)
+		details.ReviewCommand, _ = configgen.CheckCommand(failure.WorkDir, failure.BinaryPath, failure.ReviewConfigDirectory)
+		details.ReviewConfigDirectory = checkedDirectory(details.ReviewCommand)
 	}
 	if failure.Cause != nil {
-		details.ProcessError = failure.Cause.Error()
+		details.ProcessError = checkProcessError(failure)
 	}
 	if failure.ReviewError != nil {
-		details.ReviewError = failure.ReviewError.Error()
+		details.ReviewError = "未能保留失败配置审核副本"
 	}
 	return details
+}
+
+func checkedDirectory(command []string) string {
+	if len(command) != 4 {
+		return ""
+	}
+	return command[3]
+}
+
+func checkProcessError(failure *CheckFailure) string {
+	switch {
+	case errors.Is(failure.Cause, configgen.ErrCoreNotInstalled):
+		return "sing-box 核心不可用"
+	case failure.Result.TimedOut, errors.Is(failure.Cause, configgen.ErrCheckTimeout):
+		return "sing-box check 执行超时"
+	case failure.Result.ExitCode >= 0:
+		return fmt.Sprintf("exit status %d", failure.Result.ExitCode)
+	default:
+		return "sing-box check 执行失败"
+	}
+}
+
+func redactWorkDirectory(value, workDir string) string {
+	if value == "" || workDir == "" {
+		return value
+	}
+	clean := strings.TrimRight(filepath.Clean(workDir), string(filepath.Separator))
+	if clean == "" || clean == "." || !filepath.IsAbs(clean) {
+		return value
+	}
+	value = strings.ReplaceAll(value, clean+string(filepath.Separator), "")
+	value = strings.ReplaceAll(value, filepath.ToSlash(clean)+"/", "")
+	return strings.ReplaceAll(value, clean, ".")
 }
 
 func checkFailureMessage(failure *CheckFailure) string {

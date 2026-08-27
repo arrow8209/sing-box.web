@@ -173,7 +173,7 @@ func TestRuleDownloadPreviewAndValidateFlow(t *testing.T) {
 	if !validated.Valid {
 		t.Fatalf("validate=%+v", validated)
 	}
-	if got := env.FakeCoreArguments(t); len(got) != 3 || !slices.Equal(got[:2], []string{"check", "-C"}) || !strings.HasPrefix(got[2], filepath.Join(env.workDir, "config.staging-")) {
+	if got := env.FakeCoreArguments(t); len(got) != 3 || !slices.Equal(got[:2], []string{"check", "-C"}) || !strings.HasPrefix(got[2], "config.staging-") || filepath.IsAbs(got[2]) {
 		t.Fatalf("fake core args=%v", got)
 	}
 	assertNoTransactionDirs(t, env.workDir)

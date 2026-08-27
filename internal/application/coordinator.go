@@ -39,6 +39,7 @@ type ApplyResult struct {
 type CheckFailure struct {
 	Cause                  error
 	Result                 configgen.CheckResult
+	WorkDir                string
 	BinaryPath             string
 	CheckedConfigDirectory string
 	ReviewConfigDirectory  string
@@ -178,6 +179,7 @@ func (c *Coordinator) applyStopped(ctx context.Context, op *core.Operation, requ
 		return failBeforeSwap(&CheckFailure{
 			Cause:                  checkErr,
 			Result:                 check,
+			WorkDir:                c.core.Layout().WorkDir,
 			BinaryPath:             c.core.Layout().CoreBinary,
 			CheckedConfigDirectory: staging,
 			ReviewConfigDirectory:  reviewDirectory,

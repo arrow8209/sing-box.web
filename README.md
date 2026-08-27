@@ -15,7 +15,7 @@ sh scripts/build.sh
 
 服务监听所有 IPv4 网卡的 `0.0.0.0:50016`。Web 服务作为唯一父进程管理 sing-box 子进程；应用档案会自动执行停止、`check` 和重启。核心更新只能经管理员确认后手动触发。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
 
-应用时检查的不是单个 `config.json`，而是本次草稿生成的完整多文件目录。服务实际执行 `data/bin/sing-box check -C config.staging-<random>`；检查成功后该目录会原子切换为正式的 `config/`。检查失败时，页面会显示退出码、stdout、stderr、实际送检目录和文件名，并把最新一份失败配置移动到权限受限的 `config.check-failed/`，方便管理员在服务端审核并复查：
+应用时检查的不是单个 `config.json`，而是本次草稿生成的完整多文件目录。服务以工作目录为当前目录，使用相对路径执行 `data/bin/sing-box check -C config.staging-<random>`；检查成功后该目录会原子切换为正式的 `config/`。检查失败时，页面只显示相对工作目录的命令和路径，并同时显示退出码、stdout、stderr 与文件名；最新一份失败配置会移动到权限受限的 `config.check-failed/`，方便管理员在服务端审核并复查：
 
 ```bash
 data/bin/sing-box check -C config.check-failed

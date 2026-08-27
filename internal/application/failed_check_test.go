@@ -7,6 +7,7 @@ import (
 	"os"
 	"path/filepath"
 	"reflect"
+	"strings"
 	"testing"
 
 	"singbox-web/internal/configgen"
@@ -57,7 +58,8 @@ func TestPreserveFailedCheckDirectoryReplacesPreviousReviewCopy(t *testing.T) {
 func TestWriteApplyErrorIncludesCoreOutputAndReviewLocation(t *testing.T) {
 	failure := &CheckFailure{
 		Cause:                  fmt.Errorf("%w: exit status 1", configgen.ErrCheckFailed),
-		Result:                 configgen.CheckResult{Stderr: "FATAL decode 60-inbounds.json", ExitCode: 1, OutputTruncated: true},
+		Result:                 configgen.CheckResult{Stderr: "FATAL decode /service/config.staging-0123456789abcdef0123456789abcdef/60-inbounds.json", ExitCode: 1, OutputTruncated: true},
+		WorkDir:                "/service",
 		BinaryPath:             "/service/data/bin/sing-box",
 		CheckedConfigDirectory: "/service/config.staging-0123456789abcdef0123456789abcdef",
 		ReviewConfigDirectory:  "/service/config.check-failed",
@@ -86,11 +88,14 @@ func TestWriteApplyErrorIncludesCoreOutputAndReviewLocation(t *testing.T) {
 	if response.Error.Code != "config_check_failed" || response.Error.Stage != "check_config" || response.Error.Message != "sing-box 配置检查失败（退出码 1）" {
 		t.Fatalf("error=%+v", response.Error)
 	}
-	wantReviewCommand := []string{"/service/data/bin/sing-box", "check", "-C", "/service/config.check-failed"}
+	wantReviewCommand := []string{"data/bin/sing-box", "check", "-C", "config.check-failed"}
 	if !reflect.DeepEqual(response.Error.Details.ReviewCommand, wantReviewCommand) {
 		t.Fatalf("review command=%v", response.Error.Details.ReviewCommand)
 	}
-	if response.Error.Details.Stderr != "FATAL decode 60-inbounds.json" || response.Error.Details.ExitCode != 1 || !response.Error.Details.OutputTruncated || response.Error.Details.Revision != 21 || response.Error.Details.ConfigDigest != "digest-a" {
+	if response.Error.Details.Stderr != "FATAL decode config.staging-0123456789abcdef0123456789abcdef/60-inbounds.json" || response.Error.Details.CheckedConfigDirectory != "config.staging-0123456789abcdef0123456789abcdef" || response.Error.Details.ExitCode != 1 || !response.Error.Details.OutputTruncated || response.Error.Details.Revision != 21 || response.Error.Details.ConfigDigest != "digest-a" {
 		t.Fatalf("details=%+v", response.Error.Details)
+	}
+	if strings.Contains(recorder.Body.String(), "/service") {
+		t.Fatalf("response leaked absolute work directory: %s", recorder.Body.String())
 	}
 }
