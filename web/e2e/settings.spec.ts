@@ -7,6 +7,11 @@ test("可保存下载代理并留空恢复直连", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "仪表盘" })).toBeVisible();
   await page.goto("/settings");
 
+  const coreSettings = page.getByRole("region", { name: "核心设置" });
+  await expect(coreSettings).toBeVisible();
+  await expect(coreSettings.getByLabel("核心分支")).toHaveValue("Stable · 1.0.0");
+  await expect(coreSettings.getByRole("link", { name: "管理版本" })).toHaveAttribute("href", "/core");
+
   const proxyUrl = page.getByLabel("代理服务器 URL");
   await expect(proxyUrl).toHaveValue("");
   await proxyUrl.fill("http://127.0.0.1:7890");

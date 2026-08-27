@@ -1,22 +1,41 @@
 <script setup lang="ts">
+import { onBeforeUnmount, onMounted, ref } from "vue";
+import AppIcon from "@/layout/AppIcon.vue";
 import AppearanceSettings from "./AppearanceSettings.vue";
+import CoreSettings from "./CoreSettings.vue";
 import PasswordSettings from "./PasswordSettings.vue";
 import ProxySettings from "./ProxySettings.vue";
+
+const sectionIds = new Set(["core", "appearance", "proxy", "security"]);
+const activeSection = ref("core");
+
+function syncActiveSection(): void {
+  const id = window.location.hash.replace(/^#/, "");
+  activeSection.value = sectionIds.has(id) ? id : "core";
+}
+
+onMounted(() => {
+  syncActiveSection();
+  window.addEventListener("hashchange", syncActiveSection);
+});
+onBeforeUnmount(() => window.removeEventListener("hashchange", syncActiveSection));
 </script>
 
 <template>
   <section class="settings-page">
     <header class="page-intro">
-      <h1>设置</h1>
-      <p>界面偏好保存在当前浏览器；下载代理和认证设置由服务端安全保存。</p>
+      <h1>系统设置</h1>
+      <p>管理核心行为、控制台偏好与安全访问方式。</p>
     </header>
     <div class="settings-layout">
       <nav class="settings-nav" aria-label="设置分类">
-        <a href="#appearance">外观与布局</a>
-        <a href="#proxy">代理设置</a>
-        <a href="#security">管理密码</a>
+        <a :class="{ active: activeSection === 'core' }" href="#core" @click="activeSection = 'core'"><AppIcon name="cpu" :size="15" />核心设置</a>
+        <a :class="{ active: activeSection === 'appearance' }" href="#appearance" @click="activeSection = 'appearance'"><AppIcon name="palette" :size="15" />界面外观</a>
+        <a :class="{ active: activeSection === 'proxy' }" href="#proxy" @click="activeSection = 'proxy'"><AppIcon name="globe" :size="15" />代理设置</a>
+        <a :class="{ active: activeSection === 'security' }" href="#security" @click="activeSection = 'security'"><AppIcon name="lock" :size="15" />安全访问</a>
       </nav>
       <div class="settings-content">
+        <section id="core"><CoreSettings /></section>
         <section id="appearance"><AppearanceSettings /></section>
         <section id="proxy"><ProxySettings /></section>
         <section id="security"><PasswordSettings /></section>
@@ -31,13 +50,14 @@ import ProxySettings from "./ProxySettings.vue";
 .page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: 12px; }
 .settings-layout { display: grid; grid-template-columns: 210px minmax(0, 1fr); gap: 14px; }
 .settings-nav { position: sticky; top: 80px; display: grid; align-content: start; height: fit-content; gap: 3px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
-.settings-nav a { padding: 9px 10px; border-radius: 8px; color: var(--text-soft); font-size: 11px; font-weight: 650; text-decoration: none; }
+.settings-nav a { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; color: var(--text-soft); font-size: 11px; font-weight: 650; text-decoration: none; }
 .settings-nav a:hover { color: var(--primary-strong); background: var(--primary-soft); }
+.settings-nav a.active { color: var(--primary-strong); background: var(--primary-soft); font-weight: 700; }
 .settings-content { display: grid; gap: 14px; }
 .settings-content section { scroll-margin-top: 82px; }
 @media (max-width: 760px) {
   .settings-layout { grid-template-columns: 1fr; }
-  .settings-nav { position: static; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .settings-nav a { text-align: center; }
+  .settings-nav { position: static; display: flex; overflow-x: auto; scrollbar-width: none; }
+  .settings-nav a { min-width: max-content; flex: 0 0 auto; }
 }
 </style>

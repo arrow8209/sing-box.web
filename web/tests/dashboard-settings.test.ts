@@ -3,6 +3,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { routerKey } from "vue-router";
 import DashboardView from "@/features/dashboard/DashboardView.vue";
 import AppearanceSettings from "@/features/settings/AppearanceSettings.vue";
+import CoreSettings from "@/features/settings/CoreSettings.vue";
 import PasswordSettings from "@/features/settings/PasswordSettings.vue";
 import ProxySettings from "@/features/settings/ProxySettings.vue";
 
@@ -35,6 +36,23 @@ describe("仪表盘与设置", () => {
     expect(api.update).toHaveBeenCalledWith({ proxyUrl: "http://127.0.0.1:7890" });
     expect(wrapper.text()).toContain("代理设置已保存并即时生效");
     expect(wrapper.text()).toContain("使用代理");
+  });
+  it("核心设置只展示真实状态和稳定版能力", async () => {
+    const api = {
+      status: vi.fn(async () => ({ installedVersion: "1.12.2", installedDigest: "", state: "running" as const, pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } })),
+      latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" }))
+    };
+    const wrapper = mount(CoreSettings, {
+      props: { api },
+      global: { stubs: { RouterLink: { template: '<a href="/core"><slot /></a>' } } }
+    });
+    await flushPromises();
+    expect(wrapper.text()).toContain("v1.12.2");
+    expect(wrapper.text()).toContain("Stable · 1.12.3");
+    expect(wrapper.text()).toContain("当前 1.12.2 · 最新 1.12.3");
+    expect(wrapper.get('[aria-label="开机自动运行（只读）"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.get('[aria-label="配置变更自动重载（只读）"]').attributes("aria-checked")).toBe("false");
+    expect(wrapper.text()).not.toContain("Beta");
   });
   it("仪表盘只渲染服务端摘要，不含模拟运行指标", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };
