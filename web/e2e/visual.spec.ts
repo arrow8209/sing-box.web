@@ -127,6 +127,9 @@ for (const scenario of scenarios) {
     const versionPanel = page.getByLabel("版本管理");
     await expect(versionPanel.getByRole("article", { name: "当前版本" })).toContainText("1.0.0");
     await expect(versionPanel.getByRole("article", { name: "最新版本" })).toContainText("1.0.0");
+    const coreDownload = versionPanel.locator("[data-download-core]");
+    if (await coreDownload.isEnabled()) await coreDownload.click();
+    await expect(versionPanel.getByText("4 MB/s")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-core.png`, { fullPage: true });
   });

@@ -10,12 +10,12 @@ import (
 )
 
 func TestLatestStableSelectsCurrentLinuxAssetAndChecksums(t *testing.T) {
-	releaseJSON := `{"tag_name":"v1.12.3","draft":false,"prerelease":false,"assets":[{"name":"sing-box-1.12.3-linux-amd64.tar.gz","browser_download_url":"https://github.com/SagerNet/sing-box/releases/download/v1.12.3/sing-box-1.12.3-linux-amd64.tar.gz"},{"name":"sing-box-1.12.3-checksums.txt","browser_download_url":"https://github.com/SagerNet/sing-box/releases/download/v1.12.3/sing-box-1.12.3-checksums.txt"}]}`
+	releaseJSON := `{"tag_name":"v1.12.3","draft":false,"prerelease":false,"assets":[{"name":"sing-box-1.12.3-linux-amd64.tar.gz","browser_download_url":"https://github.com/SagerNet/sing-box/releases/download/v1.12.3/sing-box-1.12.3-linux-amd64.tar.gz","size":14567890},{"name":"sing-box-1.12.3-checksums.txt","browser_download_url":"https://github.com/SagerNet/sing-box/releases/download/v1.12.3/sing-box-1.12.3-checksums.txt"}]}`
 	release, err := parseRelease([]byte(releaseJSON), "amd64")
 	if err != nil {
 		t.Fatal(err)
 	}
-	if release.Version != "1.12.3" || release.Asset.Name != "sing-box-1.12.3-linux-amd64.tar.gz" {
+	if release.Version != "1.12.3" || release.Asset.Name != "sing-box-1.12.3-linux-amd64.tar.gz" || release.Asset.Size != 14567890 {
 		t.Fatalf("release=%+v", release)
 	}
 }

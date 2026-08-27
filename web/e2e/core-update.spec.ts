@@ -20,5 +20,8 @@ test("从根菜单进入核心管理并直接下载最新稳定版", async ({ pa
   const request = await updateRequest;
   expect(request.postDataJSON()).toEqual({ confirmedVersion: "1.0.0" });
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(download).toBeEnabled();
+  const progress = page.getByRole("progressbar", { name: "核心下载进度" });
+  await expect(progress).toHaveAttribute("aria-valuenow", "25");
+  await expect(versions.getByText("8 MB / 32 MB")).toBeVisible();
+  await expect(versions.getByText("4 MB/s")).toBeVisible();
 });

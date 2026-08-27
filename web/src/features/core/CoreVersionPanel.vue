@@ -36,8 +36,41 @@ const updateFailed = computed(() => stage.value === "failed");
 const updateCompleted = computed(() => stage.value === "completed");
 const updating = computed(() => Boolean(stage.value && stage.value !== "idle" && !updateFailed.value && !updateCompleted.value));
 const showProgress = computed(() => Boolean(stageDetails.value && stage.value !== "idle"));
-const progressValue = computed(() => stageDetails.value?.progress ?? 0);
 const stageLabel = computed(() => stageDetails.value?.label ?? stage.value);
+const downloading = computed(() => stage.value === "downloading");
+const downloadedBytes = computed(() => Math.max(0, props.update?.downloadedBytes ?? 0));
+const totalBytes = computed(() => Math.max(0, props.update?.totalBytes ?? 0));
+const bytesPerSecond = computed(() => Math.max(0, props.update?.bytesPerSecond ?? 0));
+const hasDownloadTotal = computed(() => totalBytes.value > 0);
+const downloadPercent = computed(() => hasDownloadTotal.value ? Math.min(100, downloadedBytes.value / totalBytes.value * 100) : 0);
+const downloadComplete = computed(() => hasDownloadTotal.value && downloadedBytes.value >= totalBytes.value);
+const progressValue = computed(() => downloading.value
+  ? hasDownloadTotal.value ? downloadPercent.value : undefined
+  : downloadComplete.value ? 100 : stageDetails.value?.progress);
+const progressNow = computed(() => progressValue.value === undefined || updateFailed.value ? undefined : Number(progressValue.value.toFixed(1)));
+const progressLabel = computed(() => {
+  if (updateFailed.value) return "失败";
+  if (downloading.value && !hasDownloadTotal.value) return "计算中";
+  const value = progressValue.value ?? 0;
+  const digits = downloading.value && value > 0 && value < 10 ? 1 : 0;
+  return `${value.toFixed(digits)}%`;
+});
+const transferLabel = computed(() => hasDownloadTotal.value
+  ? `${formatBytes(downloadedBytes.value)} / ${formatBytes(totalBytes.value)}`
+  : `已下载 ${formatBytes(downloadedBytes.value)}`);
+const speedLabel = computed(() => bytesPerSecond.value > 0 ? `${formatBytes(bytesPerSecond.value)}/s` : "计算中");
+const progressText = computed(() => downloading.value
+  ? `${transferLabel.value}，下载速度 ${speedLabel.value}`
+  : props.update?.message ? `${stageLabel.value}：${props.update.message}` : stageLabel.value);
+
+function formatBytes(bytes: number): string {
+  if (!Number.isFinite(bytes) || bytes <= 0) return "0 B";
+  const units = ["B", "KB", "MB", "GB"];
+  const unitIndex = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1);
+  const value = bytes / 1024 ** unitIndex;
+  const digits = unitIndex === 0 || value >= 100 ? 0 : value >= 10 ? 1 : 2;
+  return `${Number(value.toFixed(digits))} ${units[unitIndex]}`;
+}
 
 const processLabel = computed(() => {
   if (!props.status) return "正在读取本机核心信息";
@@ -134,17 +167,21 @@ function triggerAction(): void {
       </button>
     </div>
 
-    <div v-if="showProgress" class="core-update-progress" :class="{ complete: updateCompleted, failed: updateFailed }" aria-live="polite">
-      <div><span>{{ stageLabel }}</span><strong>{{ updateFailed ? "失败" : `${progressValue}%` }}</strong></div>
+    <div v-if="showProgress" class="core-update-progress" :class="{ complete: updateCompleted, failed: updateFailed, indeterminate: progressNow === undefined && !updateFailed }" aria-live="polite">
+      <div class="core-progress-head"><span>{{ stageLabel }}</span><strong>{{ progressLabel }}</strong></div>
+      <div v-if="downloading" class="core-download-metrics">
+        <span><small>下载进度</small><strong>{{ transferLabel }}</strong></span>
+        <span><small>下载速度</small><strong data-download-speed>{{ speedLabel }}</strong></span>
+      </div>
       <span
         class="core-progress-track"
         role="progressbar"
-        aria-label="核心更新进度"
+        aria-label="核心下载进度"
         aria-valuemin="0"
         aria-valuemax="100"
-        :aria-valuenow="updateFailed ? undefined : progressValue"
-        :aria-valuetext="update?.message ? `${stageLabel}：${update.message}` : stageLabel"
-      ><i :style="{ width: `${progressValue}%` }" /></span>
+        :aria-valuenow="progressNow"
+        :aria-valuetext="progressText"
+      ><i :style="progressValue === undefined ? undefined : { width: `${progressValue}%` }" /></span>
     </div>
   </article>
 </template>
@@ -184,14 +221,21 @@ function triggerAction(): void {
 .core-download-copy small { margin-top: 2px; color: var(--text-faint); font-size: 8px; }
 .core-download-button { display: inline-flex; min-width: 178px; min-height: 36px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; padding: 7px 13px; font-size: 10px; }
 .core-update-progress { padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); }
-.core-update-progress > div { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--text-soft); font-size: 9px; }
+.core-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--text-soft); font-size: 9px; }
 .core-update-progress strong { color: var(--primary); font-size: 9px; }
+.core-download-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
+.core-download-metrics > span { min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-soft); }
+.core-download-metrics small, .core-download-metrics strong { display: block; }
+.core-download-metrics small { color: var(--text-faint); font-size: 8px; }
+.core-download-metrics strong { overflow: hidden; margin-top: 2px; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
 .core-progress-track { display: block; height: 6px; overflow: hidden; border-radius: 999px; background: var(--line); }
 .core-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), var(--cyan)); transition: width 240ms ease; }
+.core-update-progress.indeterminate .core-progress-track i { width: 35%; animation: core-progress-indeterminate 1.1s ease-in-out infinite; }
 .core-update-progress.complete strong { color: var(--green); }
 .core-update-progress.complete .core-progress-track i { background: var(--green); }
 .core-update-progress.failed strong { color: var(--red); }
 .core-update-progress.failed .core-progress-track i { background: var(--red); }
+@keyframes core-progress-indeterminate { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
 
 @media (max-width: 768px) {
   .core-version-shell-head { min-height: 64px; padding: 12px 13px; }
@@ -207,9 +251,11 @@ function triggerAction(): void {
   .core-release-state { max-width: 112px; justify-content: center; overflow: hidden; text-align: center; text-overflow: ellipsis; }
   .core-shell-copy span { display: none; }
   .core-version-value { font-size: 28px; }
+  .core-download-metrics { grid-template-columns: 1fr; }
 }
 
 @media (prefers-reduced-motion: reduce) {
   .core-progress-track i { transition: none; }
+  .core-update-progress.indeterminate .core-progress-track i { animation: none; transform: translateX(90%); }
 }
 </style>

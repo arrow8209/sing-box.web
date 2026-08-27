@@ -23,6 +23,7 @@ type Asset struct {
 	Name   string `json:"name"`
 	URL    string `json:"browser_download_url"`
 	Digest string `json:"digest"`
+	Size   int64  `json:"size"`
 }
 
 // Release is the sole stable release and its verified archive accepted by this
@@ -42,4 +43,12 @@ type PreparedBinary struct {
 	Version       string
 	ArchiveDigest string
 	BinaryDigest  string
+}
+
+// DownloadProgress contains observable archive transfer facts. TotalBytes is
+// zero when neither the release metadata nor the response declares a size.
+type DownloadProgress struct {
+	DownloadedBytes int64
+	TotalBytes      int64
+	BytesPerSecond  int64
 }

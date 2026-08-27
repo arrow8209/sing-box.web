@@ -13,6 +13,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"singbox-web/internal/paths"
 )
@@ -96,6 +97,58 @@ func TestPrepareVerifiesAndExtractsBinary(t *testing.T) {
 	cleanup()
 	if _, err := os.Stat(filepath.Dir(prepared.Path)); !errors.Is(err, os.ErrNotExist) {
 		t.Fatalf("cleanup err=%v", err)
+	}
+}
+
+func TestPrepareReportsArchiveDownloadProgress(t *testing.T) {
+	layout, err := paths.Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	archive := preparedArchive(t, "sing-box-1.12.3-linux-amd64/sing-box")
+	digest := sha256.Sum256(archive)
+	transport := roundTripperFunc(func(request *http.Request) (*http.Response, error) {
+		return &http.Response{
+			StatusCode:    http.StatusOK,
+			Header:        make(http.Header),
+			Body:          io.NopCloser(bytes.NewReader(archive)),
+			ContentLength: -1,
+		}, nil
+	})
+	release := Release{
+		Version: "1.12.3",
+		Arch:    "amd64",
+		Asset: Asset{
+			Name: "sing-box-1.12.3-linux-amd64.tar.gz", URL: "https://github.com/archive", Size: int64(len(archive)),
+		},
+		ArchiveSHA256: fmt.Sprintf("%x", digest),
+	}
+	var reports []DownloadProgress
+	prepared, cleanup, err := NewFetcher(layout, FetcherPolicyForTest(transport)).PrepareWithProgress(context.Background(), release, func(progress DownloadProgress) {
+		reports = append(reports, progress)
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer cleanup()
+	if prepared.Path == "" || len(reports) < 2 {
+		t.Fatalf("prepared=%+v reports=%+v", prepared, reports)
+	}
+	first, last := reports[0], reports[len(reports)-1]
+	if first.DownloadedBytes != 0 || first.TotalBytes != int64(len(archive)) {
+		t.Fatalf("first=%+v", first)
+	}
+	if last.DownloadedBytes != int64(len(archive)) || last.TotalBytes != int64(len(archive)) {
+		t.Fatalf("last=%+v", last)
+	}
+}
+
+func TestReportProgressCalculatesBytesPerSecond(t *testing.T) {
+	started := time.Unix(0, 0)
+	var reported DownloadProgress
+	reportProgressAt(func(progress DownloadProgress) { reported = progress }, 4<<20, 16<<20, started, started.Add(time.Second))
+	if reported.DownloadedBytes != 4<<20 || reported.TotalBytes != 16<<20 || reported.BytesPerSecond != 4<<20 {
+		t.Fatalf("reported=%+v", reported)
 	}
 }
 

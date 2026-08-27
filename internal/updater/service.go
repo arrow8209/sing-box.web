@@ -29,6 +29,9 @@ type ReleaseLookup interface {
 type BinaryPreparer interface {
 	Prepare(context.Context, Release) (PreparedBinary, func(), error)
 }
+type ProgressBinaryPreparer interface {
+	PrepareWithProgress(context.Context, Release, func(DownloadProgress)) (PreparedBinary, func(), error)
+}
 
 // UpdateConfirmation is deliberately just a version: an administrator must
 // first see a release, then explicitly confirm that exact version.
@@ -37,12 +40,15 @@ type UpdateConfirmation struct {
 }
 
 type Status struct {
-	OperationID   string     `json:"operationId"`
-	TargetVersion string     `json:"targetVersion,omitempty"`
-	Stage         string     `json:"stage"`
-	StartedAt     time.Time  `json:"startedAt"`
-	FinishedAt    *time.Time `json:"finishedAt,omitempty"`
-	Message       string     `json:"message,omitempty"`
+	OperationID     string     `json:"operationId"`
+	TargetVersion   string     `json:"targetVersion,omitempty"`
+	Stage           string     `json:"stage"`
+	StartedAt       time.Time  `json:"startedAt"`
+	FinishedAt      *time.Time `json:"finishedAt,omitempty"`
+	Message         string     `json:"message,omitempty"`
+	DownloadedBytes int64      `json:"downloadedBytes,omitempty"`
+	TotalBytes      int64      `json:"totalBytes,omitempty"`
+	BytesPerSecond  int64      `json:"bytesPerSecond,omitempty"`
 }
 
 type Service struct {
@@ -134,6 +140,7 @@ func (s *Service) run(id string, confirmation UpdateConfirmation) {
 	s.mu.Lock()
 	if s.status.OperationID == id {
 		s.active = false
+		s.status.BytesPerSecond = 0
 		s.status.FinishedAt = &now
 		if err != nil {
 			s.status.Stage, s.status.Message = "failed", safeMessage(err)
@@ -154,7 +161,13 @@ func (s *Service) update(ctx context.Context, confirmation UpdateConfirmation) e
 		return fmt.Errorf("最新版本已变更，需重新确认")
 	}
 	s.setStage("downloading")
-	prepared, cleanup, err := s.fetcher.Prepare(ctx, release)
+	var prepared PreparedBinary
+	var cleanup func()
+	if fetcher, ok := s.fetcher.(ProgressBinaryPreparer); ok {
+		prepared, cleanup, err = fetcher.PrepareWithProgress(ctx, release, s.setDownloadProgress)
+	} else {
+		prepared, cleanup, err = s.fetcher.Prepare(ctx, release)
+	}
 	if cleanup != nil {
 		defer cleanup()
 	}
@@ -245,6 +258,28 @@ func (s *Service) setStage(stage string) {
 	s.mu.Lock()
 	if s.active {
 		s.status.Stage = stage
+		if stage != "downloading" {
+			s.status.BytesPerSecond = 0
+		}
+	}
+	s.mu.Unlock()
+}
+
+func (s *Service) setDownloadProgress(progress DownloadProgress) {
+	if progress.DownloadedBytes < 0 {
+		progress.DownloadedBytes = 0
+	}
+	if progress.TotalBytes < 0 {
+		progress.TotalBytes = 0
+	}
+	if progress.BytesPerSecond < 0 {
+		progress.BytesPerSecond = 0
+	}
+	s.mu.Lock()
+	if s.active && s.status.Stage == "downloading" {
+		s.status.DownloadedBytes = progress.DownloadedBytes
+		s.status.TotalBytes = progress.TotalBytes
+		s.status.BytesPerSecond = progress.BytesPerSecond
 	}
 	s.mu.Unlock()
 }

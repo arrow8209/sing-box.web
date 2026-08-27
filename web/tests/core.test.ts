@@ -30,7 +30,7 @@ describe("核心状态", () => {
     expect(wrapper.get("[data-download-core]").text()).toContain("正在检查版本");
     expect(wrapper.get("[data-download-core]").attributes()).toHaveProperty("disabled");
   });
-  it("用真实更新阶段展示流程进度", () => {
+  it("用真实更新阶段展示流程进度", async () => {
     const wrapper = mount(CoreVersionPanel, {
       props: {
         status: status(),
@@ -44,6 +44,35 @@ describe("核心状态", () => {
     expect(wrapper.get("[role='progressbar']").attributes("aria-valuetext")).toContain("安装核心");
     expect(wrapper.text()).toContain("安装核心");
     expect(wrapper.get("[data-download-core]").attributes()).toHaveProperty("disabled");
+    await wrapper.setProps({ update: { ...wrapper.props("update")!, downloadedBytes: 32 << 20, totalBytes: 32 << 20 } });
+    expect(wrapper.get("[role='progressbar']").attributes("aria-valuenow")).toBe("100");
+  });
+  it("下载过程中显示真实百分比、容量和速度", async () => {
+    const wrapper = mount(CoreVersionPanel, {
+      props: {
+        status: status(),
+        latest: { version: "1.12.3", arch: "amd64" },
+        update: {
+          operationId: "update-a",
+          targetVersion: "1.12.3",
+          stage: "downloading",
+          startedAt: "now",
+          downloadedBytes: 8 << 20,
+          totalBytes: 32 << 20,
+          bytesPerSecond: 4 << 20
+        },
+        checking: false,
+        busy: false,
+        updateAvailable: true
+      }
+    });
+    expect(wrapper.get("[role='progressbar']").attributes("aria-valuenow")).toBe("25");
+    expect(wrapper.text()).toContain("8 MB / 32 MB");
+    expect(wrapper.get("[data-download-speed]").text()).toBe("4 MB/s");
+    await wrapper.setProps({ update: { ...wrapper.props("update")!, totalBytes: 0 } });
+    expect(wrapper.get("[role='progressbar']").attributes("aria-valuenow")).toBeUndefined();
+    expect(wrapper.get(".core-update-progress").classes()).toContain("indeterminate");
+    expect(wrapper.text()).toContain("已下载 8 MB");
   });
   it("更新期间每 500ms 轮询，页面隐藏时暂停", async () => {
     vi.useFakeTimers();
