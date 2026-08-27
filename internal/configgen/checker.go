@@ -132,12 +132,19 @@ func NewChecker(workDir string, runner Runner, timeout time.Duration, limit int)
 	return &Checker{workDir: workDir, runner: runner, timeout: timeout, limit: limit}
 }
 
+// CheckCommand returns the exact argument array used for a core check. Keeping
+// diagnostics and execution on the same constructor prevents the UI from
+// reporting a command that differs from the one actually invoked.
+func CheckCommand(binaryPath, configDir string) []string {
+	return []string{binaryPath, "check", "-C", configDir}
+}
+
 func (c *Checker) Check(ctx context.Context, binaryPath, configDir string) (CheckResult, error) {
 	info, err := os.Lstat(binaryPath)
 	if err != nil || !info.Mode().IsRegular() || info.Mode()&0o111 == 0 {
 		return CheckResult{}, ErrCoreNotInstalled
 	}
-	result, err := c.runner.Run(ctx, CommandSpec{Args: []string{binaryPath, "check", "-C", configDir}, Dir: c.workDir}, c.timeout, c.limit)
+	result, err := c.runner.Run(ctx, CommandSpec{Args: CheckCommand(binaryPath, configDir), Dir: c.workDir}, c.timeout, c.limit)
 	outputTruncated := result.OutputTruncated || len(result.Stdout) > c.limit || len(result.Stderr) > c.limit
 	result.Stdout, result.Stderr, result.OutputTruncated = boundOutput(result.Stdout, c.limit), boundOutput(result.Stderr, c.limit), outputTruncated
 	checked := CheckResult{Stdout: string(result.Stdout), Stderr: string(result.Stderr), ExitCode: result.ExitCode, TimedOut: result.TimedOut, OutputTruncated: result.OutputTruncated}

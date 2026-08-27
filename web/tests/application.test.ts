@@ -1,5 +1,7 @@
+import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
+import ValidationErrors from "@/features/application/ValidationErrors.vue";
 import { createApplicationStore } from "@/features/application/store";
 import type { ApplicationApi } from "@/features/application/api";
 import { createProfileStore } from "@/features/profiles/store";
@@ -31,5 +33,37 @@ describe("配置应用", () => {
     expect(JSON.stringify(store.previewResult.value)).toContain("data/rulesets/resource-a.srs"); expect(JSON.stringify(store.previewResult.value)).not.toContain("https://");
     await store.apply(); expect(store.driftDigest.value).toBe(digest); await store.apply(store.driftDigest.value ?? undefined);
     expect(api.apply).toHaveBeenLastCalledWith("profile-a", { revision: 4, confirmedConfigDigest: digest });
+  });
+  it("应用检查失败时保留核心输出和后台审核位置", async () => {
+    const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open("profile-a");
+    const details = {
+      command: ["/service/data/bin/sing-box", "check", "-C", "/service/config.staging-token"],
+      checkedConfigDirectory: "/service/config.staging-token",
+      reviewCommand: ["/service/data/bin/sing-box", "check", "-C", "/service/config.check-failed"],
+      reviewConfigDirectory: "/service/config.check-failed",
+      configFiles: ["10-log.json", "60-inbounds.json"],
+      profileId: "profile-a",
+      revision: 4,
+      configDigest: "a".repeat(64),
+      exitCode: 1,
+      timedOut: false,
+      outputTruncated: false,
+      stderr: "FATAL decode 60-inbounds.json: inbounds[1]"
+    };
+    const api: ApplicationApi = {
+      core: vi.fn(async () => core()), preview: vi.fn(), validate: vi.fn(),
+      apply: vi.fn(async () => { throw new ApiError(422, { code: "config_check_failed", message: "sing-box 配置检查失败（退出码 1）", stage: "check_config", details }); })
+    };
+    const store = createApplicationStore(profileStore, api); await store.refreshCore(); await store.apply();
+    expect(store.error.value?.details).toMatchObject({ reviewConfigDirectory: "/service/config.check-failed", exitCode: 1, stderr: details.stderr });
+
+    const wrapper = mount(ValidationErrors, { props: { validation: null, error: store.error.value } });
+    expect(wrapper.text()).toContain("检查配置：sing-box 配置检查失败（退出码 1）");
+    expect(wrapper.text()).toContain("后台审核目录");
+    expect(wrapper.text()).toContain("/service/config.check-failed");
+    expect(wrapper.text()).toContain("10-log.json, 60-inbounds.json");
+    expect(wrapper.text()).toContain("档案 ID profile-a");
+    expect(wrapper.text()).toContain("revision 4");
+    expect(wrapper.text()).toContain("FATAL decode 60-inbounds.json: inbounds[1]");
   });
 });

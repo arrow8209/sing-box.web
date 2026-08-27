@@ -2,7 +2,7 @@ import { computed, ref, type Ref } from "vue";
 import { isApiError } from "@/features/profiles/api";
 import { useProfileStore, type ProfileStore } from "@/features/profiles/store";
 import { applicationApi, type ApplicationApi } from "./api";
-import type { ApplicationError, CoreStatus, PreviewResult, ValidationResult } from "./types";
+import type { ApplicationError, CheckFailureDetails, CoreStatus, PreviewResult, ValidationResult } from "./types";
 
 export interface ApplicationStore {
   core: Ref<CoreStatus | null>; previewResult: Ref<PreviewResult | null>; validation: Ref<ValidationResult | null>;
@@ -13,10 +13,36 @@ export interface ApplicationStore {
 
 function errorFrom(cause: unknown): ApplicationError {
   if (isApiError(cause)) {
-    const output = [cause.body.details?.stdout, cause.body.details?.stderr].filter((value): value is string => typeof value === "string").join("\n");
-    return { code: cause.body.code, message: cause.body.message, stage: cause.body.stage, fieldPath: cause.body.fieldPath, output };
+    const details = checkFailureDetails(cause.body.details);
+    const output = [details?.stdout, details?.stderr].filter((value): value is string => typeof value === "string" && value.length > 0).join("\n");
+    return { code: cause.body.code, message: cause.body.message, stage: cause.body.stage, fieldPath: cause.body.fieldPath, output, details };
   }
   return { code: "network_error", message: cause instanceof Error ? cause.message : "请求失败" };
+}
+
+function checkFailureDetails(value: Record<string, unknown> | undefined): CheckFailureDetails | undefined {
+  if (!value) return undefined;
+  const strings = (item: unknown): string[] | undefined => Array.isArray(item) && item.every((entry) => typeof entry === "string") ? item : undefined;
+  const text = (item: unknown): string | undefined => typeof item === "string" ? item : undefined;
+  const flag = (item: unknown): boolean | undefined => typeof item === "boolean" ? item : undefined;
+  const details: CheckFailureDetails = {
+    command: strings(value.command),
+    checkedConfigDirectory: text(value.checkedConfigDirectory),
+    reviewCommand: strings(value.reviewCommand),
+    reviewConfigDirectory: text(value.reviewConfigDirectory),
+    configFiles: strings(value.configFiles),
+    profileId: text(value.profileId),
+    revision: typeof value.revision === "number" ? value.revision : undefined,
+    configDigest: text(value.configDigest),
+    exitCode: typeof value.exitCode === "number" ? value.exitCode : undefined,
+    timedOut: flag(value.timedOut),
+    outputTruncated: flag(value.outputTruncated),
+    stdout: text(value.stdout),
+    stderr: text(value.stderr),
+    processError: text(value.processError),
+    reviewError: text(value.reviewError)
+  };
+  return Object.values(details).some((item) => item !== undefined) ? details : undefined;
 }
 
 export function createApplicationStore(profiles: ProfileStore = useProfileStore(), api: ApplicationApi = applicationApi): ApplicationStore {

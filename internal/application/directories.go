@@ -15,6 +15,36 @@ import (
 
 var transactionStagingName = regexp.MustCompile(`^config\.staging-[0-9a-f]{32}$`)
 
+const failedCheckDirectoryName = "config.check-failed"
+
+// preserveFailedCheckDirectory moves the last configuration rejected by
+// sing-box to a stable administrator-only location. A newer failed check
+// replaces the older copy, so runtime failures cannot accumulate unbounded
+// configuration directories.
+func preserveFailedCheckDirectory(layout paths.Layout, staging string) (string, error) {
+	if err := validateSwapPaths(layout, staging); err != nil {
+		return "", err
+	}
+	info, err := os.Lstat(staging)
+	if err != nil {
+		return "", fmt.Errorf("读取失败配置审核副本: %w", err)
+	}
+	if info.Mode()&os.ModeSymlink != 0 || !info.IsDir() {
+		return "", fmt.Errorf("失败配置审核副本不是普通目录: %s", staging)
+	}
+	review := filepath.Join(layout.WorkDir, failedCheckDirectoryName)
+	if filepath.Dir(review) != layout.WorkDir || filepath.Base(review) != failedCheckDirectoryName {
+		return "", fmt.Errorf("失败配置审核路径无效")
+	}
+	if err := removeOwnedDirectory(review); err != nil {
+		return "", fmt.Errorf("清理上一次失败配置审核副本: %w", err)
+	}
+	if err := renameAndSync(layout.WorkDir, filepath.Base(staging), filepath.Base(review)); err != nil {
+		return "", fmt.Errorf("保留失败配置审核副本: %w", err)
+	}
+	return review, nil
+}
+
 // DirectoryTransaction retains the previous config until the caller has
 // successfully started the core. Restore is safe to call repeatedly.
 type DirectoryTransaction struct {

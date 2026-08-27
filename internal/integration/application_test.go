@@ -24,7 +24,18 @@ func createApplicationProfile(t *testing.T, env *integrationEnvironment) (string
 	if err != nil {
 		t.Fatal(err)
 	}
-	return meta.ID, draft.Revision
+	buffers := make(map[string]string, len(draft.Buffers))
+	for module := range draft.Buffers {
+		buffers[module] = ""
+	}
+	buffers["route"] = `{}`
+	buffers["inbounds"] = `[]`
+	buffers["outbounds"] = `[]`
+	updated, _, err := env.profiles.SaveDraft(context.Background(), meta.ID, profile.RevisionETag(draft.Revision), profile.DraftInput{Buffers: buffers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	return meta.ID, updated.Revision
 }
 
 func newCoordinatorForTest(t *testing.T, env *integrationEnvironment, checkExit int) (*application.Coordinator, *core.Store) {
@@ -43,6 +54,23 @@ func TestApplicationCheckFailureLeavesFormalConfigUntouched(t *testing.T) {
 	_, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
 	if !errors.Is(err, application.ErrCheckFailed) {
 		t.Fatalf("err=%v", err)
+	}
+	var failure *application.CheckFailure
+	if !errors.As(err, &failure) {
+		t.Fatalf("missing detailed check failure: %v", err)
+	}
+	if failure.Result.ExitCode != 7 || failure.CheckedConfigDirectory == "" {
+		t.Fatalf("failure=%+v", failure)
+	}
+	if failure.ProfileID != profileID || failure.Revision != revision || failure.ConfigDigest == "" {
+		t.Fatalf("candidate identity=%+v", failure)
+	}
+	wantReview := filepath.Join(env.workDir, "config.check-failed")
+	if failure.ReviewConfigDirectory != wantReview || failure.ReviewError != nil {
+		t.Fatalf("review=%q err=%v", failure.ReviewConfigDirectory, failure.ReviewError)
+	}
+	if _, statErr := os.Stat(filepath.Join(wantReview, "60-inbounds.json")); statErr != nil {
+		t.Fatalf("failed candidate was not retained: %v", statErr)
 	}
 	if _, statErr := os.Stat(env.layout.ConfigDir); !os.IsNotExist(statErr) {
 		t.Fatalf("failed check installed config: %v", statErr)

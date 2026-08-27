@@ -32,6 +32,44 @@ type ApplyResult struct {
 	Digest    string `json:"digest"`
 }
 
+// CheckFailure retains the exact core result and the generated configuration
+// locations so an administrator can diagnose a failed apply. The randomly
+// named directory is the path sing-box actually checked; ReviewConfigDirectory
+// is the stable copy retained after that check returns.
+type CheckFailure struct {
+	Cause                  error
+	Result                 configgen.CheckResult
+	BinaryPath             string
+	CheckedConfigDirectory string
+	ReviewConfigDirectory  string
+	ConfigFiles            []string
+	ProfileID              string
+	Revision               uint64
+	ConfigDigest           string
+	ReviewError            error
+}
+
+func (failure *CheckFailure) Error() string {
+	if failure == nil || failure.Cause == nil {
+		return ErrCheckFailed.Error()
+	}
+	return fmt.Sprintf("%s: %v", ErrCheckFailed, failure.Cause)
+}
+
+func (failure *CheckFailure) Unwrap() error {
+	if failure == nil {
+		return nil
+	}
+	return failure.Cause
+}
+
+func (failure *CheckFailure) Is(target error) bool {
+	if failure == nil {
+		return false
+	}
+	return target == ErrCheckFailed || errors.Is(failure.Cause, target)
+}
+
 type Coordinator struct {
 	profiles   *profile.Service
 	rules      *rules.Service
@@ -130,8 +168,25 @@ func (c *Coordinator) applyStopped(ctx context.Context, op *core.Operation, requ
 	}
 	defer os.RemoveAll(staging)
 	op.SetStage("check_config")
-	if _, checkErr := c.checker.Check(ctx, c.core.Layout().CoreBinary, staging); checkErr != nil {
-		return failBeforeSwap(fmt.Errorf("%w: %v", ErrCheckFailed, checkErr))
+	check, checkErr := c.checker.Check(ctx, c.core.Layout().CoreBinary, staging)
+	if checkErr != nil {
+		files := make([]string, 0, len(output.Files))
+		for _, file := range output.Files {
+			files = append(files, file.Name)
+		}
+		reviewDirectory, reviewErr := preserveFailedCheckDirectory(c.core.Layout(), staging)
+		return failBeforeSwap(&CheckFailure{
+			Cause:                  checkErr,
+			Result:                 check,
+			BinaryPath:             c.core.Layout().CoreBinary,
+			CheckedConfigDirectory: staging,
+			ReviewConfigDirectory:  reviewDirectory,
+			ConfigFiles:            files,
+			ProfileID:              request.ProfileID,
+			Revision:               request.Revision,
+			ConfigDigest:           output.Digest,
+			ReviewError:            reviewErr,
+		})
 	}
 	op.SetStage("swap_config")
 	transaction, err := BeginDirectorySwap(c.core.Layout(), staging, previous.ConfigDirectoryDigest)
