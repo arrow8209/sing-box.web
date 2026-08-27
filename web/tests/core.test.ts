@@ -1,6 +1,5 @@
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import CoreDownloadProgress from "@/features/core/CoreDownloadProgress.vue";
 import CoreStatusCard from "@/features/core/CoreStatusCard.vue";
 import CoreUpdateDialog from "@/features/core/CoreUpdateDialog.vue";
 import { createCoreStore } from "@/features/core/store";
@@ -22,21 +21,6 @@ describe("核心状态", () => {
     expect(confirm).not.toHaveBeenCalled();
     await wrapper.get("[data-confirm-update]").trigger("click");
     expect(confirm).toHaveBeenCalledWith("1.12.3");
-  });
-  it("显示真实下载百分比、容量和速度", () => {
-    const wrapper = mount(CoreDownloadProgress, { props: { status: {
-      operationId: "update-a",
-      targetVersion: "1.12.3",
-      stage: "downloading",
-      startedAt: "2026-08-27T00:00:00Z",
-      downloadedBytes: 8 << 20,
-      totalBytes: 32 << 20,
-      bytesPerSecond: 4 << 20
-    } } });
-    expect(wrapper.get('[role="progressbar"]').attributes("aria-valuenow")).toBe("25");
-    expect(wrapper.text()).toContain("25%");
-    expect(wrapper.text()).toContain("8 MB / 32 MB");
-    expect(wrapper.text()).toContain("4 MB/s");
   });
   it("更新期间每 500ms 轮询，页面隐藏时暂停", async () => {
     vi.useFakeTimers();

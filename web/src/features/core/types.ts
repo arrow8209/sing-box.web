@@ -36,7 +36,4 @@ export interface CoreUpdateStatus {
   startedAt: string;
   finishedAt?: string;
   message?: string;
-  downloadedBytes?: number;
-  totalBytes?: number;
-  bytesPerSecond?: number;
 }

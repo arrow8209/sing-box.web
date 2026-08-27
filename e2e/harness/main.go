@@ -14,7 +14,6 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
-	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -82,27 +81,13 @@ func main() {
 		proxyDirector(request)
 		request.Host = harnessAddress
 	}
-	var coreUpdateStarted atomic.Bool
 	handler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/api/v1/core/releases/latest" {
 			writeJSON(w, map[string]any{"version": "1.0.0", "arch": "amd64"})
 			return
 		}
 		if r.URL.Path == "/api/v1/core/update" {
-			if r.Method == http.MethodPost {
-				coreUpdateStarted.Store(true)
-				writeJSON(w, map[string]any{"operationId": "e2e-core-update"})
-				return
-			}
-			if coreUpdateStarted.Load() {
-				writeJSON(w, map[string]any{
-					"operationId": "e2e-core-update", "targetVersion": "1.0.0", "stage": "downloading",
-					"startedAt": "2026-08-27T00:00:00Z", "downloadedBytes": 8 << 20,
-					"totalBytes": 32 << 20, "bytesPerSecond": 4 << 20,
-				})
-				return
-			}
-			writeJSON(w, map[string]any{"operationId": "", "stage": "idle", "startedAt": ""})
+			writeJSON(w, map[string]any{"active": false, "stage": "idle"})
 			return
 		}
 		appProxy.ServeHTTP(w, r)
