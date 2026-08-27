@@ -15,12 +15,14 @@ export interface InboundDetail {
   id: string;
   mode: InboundMode;
   config: InboundConfig;
+  routing?: InboundRoutingIntent;
   updatedAt: string;
 }
 
 export interface InboundInput {
   mode: InboundMode;
   config: InboundConfig;
+  routing?: InboundRoutingIntent;
 }
 
 export interface InboundRoutingIntent {
@@ -28,9 +30,7 @@ export interface InboundRoutingIntent {
   sniffTimeout?: string;
 }
 
-export interface InboundEditorSubmission extends InboundInput {
-  routing?: InboundRoutingIntent;
-}
+export type InboundEditorSubmission = InboundInput;
 
 export interface ValidInboundJson {
   valid: true;

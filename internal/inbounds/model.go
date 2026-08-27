@@ -14,16 +14,24 @@ const (
 )
 
 // Inbound is a reusable source object. Profiles never retain its ID: importing
-// copies Config into the profile draft and deliberately severs this relation.
+// copies Config, applies Routing, and deliberately severs this relation.
 type Inbound struct {
 	ID        string          `json:"id"`
 	Mode      Mode            `json:"mode"`
 	Config    json.RawMessage `json:"config"`
+	Routing   *RoutingIntent  `json:"routing,omitempty"`
 	UpdatedAt time.Time       `json:"updatedAt"`
 }
 
+// RoutingIntent stores reusable behavior that belongs to route rules in
+// sing-box 1.13 instead of the inbound object itself.
+type RoutingIntent struct {
+	Sniff        bool   `json:"sniff"`
+	SniffTimeout string `json:"sniffTimeout,omitempty"`
+}
+
 // Summary omits the complete object because inbound users can contain
-// credentials. The detail endpoint returns Config only on explicit access.
+// credentials. The detail endpoint returns Config and Routing on explicit access.
 type Summary struct {
 	ID         string    `json:"id"`
 	Mode       Mode      `json:"mode"`
@@ -35,8 +43,9 @@ type Summary struct {
 }
 
 type Input struct {
-	Mode   Mode            `json:"mode"`
-	Config json.RawMessage `json:"config"`
+	Mode    Mode            `json:"mode"`
+	Config  json.RawMessage `json:"config"`
+	Routing *RoutingIntent  `json:"routing,omitempty"`
 }
 
 var (

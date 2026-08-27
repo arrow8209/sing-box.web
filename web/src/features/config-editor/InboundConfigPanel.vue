@@ -105,7 +105,9 @@ async function importSelected(ids: string[]): Promise<void> {
     for (const detail of details) {
       const source = structuredClone(detail.config);
       const legacySniff = detail.mode === "structured" && source.sniff === true;
-      const legacyTimeout = typeof source.sniff_timeout === "string" && source.sniff_timeout.trim() ? source.sniff_timeout : "300ms";
+      const sniffEnabled = detail.mode === "structured" && (detail.routing?.sniff === true || legacySniff);
+      const sniffTimeout = detail.routing?.sniffTimeout?.trim()
+        || (typeof source.sniff_timeout === "string" && source.sniff_timeout.trim() ? source.sniff_timeout : "300ms");
       const config = detail.mode === "structured" ? withoutLegacyInboundFields(source) : source;
       const tag = uniqueInboundTag(config.tag, used);
       if (tag !== config.tag) renamed++;
@@ -114,7 +116,7 @@ async function importSelected(ids: string[]): Promise<void> {
       // Only the complete config object enters the draft. No library ID or
       // source metadata is retained, so future edits and deletes are isolated.
       next.push(config);
-      if (legacySniff) intents.push({ tag, sniff: true, sniffTimeout: legacyTimeout });
+      if (sniffEnabled) intents.push({ tag, sniff: true, sniffTimeout });
     }
     if (!saveItems(next, intents)) return;
     importOpen.value = false;

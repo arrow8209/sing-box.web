@@ -38,6 +38,8 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
   const createDialog = page.getByRole("dialog", { name: "新建入站配置" });
   await createDialog.locator('input[name="tag"]').fill("mixed-in");
   await createDialog.locator('input[type="number"]').first().fill("19090");
+  await createDialog.getByRole("checkbox", { name: /协议嗅探/ }).check();
+  await expect(createDialog.getByRole("checkbox", { name: /覆盖目标地址/ })).toBeDisabled();
   await createDialog.getByRole("button", { name: "新建入站配置", exact: true }).click();
   await expect(page.locator(".resource-row")).toContainText("127.0.0.1:19090");
 
@@ -52,7 +54,7 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
 
   await page.getByRole("button", { name: "编辑 mixed-in-2" }).click();
   const profileEditor = page.getByRole("dialog", { name: "编辑独立入站副本" });
-  await profileEditor.getByRole("checkbox", { name: /协议嗅探/ }).check();
+  await expect(profileEditor.getByRole("checkbox", { name: /协议嗅探/ })).toBeChecked();
   await profileEditor.getByRole("button", { name: "保存入站配置" }).click();
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 

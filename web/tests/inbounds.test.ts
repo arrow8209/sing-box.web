@@ -26,21 +26,24 @@ describe("入站配置", () => {
     expect(uniqueInboundTag("mixed-in", ["mixed-in", "mixed-in-2"])).toBe("mixed-in-3");
   });
 
-  it("结构化编辑器提交常用 HTTP 入站字段且不再生成旧嗅探字段", async () => {
+  it("结构化编辑器展示嗅探兼容项并把资源库意图与入站字段分开提交", async () => {
     const wrapper = mount(InboundEditorDialog, {
       props: { open: true, resource: null, existingTags: [] }
     });
     expect(wrapper.findAll(".type-grid > label")).toHaveLength(6);
     await wrapper.get('input[type="radio"][value="http"]').setValue(true);
+    expect(wrapper.get('input[name="sniff-override-destination"]').attributes("disabled")).toBeDefined();
+    await wrapper.get('input[name="sniff"]').setValue(true);
     await wrapper.get('input[name="tag"]').setValue("http-lan");
     await wrapper.get('input[required]:not([name="tag"])').setValue("0.0.0.0");
     await wrapper.get('input[type="number"]').setValue("18080");
     await wrapper.get("form").trigger("submit");
-    const submitted = wrapper.emitted("submit")?.[0]?.[0] as { config: Record<string, unknown> };
+    const submitted = wrapper.emitted("submit")?.[0]?.[0] as { config: Record<string, unknown>; routing: Record<string, unknown> };
     expect(submitted).toMatchObject({
       mode: "structured",
       config: { type: "http", tag: "http-lan", listen: "0.0.0.0", listen_port: 18080 }
     });
+    expect(submitted.routing).toEqual({ sniff: true, sniffTimeout: "300ms" });
     expect(submitted.config).not.toHaveProperty("sniff");
     expect(submitted.config).not.toHaveProperty("sniff_override_destination");
   });
@@ -121,14 +124,14 @@ describe("入站配置", () => {
     const id = "b".repeat(32);
     const source = {
       type: "mixed", tag: "mixed-in", listen: "0.0.0.0", listen_port: 19090,
-      sniff: true, sniff_override_destination: true, sniff_timeout: "750ms", future: { keep: true }
+      future: { keep: true }
     };
-    const summary = { id, mode: "structured", type: "mixed", tag: "mixed-in", endpoint: "0.0.0.0:19090", fieldCount: 9, updatedAt: "2026-08-25T02:00:00Z" };
+    const summary = { id, mode: "structured", type: "mixed", tag: "mixed-in", endpoint: "0.0.0.0:19090", fieldCount: 5, updatedAt: "2026-08-25T02:00:00Z" };
     useInboundStore().resources.value = [];
     const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
       const path = String(input);
       const payload = path.endsWith(`/inbound-resources/${id}`)
-        ? { id, mode: "structured", config: source, updatedAt: summary.updatedAt }
+        ? { id, mode: "structured", config: source, routing: { sniff: true, sniffTimeout: "750ms" }, updatedAt: summary.updatedAt }
         : [summary];
       return new Response(JSON.stringify(payload), { status: 200, headers: { "Content-Type": "application/json" } });
     });

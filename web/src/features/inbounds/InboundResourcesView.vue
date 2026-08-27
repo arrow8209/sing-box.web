@@ -61,7 +61,7 @@ async function duplicate(item: InboundSummary): Promise<void> {
     const detail = await store.get(item.id);
     const config = structuredClone(detail.config);
     config.tag = uniqueInboundTag(`${config.tag}-copy`, tags.value);
-    const summary = await store.create({ mode: detail.mode, config });
+    const summary = await store.create({ mode: detail.mode, config, ...(detail.routing ? { routing: structuredClone(detail.routing) } : {}) });
     show(`${summary.tag} 已复制到资源库。`, "success");
   } catch (cause) { show(cause instanceof Error ? cause.message : "复制入站配置失败", "error"); }
   finally { openingId.value = ""; }

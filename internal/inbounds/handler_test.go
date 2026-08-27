@@ -26,7 +26,7 @@ func TestInboundResourceAPIExposesSummariesAndCompleteDetail(t *testing.T) {
 	api := httpapi.NewRouter(httpapi.Dependencies{
 		InboundHandler: NewHandler(service), Authenticate: passthrough, RequireCSRF: passthrough,
 	})
-	created := requestJSON(t, api, http.MethodPost, "/api/v1/inbound-resources", `{"mode":"structured","config":{"type":"mixed","tag":"家庭入口","listen":"127.0.0.1","listen_port":7891,"users":[{"username":"admin","password":"secret"}]}}`)
+	created := requestJSON(t, api, http.MethodPost, "/api/v1/inbound-resources", `{"mode":"structured","config":{"type":"mixed","tag":"家庭入口","listen":"127.0.0.1","listen_port":7891,"users":[{"username":"admin","password":"secret"}]},"routing":{"sniff":true,"sniffTimeout":"300ms"}}`)
 	if created.Code != http.StatusCreated {
 		t.Fatalf("create=%d %s", created.Code, created.Body.String())
 	}
@@ -35,11 +35,11 @@ func TestInboundResourceAPIExposesSummariesAndCompleteDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 	list := requestJSON(t, api, http.MethodGet, "/api/v1/inbound-resources", "")
-	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "secret") || strings.Contains(list.Body.String(), "users") || strings.Contains(list.Body.String(), `"config"`) {
+	if list.Code != http.StatusOK || strings.Contains(list.Body.String(), "secret") || strings.Contains(list.Body.String(), "users") || strings.Contains(list.Body.String(), `"config"`) || strings.Contains(list.Body.String(), `"routing"`) {
 		t.Fatalf("list=%d %s", list.Code, list.Body.String())
 	}
 	detail := requestJSON(t, api, http.MethodGet, "/api/v1/inbound-resources/"+summary.ID, "")
-	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"password":"secret"`) {
+	if detail.Code != http.StatusOK || !strings.Contains(detail.Body.String(), `"password":"secret"`) || !strings.Contains(detail.Body.String(), `"sniffTimeout":"300ms"`) {
 		t.Fatalf("detail=%d %s", detail.Code, detail.Body.String())
 	}
 	replaced := requestJSON(t, api, http.MethodPut, "/api/v1/inbound-resources/"+summary.ID, `{"mode":"custom","config":{"type":"naive","tag":"替换后","future":{"x":1}}}`)
