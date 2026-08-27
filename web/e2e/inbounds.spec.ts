@@ -50,15 +50,25 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
   await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19090");
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
+  await page.getByRole("button", { name: "编辑 mixed-in-2" }).click();
+  const profileEditor = page.getByRole("dialog", { name: "编辑独立入站副本" });
+  await profileEditor.getByRole("checkbox", { name: /协议嗅探/ }).check();
+  await profileEditor.getByRole("button", { name: "保存入站配置" }).click();
+  await expect(page.locator(".save-status")).toContainText("草稿已保存");
+
   const persisted = await page.evaluate(async () => {
     const resources = await (await fetch("/api/v1/inbound-resources")).json() as Array<{ id: string }>;
     const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
     const profile = profiles.find((item) => item.name === "入站 E2E 配置");
     const draft = await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { buffers: Record<string, string> };
-    return { resourceId: resources[0]?.id ?? "", buffer: draft.buffers.inbounds };
+    return { resourceId: resources[0]?.id ?? "", inbounds: draft.buffers.inbounds, route: draft.buffers.route };
   });
-  expect(persisted.buffer).not.toContain(persisted.resourceId);
-  expect(persisted.buffer).not.toContain("sourceId");
+  expect(persisted.inbounds).not.toContain(persisted.resourceId);
+  expect(persisted.inbounds).not.toContain("sourceId");
+  expect(persisted.inbounds).not.toContain('"sniff"');
+  expect((JSON.parse(persisted.route) as { rules: Array<Record<string, unknown>> }).rules).toContainEqual({
+    inbound: "mixed-in-2", action: "sniff", timeout: "300ms"
+  });
 
   await page.goto("/inbounds");
   await page.getByRole("button", { name: "编辑 mixed-in" }).click();

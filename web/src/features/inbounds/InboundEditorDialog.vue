@@ -2,8 +2,8 @@
 import { computed, reactive, ref, toRaw, watch } from "vue";
 import AppDialog from "@/components/AppDialog.vue";
 import AppIcon from "@/layout/AppIcon.vue";
-import { editorType, inboundTypes, uniqueInboundTag, validateInboundJson } from "./model";
-import type { InboundConfig, InboundDetail, InboundEditorType, InboundInput } from "./types";
+import { editorType, inboundTypes, legacyInboundFields, uniqueInboundTag, validateInboundJson } from "./model";
+import type { InboundConfig, InboundDetail, InboundEditorSubmission, InboundEditorType } from "./types";
 
 const props = withDefaults(defineProps<{
   open: boolean;
@@ -12,8 +12,10 @@ const props = withDefaults(defineProps<{
   busy?: boolean;
   kind?: "library" | "profile";
   allowDelete?: boolean;
-}>(), { busy: false, kind: "library", allowDelete: true });
-const emit = defineEmits<{ close: []; submit: [input: InboundInput]; delete: [] }>();
+  sniffEnabled?: boolean;
+  sniffTimeout?: string;
+}>(), { busy: false, kind: "library", allowDelete: true, sniffEnabled: undefined, sniffTimeout: undefined });
+const emit = defineEmits<{ close: []; submit: [input: InboundEditorSubmission]; delete: [] }>();
 
 interface EditorForm {
   tag: string;
@@ -23,7 +25,6 @@ interface EditorForm {
   tcpMultiPath: boolean;
   udpFragment: boolean;
   sniff: boolean;
-  sniffOverrideDestination: boolean;
   users: string[];
   udpTimeout: string;
   network: string;
@@ -44,18 +45,17 @@ const customExample = `{
   "type": "mixed",
   "tag": "custom-in",
   "listen": "127.0.0.1",
-  "listen_port": 7891,
-  "sniff": true,
-  "sniff_override_destination": false
+  "listen_port": 7891
 }`;
 const defaultPorts: Record<string, number> = { mixed: 7891, http: 8080, socks: 1080, direct: 5353 };
 const selected = ref<InboundEditorType>("mixed");
 const customSource = ref(customExample);
 const baseConfig = ref<InboundConfig | null>(null);
 const originalType = ref("");
+const sniffTimeout = ref("300ms");
 const form = reactive<EditorForm>({
   tag: "", listen: "127.0.0.1", listenPort: "7891", tcpFastOpen: false, tcpMultiPath: false,
-  udpFragment: false, sniff: true, sniffOverrideDestination: false, users: [], udpTimeout: "5m",
+  udpFragment: false, sniff: false, users: [], udpTimeout: "5m",
   network: "", overrideAddress: "", overridePort: "", interfaceName: "", mtu: "9000", stack: "mixed",
   autoRoute: true, strictRoute: true, endpointIndependentNat: false,
   address: ["172.18.0.1/30", "fdfe:dcba:9876::1/126"], routeAddress: [], routeExcludeAddress: []
@@ -129,8 +129,8 @@ function initialize(): void {
   form.tcpFastOpen = bool(config?.tcp_fast_open);
   form.tcpMultiPath = bool(config?.tcp_multi_path);
   form.udpFragment = bool(config?.udp_fragment);
-  form.sniff = bool(config?.sniff, true);
-  form.sniffOverrideDestination = bool(config?.sniff_override_destination);
+  form.sniff = props.sniffEnabled ?? bool(config?.sniff);
+  sniffTimeout.value = props.sniffTimeout?.trim() || text(config?.sniff_timeout, "300ms") || "300ms";
   form.users = users(config?.users);
   form.udpTimeout = text(config?.udp_timeout, "5m");
   form.network = text(config?.network);
@@ -178,9 +178,10 @@ function buildStructuredConfig(): InboundConfig {
   const type = selected.value === "custom" ? "mixed" : selected.value;
   const sameStructuredType = props.resource?.mode === "structured" && originalType.value === type;
   const config: Record<string, unknown> = sameStructuredType && baseConfig.value ? cloneConfig(baseConfig.value) : {};
+  removeKeys(config, [...legacyInboundFields]);
   config.type = type;
   config.tag = form.tag.trim();
-  const listenKeys = ["listen", "listen_port", "tcp_fast_open", "tcp_multi_path", "udp_fragment", "sniff", "sniff_override_destination", "users", "udp_timeout", "network", "override_address", "override_port"];
+  const listenKeys = ["listen", "listen_port", "tcp_fast_open", "tcp_multi_path", "udp_fragment", "users", "udp_timeout", "network", "override_address", "override_port"];
   const tunKeys = ["interface_name", "mtu", "stack", "auto_route", "strict_route", "endpoint_independent_nat", "address", "route_address", "route_exclude_address"];
   if (type === "tun") {
     removeKeys(config, listenKeys);
@@ -203,11 +204,9 @@ function buildStructuredConfig(): InboundConfig {
   config.tcp_fast_open = form.tcpFastOpen;
   config.tcp_multi_path = form.tcpMultiPath;
   config.udp_fragment = form.udpFragment;
-  config.sniff = form.sniff;
   if (type === "direct") {
     delete config.users;
     delete config.udp_timeout;
-    delete config.sniff_override_destination;
     if (form.network) config.network = form.network; else delete config.network;
     if (form.overrideAddress.trim()) config.override_address = form.overrideAddress.trim(); else delete config.override_address;
     if (form.overridePort) config.override_port = Number(form.overridePort); else delete config.override_port;
@@ -217,11 +216,9 @@ function buildStructuredConfig(): InboundConfig {
   delete config.override_address;
   delete config.override_port;
   if (type === "socks") {
-    delete config.sniff_override_destination;
     if (form.udpTimeout.trim()) config.udp_timeout = form.udpTimeout.trim(); else delete config.udp_timeout;
   } else {
     delete config.udp_timeout;
-    config.sniff_override_destination = form.sniffOverrideDestination;
   }
   const credentials = cleanList(form.users).map((credential) => {
     const separator = credential.indexOf(":");
@@ -239,7 +236,11 @@ function submit(): void {
     if (customValidation.value.valid) emit("submit", { mode: "custom", config: cloneConfig(customValidation.value.config) });
     return;
   }
-  emit("submit", { mode: "structured", config: buildStructuredConfig() });
+  emit("submit", {
+    mode: "structured",
+    config: buildStructuredConfig(),
+    ...(props.kind === "profile" ? { routing: { sniff: form.sniff, sniffTimeout: sniffTimeout.value } } : {})
+  });
 }
 
 function formatCustom(): void {
@@ -299,8 +300,7 @@ function insertIndent(event: KeyboardEvent): void {
           <div class="form-grid">
             <label class="field"><span>监听地址<small>listen</small></span><input v-model="form.listen" required /></label>
             <label class="field"><span>监听端口<small>listen_port</small></span><input v-model="form.listenPort" type="number" min="1" max="65535" required /></label>
-            <label class="field toggle-line"><span>协议嗅探<small>识别 HTTP、TLS 与 QUIC 流量</small></span><input v-model="form.sniff" type="checkbox" /></label>
-            <label v-if="selected !== 'socks' && selected !== 'direct'" class="field toggle-line"><span>覆盖目标地址<small>使用嗅探结果重写目标</small></span><input v-model="form.sniffOverrideDestination" type="checkbox" /></label>
+            <label v-if="kind === 'profile'" class="field toggle-line"><span>协议嗅探<small>保存为 route.rules 的 sniff 动作</small></span><input v-model="form.sniff" type="checkbox" /></label>
             <label v-if="selected === 'socks'" class="field"><span>UDP 超时<small>例如 5m</small></span><input v-model="form.udpTimeout" /></label>
             <template v-if="selected === 'direct'">
               <label class="field"><span>网络协议<small>network</small></span><select v-model="form.network"><option value="">TCP + UDP</option><option value="tcp">TCP</option><option value="udp">UDP</option></select></label>
@@ -309,6 +309,7 @@ function insertIndent(event: KeyboardEvent): void {
             </template>
             <div v-else class="field full list-field"><span>认证用户<small>users · 用户名:密码</small></span><div v-for="(_, index) in form.users" :key="`user-${index}`" class="list-row"><input v-model="form.users[index]" :aria-label="`认证用户 ${index + 1}`" placeholder="用户名:密码" /><button type="button" :aria-label="`删除认证用户 ${index + 1}`" @click="form.users.splice(index, 1)">×</button></div><button class="add-row" type="button" @click="form.users.push('')"><AppIcon name="plus" :size="13" />添加认证用户</button></div>
           </div>
+          <p v-if="kind === 'library'" class="type-note"><AppIcon name="info" :size="15" />sing-box 1.13 起，协议嗅探属于档案路由规则；导入档案后可在独立副本中设置。</p>
           <p class="type-note"><AppIcon :name="selected === 'direct' ? 'route' : selected === 'http' ? 'globe' : 'inbound'" :size="15" />{{ selected === "direct" ? "Direct 入站适合透明转发或 DNS 劫持。" : selected === "http" ? "HTTP 入站接收标准 HTTP 代理与 CONNECT 请求。" : selected === "socks" ? "SOCKS 入站支持 SOCKS4、SOCKS4a 与 SOCKS5。" : "Mixed 入站在同一端口同时提供 HTTP 与 SOCKS 代理。" }}</p>
         </template>
         <p v-if="structuredError" class="validation invalid" role="alert"><AppIcon name="info" :size="14" />{{ structuredError }}</p>

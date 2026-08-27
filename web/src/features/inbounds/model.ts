@@ -11,6 +11,20 @@ export const inboundTypes: ReadonlyArray<{ type: InboundEditorType; label: strin
 
 const structured = new Set<InboundEditorType>(["mixed", "http", "socks", "tun", "direct"]);
 
+export const legacyInboundFields = [
+  "sniff",
+  "sniff_override_destination",
+  "sniff_timeout",
+  "domain_strategy",
+  "udp_disable_domain_unmapping"
+] as const;
+
+export function withoutLegacyInboundFields<T extends Record<string, unknown>>(config: T): T {
+  const next = { ...config };
+  for (const field of legacyInboundFields) delete next[field];
+  return next;
+}
+
 export function isObject(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === "object" && !Array.isArray(value);
 }

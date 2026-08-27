@@ -23,6 +23,15 @@ export interface InboundInput {
   config: InboundConfig;
 }
 
+export interface InboundRoutingIntent {
+  sniff: boolean;
+  sniffTimeout?: string;
+}
+
+export interface InboundEditorSubmission extends InboundInput {
+  routing?: InboundRoutingIntent;
+}
+
 export interface ValidInboundJson {
   valid: true;
   message: string;
