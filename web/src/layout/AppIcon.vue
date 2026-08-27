@@ -19,6 +19,7 @@ const paths: Record<string, string> = {
   bell: '<path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4"/>',
   rotate: '<path d="M20 7v5h-5M4 17v-5h5"/><path d="M6.1 9A7 7 0 0 1 18.8 6.5L20 12M4 12l1.2 5.5A7 7 0 0 0 17.9 15"/>',
   power: '<path d="M12 2v10"/><path d="M18.4 6.6a9 9 0 1 1-12.8 0"/>',
+  stop: '<rect x="6" y="6" width="12" height="12" rx="2"/>',
   check: '<path d="m5 12 4 4L19 6"/>',
   folder: '<path d="M3 6h7l2 2h9v11H3z"/>',
   database: '<ellipse cx="12" cy="5" rx="8" ry="3"/><path d="M4 5v7c0 1.7 3.6 3 8 3s8-1.3 8-3V5M4 12v7c0 1.7 3.6 3 8 3s8-1.3 8-3v-7"/>',

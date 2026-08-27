@@ -37,8 +37,27 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			httpapi.WriteJSON(w, http.StatusOK, h.service.Status())
 			return
 		}
+		if r.Method == http.MethodDelete {
+			id, err := h.service.Cancel()
+			if errors.Is(err, ErrNoUpdateInProgress) {
+				apierror.Write(w, http.StatusConflict, apierror.Error{Code: "core_update_not_running", Message: "当前没有正在下载的核心"})
+				return
+			}
+			if errors.Is(err, ErrUpdateNotCancellable) {
+				apierror.Write(w, http.StatusConflict, apierror.Error{Code: "core_update_not_cancellable", Message: "当前阶段无法停止下载"})
+				return
+			}
+			if err != nil {
+				apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "core_update_cancel_failed", Message: "停止核心下载失败"})
+				return
+			}
+			httpapi.WriteJSON(w, http.StatusAccepted, struct {
+				OperationID string `json:"operationId"`
+			}{id})
+			return
+		}
 		if r.Method != http.MethodPost {
-			httpapi.MethodNotAllowed(w, http.MethodGet, http.MethodPost)
+			httpapi.MethodNotAllowed(w, http.MethodGet, http.MethodPost, http.MethodDelete)
 			return
 		}
 		var confirmation UpdateConfirmation

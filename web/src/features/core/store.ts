@@ -12,6 +12,7 @@ export interface CoreStore {
   refreshLatest(): Promise<void>;
   refreshUpdate(): Promise<void>;
   startUpdate(version: string): Promise<void>;
+  cancelUpdate(): Promise<void>;
   startPolling(): void;
   stopPolling(): void;
   dispose(): void;
@@ -26,7 +27,7 @@ export function createCoreStore(api: CoreApi = coreApi): CoreStore {
   let updateTimer: ReturnType<typeof setInterval> | undefined;
   let active = false;
   const updateAvailable = computed(() => Boolean(latest.value && (latest.value.updateAvailable ?? (latest.value.version !== status.value?.installedVersion))));
-  const updateInProgress = (value: CoreUpdateStatus | null): boolean => Boolean(value?.stage && value.stage !== "idle" && !value.finishedAt && !["completed", "failed"].includes(value.stage));
+  const updateInProgress = (value: CoreUpdateStatus | null): boolean => Boolean(value?.stage && value.stage !== "idle" && !value.finishedAt && !["completed", "failed", "cancelled"].includes(value.stage));
 
   const capture = async (action: () => Promise<void>): Promise<void> => {
     try { await action(); error.value = null; } catch (cause) { error.value = cause instanceof Error ? cause.message : "无法读取核心状态"; }
@@ -37,7 +38,7 @@ export function createCoreStore(api: CoreApi = coreApi): CoreStore {
     let succeeded = false;
     await capture(async () => { update.value = await api.updateStatus(); succeeded = true; });
     if (!succeeded) return;
-    const finished = update.value?.finishedAt || ["completed", "failed"].includes(update.value?.stage ?? "");
+    const finished = update.value?.finishedAt || ["completed", "failed", "cancelled"].includes(update.value?.stage ?? "");
     if (finished) {
       stopUpdatePolling();
       await Promise.all([refresh(), refreshLatest()]);
@@ -71,7 +72,11 @@ export function createCoreStore(api: CoreApi = coreApi): CoreStore {
     await capture(async () => { await api.startUpdate({ confirmedVersion: version }); });
     if (!error.value) { await refreshUpdate(); startUpdatePolling(); }
   }
-  return { status, latest, update, error, updateAvailable, refresh, refreshLatest, refreshUpdate, startUpdate, startPolling, stopPolling, dispose: stopPolling };
+  async function cancelUpdate(): Promise<void> {
+    await capture(async () => { await api.cancelUpdate(); });
+    if (!error.value) await refreshUpdate();
+  }
+  return { status, latest, update, error, updateAvailable, refresh, refreshLatest, refreshUpdate, startUpdate, cancelUpdate, startPolling, stopPolling, dispose: stopPolling };
 }
 
 const defaultStore = createCoreStore();

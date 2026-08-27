@@ -6,8 +6,9 @@ import CoreVersionPanel from "./CoreVersionPanel.vue";
 
 const core = useCoreStore();
 const submitting = ref(false);
+const stopping = ref(false);
 const checkingLatest = ref(true);
-const operationActive = computed(() => Boolean(core.update.value?.stage && !["idle", "completed", "failed"].includes(core.update.value.stage)));
+const operationActive = computed(() => Boolean(core.update.value?.stage && !["idle", "completed", "failed", "cancelled"].includes(core.update.value.stage)));
 
 onMounted(() => {
   core.startPolling();
@@ -29,6 +30,15 @@ async function downloadLatest(version: string): Promise<void> {
     submitting.value = false;
   }
 }
+
+async function stopDownload(): Promise<void> {
+  stopping.value = true;
+  try {
+    await core.cancelUpdate();
+  } finally {
+    stopping.value = false;
+  }
+}
 </script>
 
 <template>
@@ -46,9 +56,11 @@ async function downloadLatest(version: string): Promise<void> {
       :update="core.update.value"
       :checking="checkingLatest"
       :busy="submitting"
+      :stopping="stopping"
       :update-available="core.updateAvailable.value"
       @download="downloadLatest"
       @refresh="refreshLatest"
+      @stop="stopDownload"
     />
 
     <p v-if="core.status.value?.lastError && !operationActive" class="core-runtime-error" role="alert"><AppIcon name="info" :size="14" /><span><strong>最近一次核心错误</strong>{{ core.status.value.lastError }}</span></p>

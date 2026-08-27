@@ -21,7 +21,11 @@ import (
 	"singbox-web/internal/storage"
 )
 
-var ErrUpdateInProgress = errors.New("core_update_in_progress")
+var (
+	ErrUpdateInProgress     = errors.New("core_update_in_progress")
+	ErrNoUpdateInProgress   = errors.New("core_update_not_running")
+	ErrUpdateNotCancellable = errors.New("core_update_not_cancellable")
+)
 
 type ReleaseLookup interface {
 	LatestStable(context.Context) (Release, error)
@@ -61,9 +65,11 @@ type Service struct {
 	operations *core.OperationLock
 	random     io.Reader
 
-	mu     sync.RWMutex
-	status Status
-	active bool
+	mu              sync.RWMutex
+	status          Status
+	active          bool
+	cancel          context.CancelFunc
+	cancelRequested bool
 }
 
 func NewService(layout paths.Layout, releases ReleaseLookup, fetcher BinaryPreparer, manager *core.Manager, store *core.Store, checker *configgen.Checker, operations *core.OperationLock) *Service {
@@ -97,16 +103,46 @@ func (s *Service) Start(_ context.Context, confirmation UpdateConfirmation) (str
 		return "", err
 	}
 	now := time.Now().UTC()
+	operationContext, cancelOperation := context.WithTimeout(context.Background(), 10*time.Minute)
 	s.mu.Lock()
 	if s.active {
 		s.mu.Unlock()
+		cancelOperation()
 		return "", ErrUpdateInProgress
 	}
 	s.active = true
+	s.cancel = cancelOperation
+	s.cancelRequested = false
 	s.status = Status{OperationID: id, TargetVersion: confirmation.ConfirmedVersion, Stage: "checking_release", StartedAt: now}
 	s.mu.Unlock()
-	go s.run(id, confirmation)
+	go s.run(id, operationContext, cancelOperation, confirmation)
 	return id, nil
+}
+
+// Cancel stops only the archive download. Once the update advances to
+// verification or installation, cancellation is rejected so the replacement
+// and recovery transaction cannot be interrupted halfway through.
+func (s *Service) Cancel() (string, error) {
+	if s == nil {
+		return "", ErrNoUpdateInProgress
+	}
+	s.mu.Lock()
+	if !s.active {
+		s.mu.Unlock()
+		return "", ErrNoUpdateInProgress
+	}
+	if s.status.Stage != "downloading" || s.cancel == nil {
+		s.mu.Unlock()
+		return "", ErrUpdateNotCancellable
+	}
+	operationID := s.status.OperationID
+	cancel := s.cancel
+	s.cancelRequested = true
+	s.status.Stage = "cancelling"
+	s.status.BytesPerSecond = 0
+	s.mu.Unlock()
+	cancel()
+	return operationID, nil
 }
 
 func (s *Service) Status() Status {
@@ -132,17 +168,21 @@ func (s *Service) Latest(ctx context.Context) (Release, error) {
 	return s.releases.LatestStable(ctx)
 }
 
-func (s *Service) run(id string, confirmation UpdateConfirmation) {
-	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Minute)
+func (s *Service) run(id string, ctx context.Context, cancel context.CancelFunc, confirmation UpdateConfirmation) {
 	defer cancel()
 	err := s.update(ctx, confirmation)
 	now := time.Now().UTC()
 	s.mu.Lock()
 	if s.status.OperationID == id {
+		cancelled := s.cancelRequested
 		s.active = false
+		s.cancel = nil
+		s.cancelRequested = false
 		s.status.BytesPerSecond = 0
 		s.status.FinishedAt = &now
-		if err != nil {
+		if cancelled {
+			s.status.Stage, s.status.Message = "cancelled", "下载已停止"
+		} else if err != nil {
 			s.status.Stage, s.status.Message = "failed", safeMessage(err)
 		} else {
 			s.status.Stage, s.status.Message = "completed", "核心已安装"
@@ -172,6 +212,9 @@ func (s *Service) update(ctx context.Context, confirmation UpdateConfirmation) e
 		defer cleanup()
 	}
 	if err != nil {
+		return err
+	}
+	if err := ctx.Err(); err != nil {
 		return err
 	}
 	s.setStage("verifying_checksum") // Fetcher has verified archive and binary digest.
@@ -256,7 +299,7 @@ func (s *Service) restartPrevious(ctx context.Context, previous core.Status, cau
 
 func (s *Service) setStage(stage string) {
 	s.mu.Lock()
-	if s.active {
+	if s.active && !s.cancelRequested {
 		s.status.Stage = stage
 		if stage != "downloading" {
 			s.status.BytesPerSecond = 0

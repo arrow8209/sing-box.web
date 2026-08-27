@@ -24,4 +24,9 @@ test("从根菜单进入核心管理并直接下载最新稳定版", async ({ pa
   await expect(progress).toHaveAttribute("aria-valuenow", "25");
   await expect(versions.getByText("8 MB / 32 MB")).toBeVisible();
   await expect(versions.getByText("4 MB/s")).toBeVisible();
+  const stopRequest = page.waitForRequest((candidate) => candidate.method() === "DELETE" && new URL(candidate.url()).pathname === "/api/v1/core/update");
+  await versions.getByRole("button", { name: "停止下载" }).click();
+  await stopRequest;
+  await expect(versions.getByText("下载已停止").first()).toBeVisible();
+  await expect(versions.getByRole("button", { name: "重新下载最新版本" })).toBeEnabled();
 });

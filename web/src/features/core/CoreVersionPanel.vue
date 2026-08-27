@@ -3,20 +3,23 @@ import { computed } from "vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import type { CoreStatus, CoreUpdateStatus, LatestRelease } from "./types";
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   status: CoreStatus | null;
   latest: LatestRelease | null;
   update: CoreUpdateStatus | null;
   checking: boolean;
   busy: boolean;
+  stopping?: boolean;
   updateAvailable: boolean;
-}>();
+}>(), { stopping: false });
 
-const emit = defineEmits<{ download: [version: string]; refresh: [] }>();
+const emit = defineEmits<{ download: [version: string]; refresh: []; stop: [] }>();
 
 const stageMeta: Record<string, { label: string; progress: number }> = {
   checking_release: { label: "检查官方版本", progress: 8 },
   downloading: { label: "下载核心", progress: 24 },
+  cancelling: { label: "正在停止下载", progress: 24 },
+  cancelled: { label: "下载已停止", progress: 24 },
   verifying_checksum: { label: "校验文件摘要", progress: 40 },
   verifying_binary: { label: "验证核心程序", progress: 54 },
   checking_config: { label: "检查现有配置", progress: 66 },
@@ -34,22 +37,27 @@ const stage = computed(() => props.update?.stage ?? "");
 const stageDetails = computed(() => stageMeta[stage.value]);
 const updateFailed = computed(() => stage.value === "failed");
 const updateCompleted = computed(() => stage.value === "completed");
-const updating = computed(() => Boolean(stage.value && stage.value !== "idle" && !updateFailed.value && !updateCompleted.value));
+const updateCancelled = computed(() => stage.value === "cancelled");
+const cancelling = computed(() => stage.value === "cancelling");
+const updating = computed(() => Boolean(stage.value && stage.value !== "idle" && !updateFailed.value && !updateCompleted.value && !updateCancelled.value));
 const showProgress = computed(() => Boolean(stageDetails.value && stage.value !== "idle"));
 const stageLabel = computed(() => stageDetails.value?.label ?? stage.value);
 const downloading = computed(() => stage.value === "downloading");
+const transferStage = computed(() => downloading.value || cancelling.value || updateCancelled.value);
 const downloadedBytes = computed(() => Math.max(0, props.update?.downloadedBytes ?? 0));
 const totalBytes = computed(() => Math.max(0, props.update?.totalBytes ?? 0));
 const bytesPerSecond = computed(() => Math.max(0, props.update?.bytesPerSecond ?? 0));
 const hasDownloadTotal = computed(() => totalBytes.value > 0);
 const downloadPercent = computed(() => hasDownloadTotal.value ? Math.min(100, downloadedBytes.value / totalBytes.value * 100) : 0);
 const downloadComplete = computed(() => hasDownloadTotal.value && downloadedBytes.value >= totalBytes.value);
-const progressValue = computed(() => downloading.value
+const progressValue = computed(() => transferStage.value
   ? hasDownloadTotal.value ? downloadPercent.value : undefined
   : downloadComplete.value ? 100 : stageDetails.value?.progress);
 const progressNow = computed(() => progressValue.value === undefined || updateFailed.value ? undefined : Number(progressValue.value.toFixed(1)));
 const progressLabel = computed(() => {
   if (updateFailed.value) return "失败";
+  if (updateCancelled.value) return "已停止";
+  if (cancelling.value) return "停止中";
   if (downloading.value && !hasDownloadTotal.value) return "计算中";
   const value = progressValue.value ?? 0;
   const digits = downloading.value && value > 0 && value < 10 ? 1 : 0;
@@ -58,8 +66,8 @@ const progressLabel = computed(() => {
 const transferLabel = computed(() => hasDownloadTotal.value
   ? `${formatBytes(downloadedBytes.value)} / ${formatBytes(totalBytes.value)}`
   : `已下载 ${formatBytes(downloadedBytes.value)}`);
-const speedLabel = computed(() => bytesPerSecond.value > 0 ? `${formatBytes(bytesPerSecond.value)}/s` : "计算中");
-const progressText = computed(() => downloading.value
+const speedLabel = computed(() => cancelling.value || updateCancelled.value ? "已停止" : bytesPerSecond.value > 0 ? `${formatBytes(bytesPerSecond.value)}/s` : "计算中");
+const progressText = computed(() => transferStage.value
   ? `${transferLabel.value}，下载速度 ${speedLabel.value}`
   : props.update?.message ? `${stageLabel.value}：${props.update.message}` : stageLabel.value);
 
@@ -89,6 +97,8 @@ const processLabel = computed(() => {
 
 const releaseState = computed(() => {
   if (props.busy) return { label: "准备更新", tone: "downloading" };
+  if (props.stopping || cancelling.value) return { label: "正在停止", tone: "downloading" };
+  if (updateCancelled.value) return { label: "下载已停止", tone: "cancelled" };
   if (updating.value) return { label: stageLabel.value, tone: "downloading" };
   if (updateFailed.value) return { label: "更新失败", tone: "failed" };
   if (updateCompleted.value) return { label: "更新完成", tone: "downloaded" };
@@ -100,6 +110,8 @@ const releaseState = computed(() => {
 });
 
 const downloadTitle = computed(() => {
+  if (props.stopping || cancelling.value) return "正在停止下载";
+  if (updateCancelled.value) return "下载已停止";
   if (updating.value || props.busy) return "正在更新核心";
   if (updateFailed.value) return "核心更新失败";
   if (updateCompleted.value) return "核心更新完成";
@@ -120,6 +132,7 @@ const actionLabel = computed(() => {
   if (updating.value) return "正在更新核心";
   if (props.checking) return "正在检查版本";
   if (!props.latest) return "重新检查版本";
+  if (updateCancelled.value) return "重新下载最新版本";
   if (updateFailed.value) return "重试下载";
   if (!props.status?.installedVersion || props.updateAvailable) return "下载最新版本";
   return "重新安装最新版本";
@@ -159,17 +172,22 @@ function triggerAction(): void {
 
     <div class="core-download-bar">
       <div class="core-download-copy">
-        <span :class="{ failed: updateFailed, updating }"><AppIcon :name="updateCompleted ? 'check' : updating ? 'rotate' : 'download'" :size="16" /></span>
+        <span :class="{ failed: updateFailed, updating, cancelled: updateCancelled }"><AppIcon :name="updateCompleted ? 'check' : updateCancelled ? 'stop' : updating ? 'rotate' : 'download'" :size="16" /></span>
         <div><strong>{{ downloadTitle }}</strong><small>{{ downloadDescription }}</small></div>
       </div>
-      <button class="core-download-button" data-download-core type="button" :disabled="actionDisabled" @click="triggerAction">
-        <AppIcon :name="updating || busy || checking ? 'rotate' : 'download'" :size="15" />{{ actionLabel }}
-      </button>
+      <div class="core-download-actions">
+        <button v-if="downloading || cancelling" class="core-stop-button" data-stop-core-update type="button" :disabled="stopping || cancelling" @click="emit('stop')">
+          <AppIcon :name="stopping || cancelling ? 'rotate' : 'stop'" :size="15" />{{ stopping || cancelling ? "正在停止" : "停止下载" }}
+        </button>
+        <button v-else class="core-download-button" data-download-core type="button" :disabled="actionDisabled" @click="triggerAction">
+          <AppIcon :name="updating || busy || checking ? 'rotate' : 'download'" :size="15" />{{ actionLabel }}
+        </button>
+      </div>
     </div>
 
-    <div v-if="showProgress" class="core-update-progress" :class="{ complete: updateCompleted, failed: updateFailed, indeterminate: progressNow === undefined && !updateFailed }" aria-live="polite">
+    <div v-if="showProgress" class="core-update-progress" :class="{ complete: updateCompleted, failed: updateFailed, cancelled: updateCancelled, indeterminate: progressNow === undefined && !updateFailed && !updateCancelled }" aria-live="polite">
       <div class="core-progress-head"><span>{{ stageLabel }}</span><strong>{{ progressLabel }}</strong></div>
-      <div v-if="downloading" class="core-download-metrics">
+      <div v-if="transferStage" class="core-download-metrics">
         <span><small>下载进度</small><strong>{{ transferLabel }}</strong></span>
         <span><small>下载速度</small><strong data-download-speed>{{ speedLabel }}</strong></span>
       </div>
@@ -199,6 +217,7 @@ function triggerAction(): void {
 .core-release-state.downloading { color: var(--orange); background: var(--orange-soft); }
 .core-release-state.downloaded { color: var(--green); background: var(--green-soft); }
 .core-release-state.failed { color: var(--red); background: var(--red-soft); }
+.core-release-state.cancelled { color: var(--text-soft); background: var(--surface-soft); }
 .core-version-grid { display: grid; grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); align-items: center; padding: 20px; }
 .core-version-tile { min-width: 0; min-height: 146px; padding: 20px; border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
 .core-version-tile.latest { border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); background: linear-gradient(145deg, color-mix(in srgb, var(--primary-soft) 75%, var(--surface)), var(--surface)); }
@@ -216,10 +235,13 @@ function triggerAction(): void {
 .core-download-copy > span { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; color: var(--green); background: var(--green-soft); }
 .core-download-copy > span.updating { color: var(--orange); background: var(--orange-soft); }
 .core-download-copy > span.failed { color: var(--red); background: var(--red-soft); }
+.core-download-copy > span.cancelled { color: var(--text-soft); background: var(--line); }
 .core-download-copy strong, .core-download-copy small { display: block; }
 .core-download-copy strong { font-size: 11px; }
 .core-download-copy small { margin-top: 2px; color: var(--text-faint); font-size: 8px; }
-.core-download-button { display: inline-flex; min-width: 178px; min-height: 36px; flex: 0 0 auto; align-items: center; justify-content: center; gap: 7px; padding: 7px 13px; font-size: 10px; }
+.core-download-actions { display: flex; flex: 0 0 auto; }
+.core-download-button, .core-stop-button { display: inline-flex; min-width: 178px; min-height: 36px; align-items: center; justify-content: center; gap: 7px; padding: 7px 13px; font-size: 10px; }
+.core-stop-button { color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 30%, var(--line)); background: var(--red-soft); }
 .core-update-progress { padding: 12px 18px 16px; border-top: 1px solid var(--line); background: var(--surface); }
 .core-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--text-soft); font-size: 9px; }
 .core-update-progress strong { color: var(--primary); font-size: 9px; }
@@ -235,6 +257,8 @@ function triggerAction(): void {
 .core-update-progress.complete .core-progress-track i { background: var(--green); }
 .core-update-progress.failed strong { color: var(--red); }
 .core-update-progress.failed .core-progress-track i { background: var(--red); }
+.core-update-progress.cancelled strong { color: var(--text-soft); }
+.core-update-progress.cancelled .core-progress-track i { background: var(--text-faint); }
 @keyframes core-progress-indeterminate { from { transform: translateX(-110%); } to { transform: translateX(300%); } }
 
 @media (max-width: 768px) {
@@ -243,7 +267,8 @@ function triggerAction(): void {
   .core-version-tile { min-height: 130px; padding: 17px; }
   .core-version-connector { transform: rotate(90deg); }
   .core-download-bar { align-items: stretch; flex-direction: column; gap: 12px; padding: 13px; }
-  .core-download-button { width: 100%; min-height: 42px; }
+  .core-download-actions, .core-download-button, .core-stop-button { width: 100%; }
+  .core-download-button, .core-stop-button { min-height: 42px; }
   .core-update-progress { padding: 11px 13px 14px; }
 }
 

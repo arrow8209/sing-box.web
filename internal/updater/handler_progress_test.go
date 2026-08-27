@@ -32,3 +32,17 @@ func TestUpdateStatusHandlerExposesDownloadProgress(t *testing.T) {
 		t.Fatalf("body=%+v", body)
 	}
 }
+
+func TestUpdateHandlerCancelsActiveDownload(t *testing.T) {
+	cancelled := false
+	service := &Service{
+		active: true,
+		status: Status{OperationID: "update-a", Stage: "downloading"},
+		cancel: func() { cancelled = true },
+	}
+	response := httptest.NewRecorder()
+	NewHandler(service).ServeHTTP(response, httptest.NewRequest(http.MethodDelete, "/api/v1/core/update", nil))
+	if response.Code != http.StatusAccepted || !cancelled {
+		t.Fatalf("status=%d cancelled=%t body=%s", response.Code, cancelled, response.Body.String())
+	}
+}

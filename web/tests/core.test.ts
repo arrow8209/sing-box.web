@@ -69,20 +69,29 @@ describe("核心状态", () => {
     expect(wrapper.get("[role='progressbar']").attributes("aria-valuenow")).toBe("25");
     expect(wrapper.text()).toContain("8 MB / 32 MB");
     expect(wrapper.get("[data-download-speed]").text()).toBe("4 MB/s");
+    await wrapper.get("[data-stop-core-update]").trigger("click");
+    expect(wrapper.emitted("stop")).toHaveLength(1);
+    await wrapper.setProps({ stopping: true });
+    expect(wrapper.get("[data-stop-core-update]").text()).toContain("正在停止");
+    expect(wrapper.get("[data-stop-core-update]").attributes()).toHaveProperty("disabled");
     await wrapper.setProps({ update: { ...wrapper.props("update")!, totalBytes: 0 } });
     expect(wrapper.get("[role='progressbar']").attributes("aria-valuenow")).toBeUndefined();
     expect(wrapper.get(".core-update-progress").classes()).toContain("indeterminate");
     expect(wrapper.text()).toContain("已下载 8 MB");
+    await wrapper.setProps({ stopping: false, update: { ...wrapper.props("update")!, stage: "cancelled", message: "下载已停止" } });
+    expect(wrapper.find("[data-stop-core-update]").exists()).toBe(false);
+    expect(wrapper.text()).toContain("下载已停止");
+    expect(wrapper.get("[data-download-core]").text()).toContain("重新下载最新版本");
   });
   it("更新期间每 500ms 轮询，页面隐藏时暂停", async () => {
     vi.useFakeTimers();
-    const api: CoreApi = { status: vi.fn(async () => status()), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "downloading", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })) };
+    const api: CoreApi = { status: vi.fn(async () => status()), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "downloading", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
     const store = createCoreStore(api); store.startPolling(); await store.startUpdate("1.12.3"); await vi.advanceTimersByTimeAsync(500);
     expect(api.updateStatus).toHaveBeenCalled(); store.dispose();
   });
   it("重新进入页面时会恢复未完成更新的轮询", async () => {
     vi.useFakeTimers();
-    const api: CoreApi = { status: vi.fn(async () => status()), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "installing", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })) };
+    const api: CoreApi = { status: vi.fn(async () => status()), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "installing", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
     const store = createCoreStore(api);
     store.startPolling();
     await vi.advanceTimersByTimeAsync(0);
@@ -92,12 +101,27 @@ describe("核心状态", () => {
   });
   it("空闲状态不会启动更新轮询", async () => {
     vi.useFakeTimers();
-    const api: CoreApi = { status: vi.fn(async () => status()), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "", stage: "idle", startedAt: "" })), startUpdate: vi.fn(async () => ({ operationId: "u" })) };
+    const api: CoreApi = { status: vi.fn(async () => status()), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "", stage: "idle", startedAt: "" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
     const store = createCoreStore(api);
     store.startPolling();
     await vi.advanceTimersByTimeAsync(0);
     await vi.advanceTimersByTimeAsync(500);
     expect(api.updateStatus).toHaveBeenCalledTimes(1);
+    store.dispose();
+  });
+  it("停止下载后刷新取消状态", async () => {
+    const api = {
+      status: vi.fn(async () => status()),
+      latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
+      updateStatus: vi.fn(async () => ({ operationId: "u", stage: "cancelling", startedAt: "now" })),
+      startUpdate: vi.fn(async () => ({ operationId: "u" })),
+      cancelUpdate: vi.fn(async () => ({ operationId: "u" }))
+    };
+    const store = createCoreStore(api as CoreApi);
+    store.startPolling();
+    await store.cancelUpdate();
+    expect(api.cancelUpdate).toHaveBeenCalledTimes(1);
+    expect(api.updateStatus).toHaveBeenCalled();
     store.dispose();
   });
 });
