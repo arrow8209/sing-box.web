@@ -100,6 +100,18 @@ func (h *Handler) Validate(ctx context.Context, profileID string, revision uint6
 		return ValidateResult{}, err
 	}
 	defer releaseOperation()
+	return h.validateInOperation(ctx, profileID, revision)
+}
+
+// ValidateInOperation runs the same generation and sing-box check as Validate
+// while the caller already owns the shared core operation lock. Application
+// uses this form so a successful check and the following core transition stay
+// serialized without stopping the currently running core before the check.
+func (h *Handler) ValidateInOperation(ctx context.Context, profileID string, revision uint64) (ValidateResult, error) {
+	return h.validateInOperation(ctx, profileID, revision)
+}
+
+func (h *Handler) validateInOperation(ctx context.Context, profileID string, revision uint64) (result ValidateResult, err error) {
 
 	// Record every validation conclusion. RecordValidation itself guards against
 	// a late process result overwriting a newer draft revision.

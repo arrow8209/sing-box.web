@@ -24,10 +24,7 @@ func TestHandlerReturnsPhaseOneCapabilities(t *testing.T) {
 	if response.Runtime || response.Traffic || response.Connections || response.ProxyGroups {
 		t.Fatalf("phase one runtime capabilities must be disabled: %+v", response)
 	}
-	if !response.Subscriptions || !response.InboundResources {
+	if !response.Subscriptions || !response.InboundResources || !response.Application {
 		t.Fatalf("resource capabilities must be enabled: %+v", response)
-	}
-	if response.Application {
-		t.Fatalf("application capability must remain disabled until its semantics are designed: %+v", response)
 	}
 }

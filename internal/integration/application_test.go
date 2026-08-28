@@ -2,6 +2,7 @@ package integration
 
 import (
 	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -12,6 +13,7 @@ import (
 	"singbox-web/internal/app"
 	"singbox-web/internal/application"
 	"singbox-web/internal/auth"
+	"singbox-web/internal/configgen"
 	"singbox-web/internal/core"
 	"singbox-web/internal/profile"
 )
@@ -54,6 +56,158 @@ func TestValidationFailureRetainsProfileStagingDirectory(t *testing.T) {
 	assertPersistentStaging(t, env.workDir, profileID)
 	if _, err := os.Stat(env.layout.ConfigDir); !os.IsNotExist(err) {
 		t.Fatalf("validation touched formal config: %v", err)
+	}
+}
+
+func TestApplicationCheckFailureLeavesRunningCoreAndFormalConfigUntouched(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	profileID, revision := createApplicationProfile(t, env)
+	manager, coordinator, runner, store := newApplicationCoordinator(t, env, errors.New("invalid config"))
+	prepareRunningCore(t, env, manager, store)
+	defer manager.Stop(context.Background())
+
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if result.Applied || result.Validation.Valid || result.Validation.ExitCode != 7 || result.Validation.Stderr != "FATAL invalid config" {
+		t.Fatalf("result=%+v", result)
+	}
+	if !runner.checkedWhileRunning {
+		t.Fatal("配置检查没有在旧核心保持运行时执行")
+	}
+	if status := manager.Status(context.Background()); status.State != core.ProcessRunning || status.CurrentProfileID != "old-profile" {
+		t.Fatalf("check failure changed core status: %+v", status)
+	}
+	if marker, readErr := os.ReadFile(filepath.Join(env.layout.ConfigDir, "marker")); readErr != nil || string(marker) != "old" {
+		t.Fatalf("formal config changed: %q err=%v", marker, readErr)
+	}
+	assertPersistentStaging(t, env.workDir, profileID)
+}
+
+func TestApplicationChecksBeforeStopCopiesConfigAndStartsSelectedProfile(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	profileID, revision := createApplicationProfile(t, env)
+	manager, coordinator, runner, store := newApplicationCoordinator(t, env, nil)
+	prepareRunningCore(t, env, manager, store)
+	defer manager.Stop(context.Background())
+
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !result.Applied || !result.Validation.Valid || !runner.checkedWhileRunning {
+		t.Fatalf("result=%+v checkedWhileRunning=%v", result, runner.checkedWhileRunning)
+	}
+	status := manager.Status(context.Background())
+	if status.State != core.ProcessRunning || status.CurrentProfileID != profileID || status.AppliedRevision == nil || *status.AppliedRevision != revision {
+		t.Fatalf("status=%+v", status)
+	}
+	directoryDigest, err := application.DigestDirectory(env.layout.ConfigDir)
+	if err != nil || directoryDigest == "" || status.ConfigDirectoryDigest != directoryDigest {
+		t.Fatalf("directory digest=%q status=%q err=%v", directoryDigest, status.ConfigDirectoryDigest, err)
+	}
+	if _, err := os.Stat(filepath.Join(env.layout.ConfigDir, "60-inbounds.json")); err != nil {
+		t.Fatalf("validated files were not copied to formal config: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(env.layout.ConfigDir, "marker")); !os.IsNotExist(err) {
+		t.Fatalf("old formal config remains: %v", err)
+	}
+	assertPersistentStaging(t, env.workDir, profileID)
+	assertNoTransactionDirs(t, env.workDir)
+	metas, err := env.profiles.List(context.Background())
+	if err != nil || len(metas) != 1 || metas[0].NeedsApply || metas[0].AppliedRevision == nil || *metas[0].AppliedRevision != revision {
+		t.Fatalf("metas=%+v err=%v", metas, err)
+	}
+}
+
+func TestApplicationStartFailureRestoresPreviousConfigAndCore(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	profileID, revision := createApplicationProfile(t, env)
+	factory := &failSecondStartFactory{}
+	manager, coordinator, _, store := newApplicationCoordinatorWithFactory(t, env, nil, factory)
+	prepareRunningCore(t, env, manager, store)
+	defer manager.Stop(context.Background())
+
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
+	if !errors.Is(err, application.ErrStartFailed) || result.Applied {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	status := manager.Status(context.Background())
+	if status.State != core.ProcessRunning || status.CurrentProfileID != "old-profile" || status.AppliedRevision == nil || *status.AppliedRevision != 1 {
+		t.Fatalf("status=%+v", status)
+	}
+	if marker, readErr := os.ReadFile(filepath.Join(env.layout.ConfigDir, "marker")); readErr != nil || string(marker) != "old" {
+		t.Fatalf("previous config was not restored: %q err=%v", marker, readErr)
+	}
+	metas, listErr := env.profiles.List(context.Background())
+	if listErr != nil || len(metas) != 1 || !metas[0].NeedsApply || metas[0].AppliedRevision != nil {
+		t.Fatalf("metas=%+v err=%v", metas, listErr)
+	}
+	assertNoTransactionDirs(t, env.workDir)
+}
+
+type applicationCheckRunner struct {
+	manager             *core.Manager
+	err                 error
+	checkedWhileRunning bool
+}
+
+func (runner *applicationCheckRunner) Run(_ context.Context, _ configgen.CommandSpec, _ time.Duration, _ int) (configgen.ProcessResult, error) {
+	runner.checkedWhileRunning = runner.manager.Status(context.Background()).State == core.ProcessRunning
+	if runner.err != nil {
+		return configgen.ProcessResult{ExitCode: 7, Stderr: []byte("FATAL invalid config")}, runner.err
+	}
+	return configgen.ProcessResult{ExitCode: 0}, nil
+}
+
+func newApplicationCoordinator(t *testing.T, env *integrationEnvironment, checkErr error) (*core.Manager, *application.Coordinator, *applicationCheckRunner, *core.Store) {
+	return newApplicationCoordinatorWithFactory(t, env, checkErr, &testProcessFactory{})
+}
+
+func newApplicationCoordinatorWithFactory(t *testing.T, env *integrationEnvironment, checkErr error, factory core.ProcessFactory) (*core.Manager, *application.Coordinator, *applicationCheckRunner, *core.Store) {
+	t.Helper()
+	writeCoreScript(t, env.layout.CoreBinary, "1.13.0", 0, false)
+	operation := core.NewOperationLock()
+	store := core.NewStore(env.layout.CoreFile)
+	manager := core.NewManagerWithFactory(env.layout, store, nil, operation, factory)
+	runner := &applicationCheckRunner{manager: manager, err: checkErr}
+	checker := configgen.NewChecker(env.workDir, runner, time.Second, 64<<10)
+	configuration := configgen.NewHandler(env.layout, env.profiles, env.rules, nil, checker, operation, time.Now)
+	coordinator := application.NewCoordinator(env.profiles, configuration, nil, manager, operation)
+	return manager, coordinator, runner, store
+}
+
+type failSecondStartFactory struct{ starts int }
+
+func (factory *failSecondStartFactory) Start(core.ProcessSpec) (core.Process, error) {
+	factory.starts++
+	if factory.starts == 2 {
+		return nil, errors.New("injected new-core start failure")
+	}
+	return &testProcess{done: make(chan core.ProcessResult)}, nil
+}
+
+func prepareRunningCore(t *testing.T, env *integrationEnvironment, manager *core.Manager, store *core.Store) {
+	t.Helper()
+	if err := os.MkdirAll(env.layout.ConfigDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.layout.ConfigDir, "marker"), []byte("old"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := application.DigestDirectory(env.layout.ConfigDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := store.RecordInstalled("1.13.0", "installed-digest"); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.CommitApplication("old-profile", 1, digest); err != nil {
+		t.Fatal(err)
+	}
+	if err := manager.Start(context.Background(), core.StartRequest{ProfileID: "old-profile", DraftRevision: 1}); err != nil {
+		t.Fatal(err)
 	}
 }
 

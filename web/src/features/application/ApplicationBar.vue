@@ -1,13 +1,14 @@
 <script setup lang="ts">
 import { useProfileStore } from "@/features/profiles/store";
 
+withDefaults(defineProps<{ busy?: boolean }>(), { busy: false });
 const emit = defineEmits<{ preview: []; validate: [] }>();
 const profiles = useProfileStore();
 </script>
 <template>
   <div class="application-actions" role="group" aria-label="配置操作">
-    <button data-preview type="button" class="secondary" :disabled="profiles.saveState.value !== 'saved'" @click="emit('preview')">预览</button>
-    <button data-validate type="button" class="secondary" :disabled="profiles.saveState.value !== 'saved'" @click="emit('validate')">检查</button>
+    <button data-preview type="button" class="secondary" :disabled="busy || profiles.saveState.value !== 'saved'" @click="emit('preview')">预览</button>
+    <button data-validate type="button" class="secondary" :disabled="busy || profiles.saveState.value !== 'saved'" @click="emit('validate')">检查</button>
   </div>
 </template>
 <style scoped>

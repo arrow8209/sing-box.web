@@ -32,7 +32,7 @@ type realClock struct{}
 func (realClock) After(d time.Duration) <-chan time.Time { return time.After(d) }
 
 // Manager is the sole owner of the managed core process. Durable application
-// bindings are intentionally owned by the later application coordinator.
+// bindings are committed or restored by the application coordinator.
 type Manager struct {
 	layout    paths.Layout
 	store     *Store
@@ -101,6 +101,7 @@ func (m *Manager) Start(ctx context.Context, request StartRequest) error {
 	if err != nil {
 		m.recordStartFailureLocked(err)
 		m.mu.Unlock()
+		m.persistError(err.Error(), false)
 		return err
 	}
 	m.process, m.current, m.done = process, request, make(chan struct{})
@@ -228,6 +229,24 @@ func (m *Manager) CommitApplication(profileID string, revision uint64, digest st
 	return err
 }
 
+// RestoreApplication rewrites the durable binding captured before a failed
+// configuration transaction. Process recovery remains the coordinator's job.
+func (m *Manager) RestoreApplication(previous Status) error {
+	if m == nil || m.store == nil {
+		return errors.New("核心状态存储不可用")
+	}
+	_, err := m.store.Update(func(state *PersistentState) error {
+		state.CurrentProfileID = previous.CurrentProfileID
+		state.AppliedRevision = cloneRevision(previous.AppliedRevision)
+		state.ExpectedRunning = previous.ExpectedRunning
+		state.ConfigDirectoryDigest = previous.ConfigDirectoryDigest
+		state.LastStartError = previous.LastError
+		state.LastStartedAt = cloneTime(previous.StartedAt)
+		return nil
+	})
+	return err
+}
+
 func (m *Manager) ClearApplication() error {
 	if m == nil || m.store == nil {
 		return errors.New("核心状态存储不可用")
@@ -279,7 +298,6 @@ func (m *Manager) finishExit(process Process, result ProcessResult) {
 
 func (m *Manager) recordStartFailureLocked(err error) {
 	m.process, m.state, m.lastError = nil, ProcessStartFailed, err.Error()
-	go m.persistError(err.Error(), false)
 }
 
 func (m *Manager) persistError(message string, _ bool) {
@@ -297,6 +315,14 @@ func exitError(result ProcessResult) string {
 }
 
 func cloneTime(value *time.Time) *time.Time {
+	if value == nil {
+		return nil
+	}
+	copied := *value
+	return &copied
+}
+
+func cloneRevision(value *uint64) *uint64 {
 	if value == nil {
 		return nil
 	}

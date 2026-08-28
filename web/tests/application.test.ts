@@ -1,5 +1,6 @@
 import { mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { ApiError } from "@/api/client";
 import ApplicationBar from "@/features/application/ApplicationBar.vue";
 import ValidationErrors from "@/features/application/ValidationErrors.vue";
 import { createApplicationStore } from "@/features/application/store";
@@ -27,7 +28,7 @@ describe("配置应用", () => {
   });
   it("预览仅呈现模块内容", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
-    const api: ApplicationApi = { preview: vi.fn(async () => ({ revision: 4, files: [{ name: "80-route.json", content: { route: { rule_set: [{ path: "data/rulesets/resource-a.srs" }] } } }], digest: "a".repeat(64) })), validate: vi.fn() };
+    const api: ApplicationApi = { preview: vi.fn(async () => ({ revision: 4, files: [{ name: "80-route.json", content: { route: { rule_set: [{ path: "data/rulesets/resource-a.srs" }] } } }], digest: "a".repeat(64) })), validate: vi.fn(), apply: vi.fn() };
     const store = createApplicationStore(profileStore, api); await store.preview();
     expect(JSON.stringify(store.previewResult.value)).toContain("data/rulesets/resource-a.srs"); expect(JSON.stringify(store.previewResult.value)).not.toContain("https://");
   });
@@ -51,7 +52,7 @@ describe("配置应用", () => {
       command: ["data/bin/sing-box", "check", "-C", `config.staging-${profileId}`],
       configDirectory: `config.staging-${profileId}`
     };
-    const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(async () => validation) };
+    const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(async () => validation), apply: vi.fn() };
     const store = createApplicationStore(profileStore, api); await store.validate();
 
     const wrapper = mount(ValidationErrors, { props: { validation: store.validation.value, error: null } });
@@ -62,5 +63,51 @@ describe("配置应用", () => {
     expect(wrapper.text()).toContain("10-log.json, 60-inbounds.json");
     expect(wrapper.text()).toContain("revision 4");
     expect(wrapper.text()).toContain("FATAL decode 60-inbounds.json: inbounds[1]");
+  });
+
+  it("应用提交当前修订，并直接呈现检测失败", async () => {
+    const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
+    const failed = {
+      revision: 4, files: [], digest: "a".repeat(64), valid: false, stage: "core_check",
+      message: "sing-box 配置检查失败", code: "singbox_check_failed", exitCode: 7, stderr: "FATAL invalid"
+    };
+    const api: ApplicationApi = {
+      preview: vi.fn(), validate: vi.fn(),
+      apply: vi.fn(async () => ({ applied: false, profileId, revision: 4, digest: failed.digest, validation: failed }))
+    };
+    const store = createApplicationStore(profileStore, api);
+    const result = await store.apply();
+    expect(api.apply).toHaveBeenCalledWith(profileId, { revision: 4, confirmedConfigDigest: undefined });
+    expect(result?.applied).toBe(false);
+    expect(store.validation.value).toEqual(failed);
+    expect(store.error.value).toBeNull();
+  });
+
+  it("应用成功后刷新档案状态", async () => {
+    const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
+    const success = { revision: 4, files: [], digest: "b".repeat(64), valid: true, stage: "core_check", message: "配置检查通过", exitCode: 0 };
+    const api: ApplicationApi = {
+      preview: vi.fn(), validate: vi.fn(),
+      apply: vi.fn(async () => ({ applied: true, profileId, revision: 4, digest: success.digest, validation: success }))
+    };
+    const refresh = vi.spyOn(profileStore, "refresh");
+    const store = createApplicationStore(profileStore, api);
+    const result = await store.apply();
+    expect(result?.applied).toBe(true);
+    expect(refresh).toHaveBeenCalled();
+    expect(store.validation.value?.valid).toBe(true);
+  });
+
+  it("正式配置漂移时只保留服务端确认摘要", async () => {
+    const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
+    const digest = "d".repeat(64);
+    const api: ApplicationApi = {
+      preview: vi.fn(), validate: vi.fn(),
+      apply: vi.fn(async () => { throw new ApiError(409, { code: "config_external_drift", message: "配置漂移", details: { confirmationDigest: digest } }); })
+    };
+    const store = createApplicationStore(profileStore, api);
+    expect(await store.apply()).toBeNull();
+    expect(store.driftDigest.value).toBe(digest);
+    expect(store.error.value).toBeNull();
   });
 });

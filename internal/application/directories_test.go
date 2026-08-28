@@ -34,6 +34,25 @@ func TestSwapRestoreReturnsOldConfig(t *testing.T) {
 	assertNoTransactionDirs(t, layout.WorkDir)
 }
 
+func TestSwapCommitKeepsNewConfigAndRemovesRollback(t *testing.T) {
+	layout := newLayoutWithConfig(t, "old")
+	staging := newStaging(t, layout, "new")
+	expected, err := application.DigestDirectory(layout.ConfigDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction, err := application.BeginDirectorySwap(layout, staging, expected)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transaction.Commit()
+	transaction.Cleanup()
+	if got := readMarker(t, layout.ConfigDir); got != "new" {
+		t.Fatalf("after commit=%q", got)
+	}
+	assertNoTransactionDirs(t, layout.WorkDir)
+}
+
 func TestSwapRejectsChangedConfigWithoutReplacingIt(t *testing.T) {
 	layout := newLayoutWithConfig(t, "old")
 	staging := newStaging(t, layout, "new")

@@ -27,6 +27,16 @@ type DirectoryTransaction struct {
 	keepRollback  bool
 }
 
+// Commit accepts the installed directory as the live configuration. Cleanup
+// can then remove the retained rollback directory without touching config/.
+func (transaction *DirectoryTransaction) Commit() {
+	if transaction == nil || !transaction.active {
+		return
+	}
+	transaction.active = false
+	transaction.keepRollback = false
+}
+
 // BeginDirectorySwap atomically moves staging into the fixed config location.
 // It re-digests the old directory after moving it to a private rollback path,
 // which closes the time-of-check/time-of-replace window for host edits.

@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import ConflictDialog from "./ConflictDialog.vue";
 import ProfileDialog from "./ProfileDialog.vue";
 import SaveStatus from "./SaveStatus.vue";
@@ -7,10 +8,22 @@ import { useProfileStore } from "./store";
 import AppIcon from "@/layout/AppIcon.vue";
 
 const store = useProfileStore();
+const route = useRoute();
+const router = useRouter();
 const createOpen = ref(false);
 const busy = ref(false);
 const error = ref("");
 const activeProfile = computed(() => store.profiles.value.find((item) => item.id === store.activeProfileId.value) ?? null);
+
+function openCreate(): void { createOpen.value = true; }
+function closeCreate(): void {
+  createOpen.value = false;
+  if (route.query.create !== "1") return;
+  const query = { ...route.query };
+  delete query.create;
+  void router.replace({ query });
+}
+watch(() => route.query.create, (value) => { if (value === "1") openCreate(); }, { immediate: true });
 
 onMounted(async () => {
   try {
@@ -25,18 +38,18 @@ async function select(id: string): Promise<void> {
 }
 async function submitName(name: string): Promise<void> {
   busy.value = true; error.value = "";
-  try { await store.create(name); createOpen.value = false; } catch (cause) { error.value = cause instanceof Error ? cause.message : "操作失败"; } finally { busy.value = false; }
+  try { await store.create(name); closeCreate(); } catch (cause) { error.value = cause instanceof Error ? cause.message : "操作失败"; } finally { busy.value = false; }
 }
 </script>
 
 <template>
   <section class="profiles-view">
-    <header class="page-intro"><div><h1>配置档案</h1><p>选择档案后进入配置工作台；草稿由服务端自动保存。</p><SaveStatus :state="store.saveState.value" :needs-apply="activeProfile?.needsApply" /></div><button @click="createOpen = true"><AppIcon name="plus" :size="16" />新建档案</button></header>
+    <header class="page-intro"><div><h1>配置档案</h1><p>选择档案后进入配置工作台；草稿由服务端自动保存。</p><SaveStatus :state="store.saveState.value" :needs-apply="activeProfile?.needsApply" /></div><button @click="openCreate"><AppIcon name="plus" :size="16" />新建档案</button></header>
     <p v-if="error" class="error" role="alert">{{ error }}</p>
     <div class="layout"><aside class="profile-list" aria-label="档案列表"><div class="list-head"><span>配置树</span><small>{{ store.profiles.value.length }} 个档案</small></div><button v-for="item in store.profiles.value" :key="item.id" class="profile" :class="{ active: item.id === store.activeProfileId.value, quarantined: item.quarantinedError }" :disabled="Boolean(item.quarantinedError)" @click="select(item.id)"><span class="profile-icon"><AppIcon name="config" :size="16" /></span><span><strong>{{ item.name }}</strong><small v-if="item.quarantinedError">草稿已隔离</small><small v-else-if="item.needsApply">需要应用</small><small v-else>草稿已保存</small></span><i v-if="item.needsApply" class="dirty-dot" /></button></aside>
       <article class="editor"><template v-if="store.draft.value"><div class="editor-title"><div><span class="editor-icon"><AppIcon name="config" /></span><div><h2>{{ activeProfile?.name }}</h2><p>草稿修订 {{ store.draft.value.revision }} · 编辑后会自动保存</p></div></div></div><ConflictDialog :open="store.saveState.value === 'conflict'" :latest-revision="store.conflict.value?.latestRevision" :busy="busy" @load="store.loadServerVersion" @overwrite="store.overwriteServerVersion" /><p class="hint">档案详细内容及应用、复制、重命名、删除操作位于配置工作台。</p><a class="open-workspace" href="/workspace">打开配置工作台 <AppIcon name="chevron" :size="15" /></a></template><p v-else>选择一个可用档案开始编辑。</p></article>
     </div>
-    <ProfileDialog :open="createOpen" title="新建档案" :busy="busy" @close="createOpen = false" @submit="submitName" />
+    <ProfileDialog :open="createOpen" title="新建档案" :busy="busy" @close="closeCreate" @submit="submitName" />
   </section>
 </template>
 

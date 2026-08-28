@@ -1,5 +1,5 @@
 // Package core owns the persistent and in-memory state of the managed
-// sing-box process. Process management itself is intentionally added later.
+// sing-box process.
 package core
 
 import "time"

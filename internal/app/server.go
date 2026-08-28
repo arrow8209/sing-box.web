@@ -231,7 +231,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		checker,
 		operation,
 	)
-	coordinator := application.NewCoordinator(coreManager, operation)
+	coordinator := application.NewCoordinator(profileService, configHandler, nil, coreManager, operation)
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
@@ -240,7 +240,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		InboundHandler:      inbounds.NewHandler(inboundService),
 		RuleResourceHandler: rules.NewHandler(ruleService, ruleCatalog),
 		ConfigHandler:       configHandler,
-		ApplicationHandler:  application.NewHandler(),
+		ApplicationHandler:  application.NewHandler(coordinator),
 		CoreHandler:         core.NewHandler(coreManager),
 		UpdaterHandler:      updater.NewHandler(updateService),
 		SettingsHandler:     settings.NewHandler(settingsStore),
