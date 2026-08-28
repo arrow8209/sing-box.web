@@ -20,11 +20,12 @@ function profiles(): ReturnType<typeof createProfileStore> {
 describe("配置应用", () => {
   const stores: ReturnType<typeof createProfileStore>[] = [];
   afterEach(() => stores.splice(0).forEach((store) => store.dispose()));
-  it("预览和检查组件不混入档案操作", async () => {
+  it("配置操作组依次提供预览、检测和应用", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
     const wrapper = mount(ApplicationBar);
-    expect(wrapper.find("[data-apply]").exists()).toBe(false);
-    expect(wrapper.findAll("button").map((button) => button.text())).toEqual(["预览", "检查"]);
+    const buttons = wrapper.findAll("button");
+    expect(buttons.map((button) => button.text())).toEqual(["预览", "检测", "应用"]);
+    expect(buttons[2].attributes("title")).toBe("检测通过后复制配置文件");
   });
   it("预览仅呈现模块内容", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);

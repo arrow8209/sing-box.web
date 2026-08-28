@@ -221,8 +221,8 @@ function jumpTo(path: string): void {
         <div class="config-context-copy"><h1>{{ profile?.name || "配置工作台" }}</h1><p>草稿会自动保存，未识别字段会按原始 JSON 文本保留。</p></div>
         <div class="config-context-controls">
           <span class="save-status" :class="store.saveState.value"><AppIcon :name="store.saveState.value === 'saved' ? 'check' : 'rotate'" :size="14" />{{ store.saveState.value === "saving" ? "正在保存" : store.saveState.value === "saved" ? "草稿已保存" : "存在未保存更改" }}</span>
-          <ProfileActions :busy="profileBusy" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后复制配置文件'" @apply="applyProfile" @duplicate="duplicateProfile" @rename="openRename" @remove="openDelete" />
-          <ApplicationBar :busy="profileBusy || application.applying.value" @preview="preview" @validate="validate" />
+          <ProfileActions :busy="profileBusy" @duplicate="duplicateProfile" @rename="openRename" @remove="openDelete" />
+          <ApplicationBar :busy="profileBusy || application.applying.value" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后复制配置文件'" @preview="preview" @validate="validate" @apply="applyProfile" />
         </div>
       </header>
       <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>

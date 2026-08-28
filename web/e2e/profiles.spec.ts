@@ -41,10 +41,12 @@ test("创建、复制、改名和删除档案", async ({ page }) => {
   await page.goto("/workspace");
   await expect(page.locator(".config-context-bar").getByRole("link", { name: "管理档案" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /管理 E2E 家庭出口/ })).toHaveCount(0);
+  const contextBar = page.locator(".config-context-bar");
   const profileActions = page.getByRole("group", { name: "档案操作" });
-  await expect(profileActions.getByRole("button")).toHaveText(["应用", "复制", "重命名", "删除"]);
-  await expect(profileActions.getByRole("button", { name: "应用", exact: true })).toBeEnabled();
-  await profileActions.getByRole("button", { name: "应用", exact: true }).click();
+  const applicationActions = page.getByRole("group", { name: "配置操作" });
+  await expect(contextBar.getByRole("button")).toHaveText(["重命名", "复制", "删除", "预览", "检测", "应用"]);
+  await expect(applicationActions.getByRole("button", { name: "应用", exact: true })).toBeEnabled();
+  await applicationActions.getByRole("button", { name: "应用", exact: true }).click();
   await expect(page.getByText("配置检测通过，已复制配置文件。")).toBeVisible();
   await expect(page.getByRole("img", { name: "sing-box 未启动，也未加载配置" })).toBeVisible();
   await profileActions.getByRole("button", { name: "复制" }).click();

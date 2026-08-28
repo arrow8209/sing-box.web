@@ -9,16 +9,14 @@ describe("档案组件", () => {
     const wrapper = mount(SaveStatus, { props: { state: "saved", needsApply: true } });
     expect(wrapper.text()).toContain("草稿已保存"); expect(wrapper.text()).toContain("需要应用");
   });
-  it("档案操作组提供应用、复制、重命名和删除", async () => {
+  it("档案操作组依次提供重命名、复制和删除", async () => {
     const wrapper = mount(ProfileActions);
     const buttons = wrapper.findAll("button");
-    expect(buttons.map((button) => button.text())).toEqual(["应用", "复制", "重命名", "删除"]);
-    expect(buttons[0].attributes("title")).toBe("检测通过后复制配置文件");
+    expect(buttons.map((button) => button.text())).toEqual(["重命名", "复制", "删除"]);
     expect(buttons[0]?.attributes("disabled")).toBeUndefined();
-    await buttons[0]?.trigger("click"); await buttons[1]?.trigger("click"); await buttons[2]?.trigger("click"); await buttons[3]?.trigger("click");
-    expect(wrapper.emitted("apply")).toHaveLength(1);
-    expect(wrapper.emitted("duplicate")).toHaveLength(1);
+    await buttons[0]?.trigger("click"); await buttons[1]?.trigger("click"); await buttons[2]?.trigger("click");
     expect(wrapper.emitted("rename")).toHaveLength(1);
+    expect(wrapper.emitted("duplicate")).toHaveLength(1);
     expect(wrapper.emitted("remove")).toHaveLength(1);
   });
   it("删除必须输入精确档案名称", async () => {
