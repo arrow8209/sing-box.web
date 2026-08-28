@@ -97,6 +97,10 @@ for (const scenario of scenarios) {
     await expect(page.locator(".application-actions")).toHaveCount(1);
     await expect(page.getByRole("tab")).toHaveCount(7);
     await expect(page.getByRole("tab", { name: "端点" })).toHaveCount(0);
+    await expect(page.locator(".config-map-item")).toHaveCount(12);
+    await expect(page.getByRole("heading", { name: "完整配置结构" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "常用参数" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "核心功能" })).toBeVisible();
     await expect(page.locator("main")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-config.png`, { fullPage: true });
@@ -142,5 +146,21 @@ for (const scenario of scenarios) {
     await expect(downloadSpeed).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-core.png`, { fullPage: true });
+
+    await page.goto("/workspace");
+    await setTheme(page, scenario.theme);
+    await page.getByRole("tab", { name: "高级", exact: true }).click();
+    await expect(page.locator(".advanced-section-row")).toHaveCount(6);
+    await expect(page.getByRole("heading", { name: "高级与共享模块" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "编辑策略" })).toBeVisible();
+    await expect(page.locator(".advanced-panel")).not.toContainText("Schema");
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
+    await expect(page).toHaveScreenshot(`${scenario.name}-config-advanced.png`, { fullPage: true });
+    await page.locator(".advanced-section-row").first().click();
+    const moduleDialog = page.getByRole("dialog", { name: "编辑NTP" });
+    await expect(moduleDialog).toContainText("完整维护 config.ntp");
+    await expect(moduleDialog.getByRole("button", { name: "保存片段" })).toBeEnabled();
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
+    await moduleDialog.getByRole("button", { name: "关闭对话框" }).click();
   });
 }
