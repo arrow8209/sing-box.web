@@ -3,7 +3,7 @@ export type ConfigModule =
   | "ntp" | "certificate" | "certificate_providers" | "http_clients" | "network_namespaces" | "experimental";
 
 export const configTabs = [
-  { id: "overview", label: "配置概览", modules: ["log"] },
+  { id: "general", label: "通用设置", modules: ["log"] },
   { id: "inbounds", label: "入站", modules: ["inbounds"] },
   { id: "outbounds", label: "出站", modules: ["outbounds"] },
   { id: "route", label: "路由", modules: ["route"] },
@@ -27,7 +27,7 @@ export interface ConfigSection {
 // may be retained in an imported draft, but it is deliberately not presented
 // as an editable or validated module.
 export const configSections: readonly ConfigSection[] = [
-  { key: "log", label: "日志", type: "object", group: "overview", icon: "terminal", description: "日志等级与输出" },
+  { key: "log", label: "日志", type: "object", group: "general", icon: "terminal", description: "日志等级与输出" },
   { key: "dns", label: "DNS", type: "object", group: "dns", icon: "dns", description: "服务器、规则与缓存" },
   { key: "ntp", label: "NTP", type: "object", group: "advanced", icon: "clock", description: "时间同步" },
   { key: "certificate", label: "证书", type: "object", group: "advanced", icon: "lock", description: "系统与自定义证书" },

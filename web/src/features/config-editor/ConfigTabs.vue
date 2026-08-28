@@ -3,7 +3,7 @@ import { configTabs, type ConfigTabId } from "./module-map";
 import AppIcon from "@/layout/AppIcon.vue";
 defineProps<{ active: ConfigTabId }>();
 const emit = defineEmits<{ select: [tab: ConfigTabId] }>();
-const icons: Record<ConfigTabId, string> = { overview: "config", dns: "dns", inbounds: "inbound", outbounds: "outbound", route: "rules", services: "server", advanced: "settings" };
+const icons: Record<ConfigTabId, string> = { general: "config", dns: "dns", inbounds: "inbound", outbounds: "outbound", route: "rules", services: "server", advanced: "settings" };
 </script>
 <template>
   <nav class="config-tabs tabs" aria-label="配置模块" role="tablist">

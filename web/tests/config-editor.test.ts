@@ -2,17 +2,17 @@ import { mount } from "@vue/test-utils";
 import { describe, expect, it } from "vitest";
 import AdvancedPanel from "@/features/config-editor/AdvancedPanel.vue";
 import ConfigTabs from "@/features/config-editor/ConfigTabs.vue";
+import GeneralSettingsPanel from "@/features/config-editor/GeneralSettingsPanel.vue";
 import ModuleJsonDialog from "@/features/config-editor/ModuleJsonDialog.vue";
-import OverviewPanel from "@/features/config-editor/OverviewPanel.vue";
 import OutboundJsonEditor from "@/features/config-editor/OutboundJsonEditor.vue";
 import type { Draft } from "@/features/profiles/types";
 
-function overviewDraft(): Draft {
+function generalSettingsDraft(): Draft {
   return {
     profileId: "profile-a",
     revision: 3,
     config: {
-      log: { level: "info", future: { large: 9007199254740992 } },
+      log: { disabled: false, level: "info", output: "", timestamp: false, future: { large: 9007199254740992 } },
       dns: { strategy: "prefer_ipv6", rules: [{ action: "route" }] },
       inbounds: [{ type: "mixed", tag: "mixed-in", listen_port: 20122 }],
       outbounds: [{ type: "direct", tag: "direct" }],
@@ -24,7 +24,7 @@ function overviewDraft(): Draft {
       }
     },
     buffers: {
-      log: '{"level":"info","future":{"large":9007199254740993}}',
+      log: '{"disabled":false,"level":"info","output":"","timestamp":false,"future":{"large":9007199254740993}}',
       dns: '{"strategy":"prefer_ipv6","rules":[{"action":"route"}]}',
       inbounds: '[{"type":"mixed","tag":"mixed-in","listen_port":20122}]',
       outbounds: '[{"type":"direct","tag":"direct"}]',
@@ -38,9 +38,9 @@ function overviewDraft(): Draft {
 
 describe("配置编辑器", () => {
   it("按固定顺序显示七个标签且不提供端点模式", () => {
-    const wrapper = mount(ConfigTabs, { props: { active: "overview" } });
+    const wrapper = mount(ConfigTabs, { props: { active: "general" } });
     expect(wrapper.findAll("button").map((button) => button.text())).toEqual([
-      "配置概览",
+      "通用设置",
       "入站",
       "出站",
       "路由",
@@ -61,100 +61,64 @@ describe("配置编辑器", () => {
     expect(wrapper.text()).not.toContain("订阅");
   });
 
-  it("配置概览按原型显示十二个模块、常用参数和核心功能", () => {
-    const wrapper = mount(OverviewPanel, {
-      props: { draft: overviewDraft(), profileName: "家庭出口", errors: {} }
-    });
+  it("通用设置只显示没有专属页面的基础日志参数", () => {
+    const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
-    expect(wrapper.findAll(".config-map-item")).toHaveLength(12);
-    expect(wrapper.text()).toContain("完整配置结构");
-    expect(wrapper.text()).toContain("常用参数");
-    expect(wrapper.text()).toContain("核心功能");
-    expect(wrapper.text()).toContain("6/12");
-    expect(wrapper.text()).not.toContain("Schema");
-    expect((wrapper.get('[aria-label="配置名称"]').element as HTMLInputElement).value).toBe("家庭出口");
-    expect((wrapper.get('[aria-label="Mixed 入站端口"]').element as HTMLInputElement).value).toBe("20122");
-    expect((wrapper.get('[aria-label="Clash API 端口"]').element as HTMLInputElement).value).toBe("20124");
-    expect((wrapper.get('[aria-label="缓存文件"]').element as HTMLInputElement).value).toBe("cache.db");
-    expect(wrapper.get('[role="switch"][aria-label="启用 IPv6"]').attributes("aria-checked")).toBe("true");
-    expect(wrapper.get('[role="switch"][aria-label="Clash API"]').attributes("aria-checked")).toBe("true");
-    expect(wrapper.get('[role="switch"][aria-label="FakeIP 持久化"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.text()).toContain("日志设置");
+    expect(wrapper.text()).toContain("参数归属");
+    expect(wrapper.findAll(".setting-row")).toHaveLength(4);
+    expect(wrapper.findAll(".config-map-item")).toHaveLength(0);
+    expect((wrapper.get('[aria-label="日志等级"]').element as HTMLSelectElement).value).toBe("info");
+    expect((wrapper.get('[aria-label="日志文件"]').element as HTMLInputElement).value).toBe("");
+    expect(wrapper.get('[role="switch"][aria-label="启用日志"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.get('[role="switch"][aria-label="显示时间戳"]').attributes("aria-checked")).toBe("false");
+    expect(wrapper.text()).not.toContain("配置概览");
+    expect(wrapper.text()).not.toContain("Mixed 入站端口");
+    expect(wrapper.text()).not.toContain("Clash API 端口");
+    expect(wrapper.text()).not.toContain("网络接口");
+    expect(wrapper.text()).not.toContain("启用 IPv6");
   });
 
-  it("配置概览只改目标字段并保留未知字段和大整数文本", async () => {
-    const wrapper = mount(OverviewPanel, {
-      props: { draft: overviewDraft(), profileName: "家庭出口", errors: {} }
-    });
+  it("通用设置只改日志目标字段并保留未知字段和大整数文本", async () => {
+    const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
     await wrapper.get('[aria-label="日志等级"]').setValue("debug");
     const logUpdate = wrapper.emitted("update")?.[0];
-    expect(logUpdate?.[0]).toBe("log");
-    const next = logUpdate?.[1] as Draft;
+    const next = logUpdate?.[0] as Draft;
     expect(next.buffers.log).toContain('"level": "debug"');
     expect(next.buffers.log).toContain('"large":9007199254740993');
-
-    const apiWrapper = mount(OverviewPanel, {
-      props: { draft: overviewDraft(), profileName: "家庭出口", errors: {} }
-    });
-    await apiWrapper.get('[aria-label="Clash API 端口"]').setValue("20909");
-    const apiUpdate = apiWrapper.emitted("update")?.[0];
-    expect(apiUpdate?.[0]).toBe("experimental");
-    const apiDraft = apiUpdate?.[1] as Draft;
-    expect(apiDraft.buffers.experimental).toContain('"external_controller": "127.0.0.1:20909"');
-    expect(apiDraft.buffers.experimental).toContain('"future":{"enabled":true}');
+    expect(next.buffers.inbounds).toBe(generalSettingsDraft().buffers.inbounds);
+    expect(next.buffers.route).toBe(generalSettingsDraft().buffers.route);
+    expect(next.buffers.dns).toBe(generalSettingsDraft().buffers.dns);
   });
 
-  it("配置概览把端口、接口、缓存和开关写入对应模块", async () => {
-    const mounted = () => mount(OverviewPanel, {
-      props: { draft: overviewDraft(), profileName: "家庭出口", errors: {} }
-    });
+  it("通用设置把输出路径和两个开关写入日志模块", async () => {
+    const mounted = () => mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
-    const mixed = mounted();
-    await mixed.get('[aria-label="Mixed 入站端口"]').setValue("22022");
-    const mixedDraft = mixed.emitted("update")?.[0]?.[1] as Draft;
-    expect(JSON.parse(mixedDraft.buffers.inbounds)[0].listen_port).toBe(22022);
+    const output = mounted();
+    await output.get('[aria-label="日志文件"]').setValue("logs/sing-box.log");
+    const outputDraft = output.emitted("update")?.[0]?.[0] as Draft;
+    expect(JSON.parse(outputDraft.buffers.log).output).toBe("logs/sing-box.log");
 
-    const route = mounted();
-    await route.get('[aria-label="网络接口"]').setValue("wlan0");
-    const routeDraft = route.emitted("update")?.[0]?.[1] as Draft;
-    expect(JSON.parse(routeDraft.buffers.route).default_interface).toBe("wlan0");
+    const enabled = mounted();
+    await enabled.get('[role="switch"][aria-label="启用日志"]').trigger("click");
+    const enabledDraft = enabled.emitted("update")?.[0]?.[0] as Draft;
+    expect(JSON.parse(enabledDraft.buffers.log).disabled).toBe(true);
 
-    const cache = mounted();
-    await cache.get('[aria-label="缓存文件"]').setValue("state/cache.db");
-    const cacheDraft = cache.emitted("update")?.[0]?.[1] as Draft;
-    expect(JSON.parse(cacheDraft.buffers.experimental).cache_file.path).toBe("state/cache.db");
-
-    const ipv6 = mounted();
-    await ipv6.get('[role="switch"][aria-label="启用 IPv6"]').trigger("click");
-    const dnsDraft = ipv6.emitted("update")?.[0]?.[1] as Draft;
-    expect(JSON.parse(dnsDraft.buffers.dns).strategy).toBe("ipv4_only");
-
-    const clash = mounted();
-    await clash.get('[role="switch"][aria-label="Clash API"]').trigger("click");
-    const clashDraft = clash.emitted("update")?.[0]?.[1] as Draft;
-    const experimental = JSON.parse(clashDraft.buffers.experimental);
-    expect(experimental.clash_api).toBeUndefined();
-    expect(experimental.future).toEqual({ enabled: true });
-
-    const fakeIp = mounted();
-    await fakeIp.get('[role="switch"][aria-label="FakeIP 持久化"]').trigger("click");
-    const fakeIpDraft = fakeIp.emitted("update")?.[0]?.[1] as Draft;
-    expect(JSON.parse(fakeIpDraft.buffers.experimental).cache_file.store_fakeip).toBe(false);
+    const timestamp = mounted();
+    await timestamp.get('[role="switch"][aria-label="显示时间戳"]').trigger("click");
+    const timestampDraft = timestamp.emitted("update")?.[0]?.[0] as Draft;
+    expect(JSON.parse(timestampDraft.buffers.log).timestamp).toBe(true);
   });
 
-  it("配置地图跳转到对应标签，日志入口打开完整 JSON", async () => {
-    const wrapper = mount(OverviewPanel, {
-      props: { draft: overviewDraft(), profileName: "家庭出口", errors: {} }
-    });
-    const buttons = wrapper.findAll(".config-map-item");
-    await buttons.find((button) => button.text().includes("DNS"))!.trigger("click");
-    await buttons.find((button) => button.text().includes("日志"))!.trigger("click");
-    expect(wrapper.emitted("selectTab")?.[0]).toEqual(["dns"]);
-    expect(wrapper.emitted("editJson")?.[0]).toEqual(["log"]);
+  it("通用设置保留日志完整 JSON 入口", async () => {
+    const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
+    await wrapper.get(".json-button").trigger("click");
+    expect(wrapper.emitted("editJson")?.[0]).toEqual([]);
   });
 
   it("高级页按原型显示六个模块且不呈现 Schema", async () => {
-    const draft = overviewDraft();
+    const draft = generalSettingsDraft();
     draft.config.ntp = { enabled: true, server: "time.apple.com" };
     draft.buffers.ntp = '{"enabled":true,"server":"time.apple.com"}';
     const wrapper = mount(AdvancedPanel, { props: { draft, errors: {} } });

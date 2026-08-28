@@ -15,6 +15,7 @@ import { useApplicationStore } from "@/features/application/store";
 import AdvancedPanel from "./AdvancedPanel.vue";
 import ConfigTabs from "./ConfigTabs.vue";
 import DnsConfigPanel from "./DnsConfigPanel.vue";
+import GeneralSettingsPanel from "./GeneralSettingsPanel.vue";
 import InboundConfigPanel from "./InboundConfigPanel.vue";
 import ModuleJsonDialog from "./ModuleJsonDialog.vue";
 import OutboundConfigPanel from "./OutboundConfigPanel.vue";
@@ -27,7 +28,6 @@ import {
   type DnsPanelSave
 } from "./dns";
 import { renameOutboundTagInBuffer, type OutboundPanelSave } from "./outbound";
-import OverviewPanel from "./OverviewPanel.vue";
 import ReferenceErrors from "./ReferenceErrors.vue";
 import RouteConfigPanel from "./RouteConfigPanel.vue";
 import type { RoutePanelSave } from "./route";
@@ -39,7 +39,7 @@ import { saveModuleBuffer } from "./paths";
 
 const store = useProfileStore();
 const application = useApplicationStore();
-const active = ref<ConfigTabId>("overview");
+const active = ref<ConfigTabId>("general");
 const dialogModule = ref<ConfigModule | null>(null);
 const errors = ref<Record<string, string>>({});
 const previewOpen = ref(false);
@@ -189,7 +189,7 @@ function saveDns(payload: DnsPanelSave): void {
   result.draft.bindings = payload.bindings.map((binding) => ({ ...binding }));
   applyResult(result.draft, "dns", result.error?.message);
 }
-function fromOverview(module: ConfigModule, next: Draft, error?: string): void { applyResult(next, module, error); }
+function fromGeneralSettings(next: Draft, error?: string): void { applyResult(next, "log", error); }
 async function preview(): Promise<void> { await application.preview(); previewOpen.value = Boolean(application.previewResult.value); }
 async function validate(): Promise<void> { await application.validate(); }
 async function applyProfile(): Promise<void> {
@@ -227,7 +227,7 @@ function jumpTo(path: string): void {
       </header>
       <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
       <ConfigTabs :active="active" @select="active = $event" />
-      <OverviewPanel v-if="active === 'overview'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :errors="errors" @update="fromOverview" @edit-json="dialogModule = $event" @select-tab="active = $event" @rename="renameProfile" />
+      <GeneralSettingsPanel v-if="active === 'general'" :draft="draft" :error="errors.log" @update="fromGeneralSettings" @edit-json="dialogModule = 'log'" />
       <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" />
       <OutboundConfigPanel v-else-if="active === 'outbounds'" :draft="draft" :error="errors.outbounds" @edit-json="dialogModule = 'outbounds'" @save="saveOutbounds" />
       <RouteConfigPanel v-else-if="active === 'route'" :draft="draft" :error="errors.route" @edit-json="dialogModule = 'route'" @save="saveRoute" />

@@ -113,10 +113,11 @@ for (const scenario of scenarios) {
     await expect(page.locator(".application-actions")).toHaveCount(1);
     await expect(page.getByRole("tab")).toHaveCount(7);
     await expect(page.getByRole("tab", { name: "端点" })).toHaveCount(0);
-    await expect(page.locator(".config-map-item")).toHaveCount(12);
-    await expect(page.getByRole("heading", { name: "完整配置结构" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "常用参数" })).toBeVisible();
-    await expect(page.getByRole("heading", { name: "核心功能" })).toBeVisible();
+    await expect(page.getByRole("tab", { name: "通用设置" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("heading", { name: "日志设置" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "参数归属" })).toBeVisible();
+    await expect(page.locator(".general-settings-panel .setting-row")).toHaveCount(4);
+    await expect(page.getByLabel("Mixed 入站端口")).toHaveCount(0);
     await expect(page.locator("main")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-config.png`, { fullPage: true });

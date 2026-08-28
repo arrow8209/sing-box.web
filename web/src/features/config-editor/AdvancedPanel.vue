@@ -1,8 +1,8 @@
 <script setup lang="ts">
 import AppIcon from "@/layout/AppIcon.vue";
 import type { Draft } from "@/features/profiles/types";
+import { isJsonObject } from "./json";
 import { advancedConfigSections, type ConfigModule, type ConfigSection } from "./module-map";
-import { isJsonObject } from "./overview";
 
 const props = defineProps<{ draft: Draft; errors?: Record<string, string> }>();
 const emit = defineEmits<{ editJson: [module: ConfigModule] }>();

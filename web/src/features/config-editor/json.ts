@@ -4,6 +4,10 @@ import type { Draft } from "@/features/profiles/types";
 export interface BufferError { code: "invalid_json_buffer" | "invalid_module_shape"; message: string; fieldPath: string; }
 export interface BufferResult { draft: Draft; error?: BufferError; }
 
+export function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function setJsonPath(text: string, path: readonly (string | number)[], value: unknown): string {
   const edits = modify(text, [...path], value, { formattingOptions: { insertSpaces: true, tabSize: 2, eol: "\n" } });
   const output = applyEdits(text, edits);
