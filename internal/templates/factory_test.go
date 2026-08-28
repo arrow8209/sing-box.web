@@ -36,6 +36,24 @@ func TestFactoryCreatesUniqueSecretsAndCacheIDs(t *testing.T) {
 	}
 }
 
+func TestDefaultProfileUsesClashAPIPort20124(t *testing.T) {
+	seed, err := newTestFactory(t).NewProfileSeed(time.Unix(1, 0))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var experimental struct {
+		ClashAPI struct {
+			ExternalController string `json:"external_controller"`
+		} `json:"clash_api"`
+	}
+	if err := json.Unmarshal(seed.Config["experimental"], &experimental); err != nil {
+		t.Fatal(err)
+	}
+	if experimental.ClashAPI.ExternalController != "127.0.0.1:20124" {
+		t.Fatalf("default Clash API controller=%q, want 127.0.0.1:20124", experimental.ClashAPI.ExternalController)
+	}
+}
+
 func TestFactoryDoesNotReadTempAtRuntime(t *testing.T) {
 	original, err := os.Getwd()
 	if err != nil {

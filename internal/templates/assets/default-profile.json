@@ -111,7 +111,7 @@
       ],
       "access_control_allow_private_network": false,
       "default_mode": "rule",
-      "external_controller": "127.0.0.1:20123",
+      "external_controller": "127.0.0.1:20124",
       "external_ui": "",
       "external_ui_download_detour": "🎯 全球直连",
       "external_ui_download_url": "",
