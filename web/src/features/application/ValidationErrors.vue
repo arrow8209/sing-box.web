@@ -20,8 +20,9 @@ function formatCommand(command?: string[]): string {
 </script>
 
 <template>
-  <section v-if="validation?.errors?.length || error || (validation && !validation.valid)" class="errors" role="alert">
+  <section v-if="validation || error" class="errors" :class="{ success: validation?.valid && !error }" :role="validation?.valid && !error ? 'status' : 'alert'">
     <h2>配置检查结果</h2>
+    <p v-if="validation?.valid"><strong>{{ stageLabel(validation.stage) }}</strong>：{{ validation.message || "配置检查通过" }}</p>
     <ul v-if="validation?.errors?.length">
       <li v-for="item in validation.errors" :key="`${item.fieldPath}-${item.message}`">
         <button v-if="item.fieldPath" type="button" @click="emit('jump', item.fieldPath)">{{ item.fieldPath }}</button>
@@ -60,6 +61,7 @@ function formatCommand(command?: string[]): string {
 
 <style scoped>
 .errors { margin-top: 16px; padding: 14px; border: 1px solid color-mix(in srgb, var(--red) 40%, var(--line)); border-radius: var(--radius); color: var(--red); background: var(--red-soft); }
+.errors.success { border-color: color-mix(in srgb, var(--green) 40%, var(--line)); color: var(--green); background: var(--green-soft); }
 .errors h2 { margin: 0; font-size: 16px; }
 .errors p { margin: 10px 0 0; }
 .check-details { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 8px 14px; margin: 12px 0 0; color: var(--text); }

@@ -27,7 +27,7 @@ export function createApplicationStore(profiles: ProfileStore = useProfileStore(
     return value.id && value.revision && profiles.saveState.value === "saved" ? { id: value.id, revision: value.revision } : null;
   }
   async function preview(): Promise<void> { error.value = null; const value = await prepare(); if (!value) return; try { previewResult.value = await api.preview(value.id, value.revision); } catch (cause) { error.value = errorFrom(cause); } }
-  async function validate(): Promise<void> { error.value = null; const value = await prepare(); if (!value) return; try { validation.value = await api.validate(value.id, value.revision); await profiles.refresh(); } catch (cause) { error.value = errorFrom(cause); } }
+  async function validate(): Promise<void> { error.value = null; validation.value = null; const value = await prepare(); if (!value) return; try { validation.value = await api.validate(value.id, value.revision); await profiles.refresh(); } catch (cause) { error.value = errorFrom(cause); } }
   return { previewResult, validation, error, preview, validate, clear: () => { error.value = null; validation.value = null; previewResult.value = null; }, dispose: () => undefined };
 }
 

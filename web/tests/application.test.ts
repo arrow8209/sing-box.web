@@ -31,6 +31,11 @@ describe("配置应用", () => {
     const store = createApplicationStore(profileStore, api); await store.preview();
     expect(JSON.stringify(store.previewResult.value)).toContain("data/rulesets/resource-a.srs"); expect(JSON.stringify(store.previewResult.value)).not.toContain("https://");
   });
+  it("检查成功时显示成功结果", () => {
+    const validation = { revision: 4, files: [], digest: "a".repeat(64), valid: true, stage: "core_check", message: "配置检查通过", exitCode: 0 };
+    const wrapper = mount(ValidationErrors, { props: { validation, error: null } });
+    expect(wrapper.get('[role="status"]').text()).toContain("核心检查：配置检查通过");
+  });
   it("检查失败时显示按档案 ID 固定且保留的送检目录", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
     const validation = {
