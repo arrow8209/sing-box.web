@@ -341,7 +341,7 @@ func (s *Server) Close(ctx context.Context) error {
 		cancel()
 	}
 	if s.core != nil {
-		coreCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		coreCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 		coreErr = s.core.Stop(coreCtx)
 		cancel()
 	}
@@ -353,7 +353,7 @@ func (s *Server) Close(ctx context.Context) error {
 }
 
 func (s *Server) closeWithTimeout() error {
-	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute+10*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute+15*time.Second)
 	defer cancel()
 	return s.Close(ctx)
 }

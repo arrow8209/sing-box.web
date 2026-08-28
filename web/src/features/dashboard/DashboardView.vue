@@ -15,6 +15,7 @@ const profileStore = useProfileStore();
 const profiles = ref<ProfileSummary[]>([]);
 const error = ref("");
 const refreshing = ref(false);
+const coreStopping = ref(false);
 const notice = ref("");
 const coreRunningOverride = ref<boolean | null>(null);
 const now = ref(Date.now());
@@ -29,8 +30,12 @@ const metrics = [
   { icon: "memory", tone: "orange", label: "内存占用", value: "86.4", unit: "MB", trend: "稳定运行", neutral: true }
 ] as const;
 
-const serviceRunning = computed(() => core.status.value?.state === "running");
+const serviceRunning = computed(() => ["running", "starting", "stopping"].includes(core.status.value?.state ?? ""));
 const running = computed(() => coreRunningOverride.value ?? serviceRunning.value);
+const coreTransitioning = computed(() => coreStopping.value || core.status.value?.state === "starting" || core.status.value?.state === "stopping");
+const coreActionLabel = computed(() => coreStopping.value || core.status.value?.state === "stopping"
+  ? "正在停止"
+  : core.status.value?.state === "starting" ? "正在启动" : running.value ? "停止核心" : "启动核心");
 const activeProfile = computed(() => profiles.value.find((item) => item.id === core.status.value?.currentProfileId)
   ?? profiles.value.find((item) => item.id === profileStore.activeProfileId.value)
   ?? profiles.value[0]);
@@ -98,9 +103,21 @@ function restartCore(): void {
   showNotice("核心已重新启动，页面演示状态已更新。");
 }
 
-function toggleCore(): void {
-  coreRunningOverride.value = !running.value;
-  showNotice(coreRunningOverride.value ? "核心已启动，页面演示状态已更新。" : "核心已停止，页面演示状态已更新。");
+async function toggleCore(): Promise<void> {
+  if (!running.value) {
+    coreRunningOverride.value = true;
+    showNotice("核心已启动，页面演示状态已更新。");
+    return;
+  }
+  coreStopping.value = true;
+  try {
+    if (await core.stopCore()) {
+      coreRunningOverride.value = null;
+      showNotice("sing-box 进程已结束。");
+    }
+  } finally {
+    coreStopping.value = false;
+  }
 }
 
 function toggleQuickControl(key: keyof typeof quickControls, label: string): void {
@@ -159,8 +176,8 @@ onBeforeUnmount(() => {
               <div class="hero-meta-item"><span>进程 ID</span><strong>{{ core.status.value?.pid || "--" }}</strong></div>
             </div>
             <div class="hero-actions">
-              <button class="hero-btn" type="button" @click="restartCore"><AppIcon name="rotate" :size="14" />重启</button>
-              <button class="hero-btn" :class="{ 'hero-btn-danger': running }" type="button" @click="toggleCore"><AppIcon name="power" :size="14" />{{ running ? "停止核心" : "启动核心" }}</button>
+              <button class="hero-btn" type="button" :disabled="coreTransitioning" @click="restartCore"><AppIcon name="rotate" :size="14" />重启</button>
+              <button class="hero-btn" :class="{ 'hero-btn-danger': running }" data-core-toggle type="button" :disabled="coreTransitioning" @click="toggleCore"><AppIcon :name="coreStopping ? 'rotate' : 'power'" :size="14" />{{ coreActionLabel }}</button>
             </div>
           </div>
         </div>

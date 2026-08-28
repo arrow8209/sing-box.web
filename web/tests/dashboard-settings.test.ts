@@ -56,10 +56,14 @@ describe("仪表盘与设置", () => {
   });
   it("仪表盘按原型渲染完整运行概览并保留服务端状态", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };
-    vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
-      const path = String(input); const data = path.endsWith("/core") ? core : path.endsWith("/profiles") ? [{ id: "profile-a", name: "家庭出口", draftRevision: 1, appliedRevision: 1, appliedDigest: "", appliedAt: null, needsApply: false, lastValidation: null }] : [];
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      const data = path.endsWith("/core") && init?.method === "DELETE"
+        ? { ...core, state: "stopped", pid: 0, expectedRunning: false }
+        : path.endsWith("/core") ? core : path.endsWith("/profiles") ? [{ id: "profile-a", name: "家庭出口", draftRevision: 1, appliedRevision: 1, appliedDigest: "", appliedAt: null, needsApply: false, lastValidation: null }] : [];
       return Promise.resolve(new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }));
-    }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
     const wrapper = mount(DashboardView); await flushPromises();
     expect(wrapper.text()).toContain("sing-box 正在运行");
     expect(wrapper.text()).toContain("1.12.2");
@@ -78,6 +82,11 @@ describe("仪表盘与设置", () => {
     expect(systemProxy.attributes("aria-checked")).toBe("false");
     await wrapper.findAll(".mode-option")[2].trigger("click");
     expect(wrapper.findAll(".mode-option")[2].classes()).toContain("active");
+    await wrapper.get("[data-core-toggle]").trigger("click");
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/core", expect.objectContaining({ method: "DELETE" }));
+    expect(wrapper.text()).toContain("sing-box 已停止");
+    expect(wrapper.text()).toContain("sing-box 进程已结束");
     wrapper.unmount();
   });
 });

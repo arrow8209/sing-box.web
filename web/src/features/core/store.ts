@@ -9,6 +9,7 @@ export interface CoreStore {
   error: Ref<string | null>;
   updateAvailable: Ref<boolean>;
   refresh(): Promise<void>;
+  stopCore(): Promise<boolean>;
   refreshLatest(): Promise<void>;
   refreshUpdate(): Promise<void>;
   startUpdate(version: string): Promise<void>;
@@ -33,6 +34,11 @@ export function createCoreStore(api: CoreApi = coreApi): CoreStore {
     try { await action(); error.value = null; } catch (cause) { error.value = cause instanceof Error ? cause.message : "无法读取核心状态"; }
   };
   async function refresh(): Promise<void> { await capture(async () => { status.value = await api.status(); }); }
+  async function stopCore(): Promise<boolean> {
+    let stopped = false;
+    await capture(async () => { status.value = await api.stop(); stopped = true; });
+    return stopped;
+  }
   async function refreshLatest(): Promise<void> { await capture(async () => { latest.value = await api.latest(); }); }
   async function refreshUpdate(): Promise<void> {
     let succeeded = false;
@@ -76,7 +82,7 @@ export function createCoreStore(api: CoreApi = coreApi): CoreStore {
     await capture(async () => { await api.cancelUpdate(); });
     if (!error.value) await refreshUpdate();
   }
-  return { status, latest, update, error, updateAvailable, refresh, refreshLatest, refreshUpdate, startUpdate, cancelUpdate, startPolling, stopPolling, dispose: stopPolling };
+  return { status, latest, update, error, updateAvailable, refresh, stopCore, refreshLatest, refreshUpdate, startUpdate, cancelUpdate, startPolling, stopPolling, dispose: stopPolling };
 }
 
 const defaultStore = createCoreStore();

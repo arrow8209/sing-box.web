@@ -40,6 +40,7 @@ const (
 	OperationValidate   OperationKind = "validate"
 	OperationApply      OperationKind = "apply"
 	OperationCoreUpdate OperationKind = "core_update"
+	OperationCoreStop   OperationKind = "core_stop"
 )
 
 // OperationStatus is safe to expose in the core status API.

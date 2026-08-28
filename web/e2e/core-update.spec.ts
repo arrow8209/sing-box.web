@@ -30,3 +30,30 @@ test("从根菜单进入核心管理并直接下载最新稳定版", async ({ pa
   await expect(versions.getByText("下载已停止").first()).toBeVisible();
   await expect(versions.getByRole("button", { name: "重新下载最新版本" })).toBeEnabled();
 });
+
+test("仪表盘停止核心会请求结束当前 sing-box 进程", async ({ page }) => {
+  const running = {
+    installedVersion: "1.0.0", installedDigest: "", state: "running", pid: 4321,
+    currentProfileId: "", appliedRevision: null, expectedRunning: true,
+    configDirectoryDigest: "", startedAt: "2026-08-28T00:00:00Z", lastError: "", operation: { active: false }
+  };
+  await page.route("**/api/v1/core", async (route) => {
+    if (route.request().method() === "DELETE") {
+      await route.fulfill({ json: { ...running, state: "stopped", pid: 0, expectedRunning: false, startedAt: null } });
+      return;
+    }
+    await route.fulfill({ json: running });
+  });
+  await page.goto("/");
+  await page.getByLabel("管理密码").fill("correct horse battery staple");
+  await page.getByRole("button", { name: "登录" }).click();
+  await expect(page.getByRole("heading", { name: "sing-box 正在运行" })).toBeVisible();
+  await expect(page.getByText("4321", { exact: true })).toBeVisible();
+
+  const stopRequest = page.waitForRequest((request) => request.method() === "DELETE" && new URL(request.url()).pathname === "/api/v1/core");
+  await page.getByRole("button", { name: "停止核心" }).click();
+  const request = await stopRequest;
+  expect(request.headers()["x-csrf-token"]).toBeTruthy();
+  await expect(page.getByRole("heading", { name: "sing-box 已停止" })).toBeVisible();
+  await expect(page.getByText("sing-box 进程已结束。")).toBeVisible();
+});

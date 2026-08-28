@@ -91,11 +91,12 @@ func NewRouter(deps Dependencies) http.Handler {
 		rules = csrfForWrites(rules, deps.RequireCSRF)
 		rules = deps.Authenticate(rules)
 	}
-	if core == nil || deps.Authenticate == nil {
+	if core == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {
 		core = http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "router_unavailable", Message: "API 路由不可用"})
 		})
 	} else {
+		core = csrfForWrites(core, deps.RequireCSRF)
 		core = deps.Authenticate(core)
 	}
 	if updater == nil || deps.Authenticate == nil || deps.RequireCSRF == nil {

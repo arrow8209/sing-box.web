@@ -51,11 +51,60 @@ func TestStopKillsProcessGroupAfterTenSeconds(t *testing.T) {
 	await(t, func() bool { return process.HasSignal(syscall.SIGTERM) })
 	await(t, clock.HasWaiter)
 	clock.Advance(10 * time.Second)
+	await(t, func() bool { return process.HasSignal(syscall.SIGKILL) })
+	select {
+	case err := <-stopped:
+		t.Fatalf("Stop returned before the process exited: %v", err)
+	default:
+	}
+	process.Exit(ProcessResult{ExitCode: -1, Err: errors.New("signal: killed")})
 	if err := <-stopped; err != nil {
 		t.Fatal(err)
 	}
-	if !process.HasSignal(syscall.SIGKILL) {
-		t.Fatal("process group was not SIGKILLed")
+	status := manager.Status(context.Background())
+	if status.State != ProcessStopped || status.PID != 0 {
+		t.Fatalf("status=%+v", status)
+	}
+}
+
+func TestRequestStopEndsManagedProcessAndClearsRestartIntent(t *testing.T) {
+	manager, factory, clock := newTestManager(t)
+	store := NewStore(manager.Layout().CoreFile)
+	if _, err := store.Update(func(state *PersistentState) error {
+		state.ExpectedRunning = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager.store = store
+
+	started := make(chan error, 1)
+	go func() { started <- manager.Start(context.Background(), StartRequest{}) }()
+	await(t, func() bool { return factory.LastProcess() != nil })
+	await(t, clock.HasWaiter)
+	clock.Advance(2 * time.Second)
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+
+	process := factory.LastProcess()
+	stopped := make(chan error, 1)
+	go func() { stopped <- manager.RequestStop(context.Background()) }()
+	await(t, func() bool { return process.HasSignal(syscall.SIGTERM) })
+	process.Exit(ProcessResult{})
+	if err := <-stopped; err != nil {
+		t.Fatal(err)
+	}
+	state, err := store.Load()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if state.ExpectedRunning {
+		t.Fatal("ExpectedRunning remained true after an explicit stop")
+	}
+	status := manager.Status(context.Background())
+	if status.State != ProcessStopped || status.PID != 0 {
+		t.Fatalf("status=%+v", status)
 	}
 }
 

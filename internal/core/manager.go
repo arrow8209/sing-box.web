@@ -162,9 +162,15 @@ func (m *Manager) Stop(ctx context.Context) error {
 		return nil
 	}
 	done := m.done
+	previousState := m.state
 	m.state = ProcessStopping
 	m.mu.Unlock()
 	if err := process.SignalGroup(syscall.SIGTERM); err != nil && !errors.Is(err, syscall.ESRCH) {
+		m.mu.Lock()
+		if m.process == process && m.state == ProcessStopping {
+			m.state = previousState
+		}
+		m.mu.Unlock()
 		return err
 	}
 	select {
@@ -175,10 +181,52 @@ func (m *Manager) Stop(ctx context.Context) error {
 		if err := process.SignalGroup(syscall.SIGKILL); err != nil && !errors.Is(err, syscall.ESRCH) {
 			return err
 		}
+	case <-ctx.Done():
+		return context.Cause(ctx)
+	}
+	select {
+	case <-done:
 		return nil
 	case <-ctx.Done():
 		return context.Cause(ctx)
 	}
+}
+
+// RequestStop records an administrator's durable stop intent and terminates
+// only the sing-box process currently owned by this Manager. Internal update
+// and shutdown flows call Stop directly because they intentionally preserve
+// ExpectedRunning for a later restart.
+func (m *Manager) RequestStop(ctx context.Context) error {
+	if m == nil {
+		return errors.New("核心管理器不可用")
+	}
+	if ctx == nil {
+		ctx = context.Background()
+	}
+	operation, release, err := m.operation.Enter(ctx, OperationCoreStop)
+	if err != nil {
+		return err
+	}
+	defer release()
+
+	operation.SetStage("record_stop_intent")
+	if m.store != nil {
+		if _, err := m.store.Update(func(state *PersistentState) error {
+			state.ExpectedRunning = false
+			state.LastStartError = ""
+			return nil
+		}); err != nil {
+			operation.SetError(err.Error())
+			return fmt.Errorf("记录核心停止状态: %w", err)
+		}
+	}
+
+	operation.SetStage("stop_core")
+	if err := m.Stop(ctx); err != nil {
+		operation.SetError(err.Error())
+		return err
+	}
+	return nil
 }
 
 func (m *Manager) Status(_ context.Context) Status {

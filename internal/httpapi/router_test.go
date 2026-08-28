@@ -168,7 +168,7 @@ func TestRouterKeepsAPIsOutOfSPAFallback(t *testing.T) {
 	}
 }
 
-func TestRouterAuthenticatesCoreStatusWithoutControlEndpoint(t *testing.T) {
+func TestRouterAuthenticatesCoreControlAndRequiresCSRFWrites(t *testing.T) {
 	authenticated := func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.Header.Get("X-Test-Session") != "ok" {
@@ -179,13 +179,22 @@ func TestRouterAuthenticatesCoreStatusWithoutControlEndpoint(t *testing.T) {
 		})
 	}
 	core := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet {
+		if r.Method != http.MethodGet && r.Method != http.MethodDelete {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
 		w.WriteHeader(http.StatusNoContent)
 	})
-	router := httpapi.NewRouter(httpapi.Dependencies{CoreHandler: core, Authenticate: authenticated})
+	csrf := func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if r.Header.Get("X-Test-CSRF") != "ok" {
+				w.WriteHeader(http.StatusForbidden)
+				return
+			}
+			next.ServeHTTP(w, r)
+		})
+	}
+	router := httpapi.NewRouter(httpapi.Dependencies{CoreHandler: core, Authenticate: authenticated, RequireCSRF: csrf})
 	response := httptest.NewRecorder()
 	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/v1/core", nil))
 	if response.Code != http.StatusUnauthorized {
@@ -198,11 +207,17 @@ func TestRouterAuthenticatesCoreStatusWithoutControlEndpoint(t *testing.T) {
 	if response.Code != http.StatusNoContent {
 		t.Fatalf("status=%d", response.Code)
 	}
-	request = httptest.NewRequest(http.MethodPost, "/api/v1/core", nil)
+	request = httptest.NewRequest(http.MethodDelete, "/api/v1/core", nil)
 	request.Header.Set("X-Test-Session", "ok")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)
-	if response.Code != http.StatusMethodNotAllowed {
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d", response.Code)
+	}
+	request.Header.Set("X-Test-CSRF", "ok")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
 		t.Fatalf("status=%d", response.Code)
 	}
 }
