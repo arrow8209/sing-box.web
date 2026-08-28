@@ -54,14 +54,27 @@ describe("仪表盘与设置", () => {
     expect(wrapper.get('[aria-label="配置变更自动重载（只读）"]').attributes("aria-checked")).toBe("false");
     expect(wrapper.text()).not.toContain("Beta");
   });
-  it("仪表盘只渲染服务端摘要，不含模拟运行指标", async () => {
+  it("仪表盘按原型渲染完整运行概览并保留服务端状态", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };
     vi.stubGlobal("fetch", vi.fn((input: RequestInfo | URL) => {
       const path = String(input); const data = path.endsWith("/core") ? core : path.endsWith("/profiles") ? [{ id: "profile-a", name: "家庭出口", draftRevision: 1, appliedRevision: 1, appliedDigest: "", appliedAt: null, needsApply: false, lastValidation: null }] : [];
       return Promise.resolve(new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }));
     }));
     const wrapper = mount(DashboardView); await flushPromises();
-    expect(wrapper.text()).toContain("PID 4321"); expect(wrapper.text()).toContain("家庭出口");
-    for (const forbidden of ["实时流量", "内存占用", "连接数", "延迟", "206 ms"]) expect(wrapper.text()).not.toContain(forbidden);
+    expect(wrapper.text()).toContain("sing-box 正在运行");
+    expect(wrapper.text()).toContain("1.12.2");
+    expect(wrapper.text()).toContain("家庭出口");
+    expect(wrapper.text()).toContain("实时流量");
+    expect(wrapper.text()).toContain("内存占用");
+    expect(wrapper.findAll(".metric-card")).toHaveLength(4);
+    expect(wrapper.findAll(".proxy-group")).toHaveLength(6);
+    expect(wrapper.get(".traffic-chart").attributes("aria-label")).toBe("实时流量折线图");
+    const systemProxy = wrapper.get('[aria-label="切换系统代理"]');
+    expect(systemProxy.attributes("aria-checked")).toBe("true");
+    await systemProxy.trigger("click");
+    expect(systemProxy.attributes("aria-checked")).toBe("false");
+    await wrapper.findAll(".mode-option")[2].trigger("click");
+    expect(wrapper.findAll(".mode-option")[2].classes()).toContain("active");
+    wrapper.unmount();
   });
 });

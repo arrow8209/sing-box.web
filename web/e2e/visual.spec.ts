@@ -75,6 +75,21 @@ async function ensureVisualInbound(page: Page): Promise<void> {
 }
 
 for (const scenario of scenarios) {
+  test(`${scenario.name} dashboard`, async ({ page }) => {
+    await page.setViewportSize({ width: scenario.width, height: scenario.height });
+    await loginAndOpenProfile(page);
+    await ensureVisualProfile(page);
+    await page.goto("/");
+    await setTheme(page, scenario.theme);
+    await expect(page.getByRole("heading", { name: "早上好，管理员" })).toBeVisible();
+    await expect(page.locator(".traffic-card")).toBeVisible();
+    await expect(page.locator(".proxy-selector-card")).toBeVisible();
+    await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
+    await expect(page).toHaveScreenshot(`${scenario.name}-dashboard.png`, { fullPage: true });
+  });
+}
+
+for (const scenario of scenarios) {
   test(`${scenario.name} configuration and rules workspace`, async ({ page }) => {
     await page.setViewportSize({ width: scenario.width, height: scenario.height });
     await loginAndOpenProfile(page);
