@@ -15,17 +15,14 @@ import (
 	"singbox-web/internal/profile"
 )
 
-var ErrStartFailed = errors.New("apply_start_failed")
-
 type ApplyRequest struct {
-	ProfileID             string
-	Revision              uint64
-	ConfirmedConfigDigest string
+	ProfileID string
+	Revision  uint64
 }
 
 // ApplyResult always includes the result produced by the same checker used by
 // the standalone 检查 button. Applied remains false when that check fails, and
-// in that case neither the core process nor config/ has been changed.
+// in that case config/ has not been changed.
 type ApplyResult struct {
 	Applied    bool                     `json:"applied"`
 	ProfileID  string                   `json:"profileId"`
@@ -55,7 +52,7 @@ func NewCoordinator(profiles *profile.Service, configuration *configgen.Handler,
 
 func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result ApplyResult, err error) {
 	result.ProfileID, result.Revision = request.ProfileID, request.Revision
-	if c == nil || c.profiles == nil || c.configuration == nil || c.generator == nil || c.core == nil {
+	if c == nil || c.profiles == nil || c.configuration == nil || c.generator == nil {
 		return result, errors.New("应用协调器不可用")
 	}
 	operation, release, err := c.operations.Enter(ctx, core.OperationApply)
@@ -65,7 +62,7 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 	defer release()
 
 	// A failed check may refresh only the profile check directory and validation
-	// summary. The running process and formal configuration remain untouched.
+	// summary. The formal configuration remains untouched.
 	operation.SetStage("check_config")
 	validation, err := c.configuration.ValidateInOperation(ctx, request.ProfileID, request.Revision)
 	result.Validation, result.Digest = validation, validation.Digest
@@ -76,7 +73,7 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 		return result, nil
 	}
 
-	// Reject a draft saved after the successful check before stopping anything.
+	// Reject a draft saved after the successful check before copying anything.
 	draft, _, err := c.profiles.GetDraft(ctx, request.ProfileID)
 	if err != nil {
 		return result, err
@@ -85,22 +82,14 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 		return result, profile.RevisionConflict{LatestRevision: draft.Revision}
 	}
 
-	previous := c.core.Status(ctx)
-	currentDigest, err := DigestDirectory(c.core.Layout().ConfigDir)
-	if err != nil {
-		return result, err
-	}
-	if _, err := CheckDrift(previous.ConfigDirectoryDigest, request.ConfirmedConfigDigest, currentDigest); err != nil {
-		return result, err
-	}
-
 	// Copy the exact in-memory output that produced the successful check. The
 	// stable config.staging-<profileID> directory stays available for review.
 	token, err := transactionToken()
 	if err != nil {
 		return result, err
 	}
-	staging, err := c.core.Layout().StagingConfigDir(token)
+	layout := c.configuration.Layout()
+	staging, err := layout.StagingConfigDir(token)
 	if err != nil {
 		return result, err
 	}
@@ -110,42 +99,20 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 	}
 	defer func() { _ = removeOwnedDirectory(staging) }()
 
-	operation.SetStage("stop_core")
-	if previous.Running() {
-		if err := c.core.Stop(ctx); err != nil {
-			return result, fmt.Errorf("stop_core: %w", err)
-		}
+	// Digest immediately before the atomic swap. BeginDirectorySwap verifies
+	// this digest again after parking the old directory, so a concurrent host
+	// edit is never silently overwritten.
+	currentDigest, err := DigestDirectory(layout.ConfigDir)
+	if err != nil {
+		return result, err
 	}
 
-	// Close the host-edit window between the initial drift check and Stop.
-	latestDigest, err := DigestDirectory(c.core.Layout().ConfigDir)
+	operation.SetStage("copy_config")
+	transaction, err := BeginDirectorySwap(layout, staging, currentDigest)
 	if err != nil {
-		return result, errors.Join(err, c.restartPrevious(previous))
-	}
-	if latestDigest != currentDigest {
-		return result, errors.Join(fmt.Errorf("%w: 正式配置在停止核心前发生变更", ErrExternalDrift), c.restartPrevious(previous))
-	}
-
-	operation.SetStage("swap_config")
-	transaction, err := BeginDirectorySwap(c.core.Layout(), staging, currentDigest)
-	if err != nil {
-		return result, errors.Join(err, c.restartPrevious(previous))
+		return result, err
 	}
 	defer transaction.Cleanup()
-	directoryDigest, err := DigestDirectory(c.core.Layout().ConfigDir)
-	if err != nil {
-		return result, c.recover(previous, transaction, err)
-	}
-
-	operation.SetStage("start_core")
-	if err := c.core.Start(ctx, core.StartRequest{ProfileID: request.ProfileID, DraftRevision: request.Revision}); err != nil {
-		return result, c.recover(previous, transaction, fmt.Errorf("%w: %v", ErrStartFailed, err))
-	}
-
-	operation.SetStage("commit_state")
-	if err := c.core.CommitApplication(request.ProfileID, request.Revision, directoryDigest); err != nil {
-		return result, c.recover(previous, transaction, err)
-	}
 	now := c.now().UTC()
 	applied := profile.AppliedResult{
 		ProfileID: request.ProfileID, Revision: request.Revision, Digest: validation.Digest,
@@ -153,39 +120,13 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 		Validation: profile.ValidationSummary{Valid: true, Stage: validation.Stage, Message: validation.Message, CheckedAt: now},
 	}
 	if err := c.profiles.MarkApplied(ctx, applied); err != nil {
-		return result, c.recover(previous, transaction, err)
+		operation.SetStage("restore_config")
+		return result, errors.Join(err, transaction.Restore())
 	}
 
 	transaction.Commit()
 	result.Applied = true
 	return result, nil
-}
-
-func (c *Coordinator) restartPrevious(previous core.Status) error {
-	if !previous.Running() {
-		return c.core.RestoreApplication(previous)
-	}
-	revision := uint64(0)
-	if previous.AppliedRevision != nil {
-		revision = *previous.AppliedRevision
-	}
-	startErr := c.core.Start(context.Background(), core.StartRequest{ProfileID: previous.CurrentProfileID, DraftRevision: revision})
-	stateErr := c.core.RestoreApplication(previous)
-	if startErr != nil {
-		return errors.Join(fmt.Errorf("恢复旧核心失败: %w", startErr), stateErr)
-	}
-	return stateErr
-}
-
-func (c *Coordinator) recover(previous core.Status, transaction *DirectoryTransaction, cause error) error {
-	if stopErr := c.core.Stop(context.Background()); stopErr != nil {
-		// Keep both directories intact when the new process cannot be stopped.
-		// Startup recovery can resolve them after process ownership is gone.
-		return errors.Join(cause, fmt.Errorf("停止待恢复核心失败: %w", stopErr))
-	}
-	restoreErr := transaction.Restore()
-	restartErr := c.restartPrevious(previous)
-	return errors.Join(cause, restoreErr, restartErr)
 }
 
 func transactionToken() (string, error) {

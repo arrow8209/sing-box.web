@@ -13,6 +13,7 @@ describe("档案组件", () => {
     const wrapper = mount(ProfileActions);
     const buttons = wrapper.findAll("button");
     expect(buttons.map((button) => button.text())).toEqual(["应用", "复制", "重命名", "删除"]);
+    expect(buttons[0].attributes("title")).toBe("检测通过后复制配置文件");
     expect(buttons[0]?.attributes("disabled")).toBeUndefined();
     await buttons[0]?.trigger("click"); await buttons[1]?.trigger("click"); await buttons[2]?.trigger("click"); await buttons[3]?.trigger("click");
     expect(wrapper.emitted("apply")).toHaveLength(1);

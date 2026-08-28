@@ -1,8 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
-import { useCoreStore } from "@/features/core/store";
 import { isApiError } from "@/features/profiles/api";
 import ProfileActions from "@/features/profiles/ProfileActions.vue";
 import ProfileDeleteDialog from "@/features/profiles/ProfileDeleteDialog.vue";
@@ -10,7 +9,6 @@ import ProfileDialog from "@/features/profiles/ProfileDialog.vue";
 import { useProfileStore } from "@/features/profiles/store";
 import type { Draft } from "@/features/profiles/types";
 import ApplicationBar from "@/features/application/ApplicationBar.vue";
-import DriftConfirmDialog from "@/features/application/DriftConfirmDialog.vue";
 import PreviewDialog from "@/features/application/PreviewDialog.vue";
 import ValidationErrors from "@/features/application/ValidationErrors.vue";
 import { useApplicationStore } from "@/features/application/store";
@@ -41,7 +39,6 @@ import { saveModuleBuffer } from "./paths";
 
 const store = useProfileStore();
 const application = useApplicationStore();
-const core = useCoreStore();
 const active = ref<ConfigTabId>("overview");
 const dialogModule = ref<ConfigModule | null>(null);
 const errors = ref<Record<string, string>>({});
@@ -60,12 +57,8 @@ const applyDisabledReason = computed(() => {
   if (profileBusy.value || application.applying.value) return "正在处理档案操作";
   if (store.saveState.value !== "saved") return "请先等待草稿保存完成";
   if (Object.keys(errors.value).length > 0) return "请先修正当前编辑错误";
-  if (!core.status.value) return "正在读取 sing-box 状态";
-  if (core.status.value.state === "not_installed") return "请先安装 sing-box 核心";
-  if (core.status.value.operation.active) return "另一项核心操作正在进行";
   return "";
 });
-onMounted(() => { void core.refresh(); });
 async function duplicateProfile(): Promise<void> {
   if (!profile.value) return;
   profileBusy.value = true; profileError.value = "";
@@ -199,26 +192,20 @@ function saveDns(payload: DnsPanelSave): void {
 function fromOverview(module: ConfigModule, next: Draft, error?: string): void { applyResult(next, module, error); }
 async function preview(): Promise<void> { await application.preview(); previewOpen.value = Boolean(application.previewResult.value); }
 async function validate(): Promise<void> { await application.validate(); }
-async function applyProfile(confirmedConfigDigest?: string): Promise<void> {
+async function applyProfile(): Promise<void> {
   profileBusy.value = true; profileError.value = ""; notice.value = "";
   try {
-    const result = await application.apply(confirmedConfigDigest);
-    await core.refresh();
+    const result = await application.apply();
     if (result?.applied) {
-      queueMicrotask(() => { notice.value = "配置检测通过，已复制到运行目录并重新启动 sing-box。"; });
+      queueMicrotask(() => { notice.value = "配置检测通过，已复制配置文件。"; });
     } else if (result) {
-      profileError.value = result.validation.message || "配置检查失败，未停止核心，也未修改运行配置。";
+      profileError.value = result.validation.message || "配置检查失败，未复制配置文件。";
     } else if (application.error.value) {
       profileError.value = application.error.value.message;
     }
   } finally {
     profileBusy.value = false;
   }
-}
-function closeDriftConfirm(): void { application.driftDigest.value = null; }
-async function confirmDrift(): Promise<void> {
-  const digest = application.driftDigest.value;
-  if (digest !== null) await applyProfile(digest);
 }
 function jumpTo(path: string): void {
   const module = path.split(/[.\[/]/)[0] as ConfigModule;
@@ -234,7 +221,7 @@ function jumpTo(path: string): void {
         <div class="config-context-copy"><h1>{{ profile?.name || "配置工作台" }}</h1><p>草稿会自动保存，未识别字段会按原始 JSON 文本保留。</p></div>
         <div class="config-context-controls">
           <span class="save-status" :class="store.saveState.value"><AppIcon :name="store.saveState.value === 'saved' ? 'check' : 'rotate'" :size="14" />{{ store.saveState.value === "saving" ? "正在保存" : store.saveState.value === "saved" ? "草稿已保存" : "存在未保存更改" }}</span>
-          <ProfileActions :busy="profileBusy" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后停止核心、复制配置并重新启动'" @apply="applyProfile" @duplicate="duplicateProfile" @rename="openRename" @remove="openDelete" />
+          <ProfileActions :busy="profileBusy" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后复制配置文件'" @apply="applyProfile" @duplicate="duplicateProfile" @rename="openRename" @remove="openDelete" />
           <ApplicationBar :busy="profileBusy || application.applying.value" @preview="preview" @validate="validate" />
         </div>
       </header>
@@ -253,7 +240,6 @@ function jumpTo(path: string): void {
       <PreviewDialog :open="previewOpen" :preview="application.previewResult.value" @close="previewOpen = false" />
       <ProfileDialog :open="renameOpen" title="重命名档案" :initial-name="profile?.name" :busy="profileBusy" @close="renameOpen = false" @submit="renameProfile" />
       <ProfileDeleteDialog :open="deleting !== null" :name="deleting?.name ?? ''" :requires-core-decision="requiresCoreDecision" :busy="profileBusy" @close="deletingId = null; requiresCoreDecision = false" @submit="deleteProfile" />
-      <DriftConfirmDialog :open="application.driftDigest.value !== null" :busy="profileBusy" @close="closeDriftConfirm" @confirm="confirmDrift" />
       <AppToast v-if="notice" :message="notice" tone="success" />
     </template>
     <p v-else class="empty">请先在“配置档案”中选择一个可用档案。</p>

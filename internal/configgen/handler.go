@@ -77,6 +77,15 @@ func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules
 	return &Handler{layout: layout, profiles: profiles, rules: resources, generator: generator, checker: checker, gate: gate, clock: clock}
 }
 
+// Layout exposes the fixed managed paths to the application copy coordinator.
+// Configuration checks themselves still never write the formal config dir.
+func (h *Handler) Layout() paths.Layout {
+	if h == nil {
+		return paths.Layout{}
+	}
+	return h.layout
+}
+
 func (h *Handler) Preview(ctx context.Context, profileID string, revision uint64) (PreviewResult, error) {
 	draft, snapshot, release, err := h.loadSnapshot(ctx, profileID, revision)
 	if err != nil {
@@ -104,9 +113,8 @@ func (h *Handler) Validate(ctx context.Context, profileID string, revision uint6
 }
 
 // ValidateInOperation runs the same generation and sing-box check as Validate
-// while the caller already owns the shared core operation lock. Application
-// uses this form so a successful check and the following core transition stay
-// serialized without stopping the currently running core before the check.
+// while the caller already owns the shared operation lock. Application uses
+// this form so a successful check and the following config copy stay serialized.
 func (h *Handler) ValidateInOperation(ctx context.Context, profileID string, revision uint64) (ValidateResult, error) {
 	return h.validateInOperation(ctx, profileID, revision)
 }

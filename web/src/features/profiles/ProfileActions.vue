@@ -1,5 +1,5 @@
 <script setup lang="ts">
-withDefaults(defineProps<{ busy?: boolean; applyDisabled?: boolean; applyTitle?: string }>(), { busy: false, applyDisabled: false, applyTitle: "检测通过后停止核心、复制配置并重新启动" });
+withDefaults(defineProps<{ busy?: boolean; applyDisabled?: boolean; applyTitle?: string }>(), { busy: false, applyDisabled: false, applyTitle: "检测通过后复制配置文件" });
 const emit = defineEmits<{ apply: []; duplicate: []; rename: []; remove: [] }>();
 </script>
 

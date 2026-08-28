@@ -74,7 +74,7 @@ func TestApplicationCheckFailureLeavesRunningCoreAndFormalConfigUntouched(t *tes
 		t.Fatalf("result=%+v", result)
 	}
 	if !runner.checkedWhileRunning {
-		t.Fatal("配置检查没有在旧核心保持运行时执行")
+		t.Fatal("配置检查没有在现有核心保持运行时执行")
 	}
 	if status := manager.Status(context.Background()); status.State != core.ProcessRunning || status.CurrentProfileID != "old-profile" {
 		t.Fatalf("check failure changed core status: %+v", status)
@@ -85,12 +85,14 @@ func TestApplicationCheckFailureLeavesRunningCoreAndFormalConfigUntouched(t *tes
 	assertPersistentStaging(t, env.workDir, profileID)
 }
 
-func TestApplicationChecksBeforeStopCopiesConfigAndStartsSelectedProfile(t *testing.T) {
+func TestApplicationChecksAndCopiesConfigWithoutOperatingRunningCore(t *testing.T) {
 	env := newIntegrationEnvironment(t)
 	profileID, revision := createApplicationProfile(t, env)
-	manager, coordinator, runner, store := newApplicationCoordinator(t, env, nil)
+	factory := &failSecondStartFactory{}
+	manager, coordinator, runner, store := newApplicationCoordinatorWithFactory(t, env, nil, factory)
 	prepareRunningCore(t, env, manager, store)
 	defer manager.Stop(context.Background())
+	before := manager.Status(context.Background())
 
 	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
 	if err != nil {
@@ -100,11 +102,14 @@ func TestApplicationChecksBeforeStopCopiesConfigAndStartsSelectedProfile(t *test
 		t.Fatalf("result=%+v checkedWhileRunning=%v", result, runner.checkedWhileRunning)
 	}
 	status := manager.Status(context.Background())
-	if status.State != core.ProcessRunning || status.CurrentProfileID != profileID || status.AppliedRevision == nil || *status.AppliedRevision != revision {
+	if status.State != core.ProcessRunning || status.PID != before.PID || status.CurrentProfileID != "old-profile" || status.AppliedRevision == nil || *status.AppliedRevision != 1 {
 		t.Fatalf("status=%+v", status)
 	}
+	if factory.starts != 1 {
+		t.Fatalf("应用触发了核心启动: starts=%d", factory.starts)
+	}
 	directoryDigest, err := application.DigestDirectory(env.layout.ConfigDir)
-	if err != nil || directoryDigest == "" || status.ConfigDirectoryDigest != directoryDigest {
+	if err != nil || directoryDigest == "" || status.ConfigDirectoryDigest == directoryDigest || status.ConfigDirectoryDigest != before.ConfigDirectoryDigest {
 		t.Fatalf("directory digest=%q status=%q err=%v", directoryDigest, status.ConfigDirectoryDigest, err)
 	}
 	if _, err := os.Stat(filepath.Join(env.layout.ConfigDir, "60-inbounds.json")); err != nil {
@@ -121,27 +126,25 @@ func TestApplicationChecksBeforeStopCopiesConfigAndStartsSelectedProfile(t *test
 	}
 }
 
-func TestApplicationStartFailureRestoresPreviousConfigAndCore(t *testing.T) {
+func TestApplicationCopiesConfigWithoutStartingStoppedCore(t *testing.T) {
 	env := newIntegrationEnvironment(t)
 	profileID, revision := createApplicationProfile(t, env)
 	factory := &failSecondStartFactory{}
-	manager, coordinator, _, store := newApplicationCoordinatorWithFactory(t, env, nil, factory)
-	prepareRunningCore(t, env, manager, store)
-	defer manager.Stop(context.Background())
+	manager, coordinator, _, _ := newApplicationCoordinatorWithFactory(t, env, nil, factory)
 
 	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
-	if !errors.Is(err, application.ErrStartFailed) || result.Applied {
+	if err != nil || !result.Applied {
 		t.Fatalf("result=%+v err=%v", result, err)
 	}
 	status := manager.Status(context.Background())
-	if status.State != core.ProcessRunning || status.CurrentProfileID != "old-profile" || status.AppliedRevision == nil || *status.AppliedRevision != 1 {
+	if status.State != core.ProcessStopped || status.PID != 0 || factory.starts != 0 {
 		t.Fatalf("status=%+v", status)
 	}
-	if marker, readErr := os.ReadFile(filepath.Join(env.layout.ConfigDir, "marker")); readErr != nil || string(marker) != "old" {
-		t.Fatalf("previous config was not restored: %q err=%v", marker, readErr)
+	if _, statErr := os.Stat(filepath.Join(env.layout.ConfigDir, "60-inbounds.json")); statErr != nil {
+		t.Fatalf("配置未复制: %v", statErr)
 	}
 	metas, listErr := env.profiles.List(context.Background())
-	if listErr != nil || len(metas) != 1 || !metas[0].NeedsApply || metas[0].AppliedRevision != nil {
+	if listErr != nil || len(metas) != 1 || metas[0].NeedsApply || metas[0].AppliedRevision == nil || *metas[0].AppliedRevision != revision {
 		t.Fatalf("metas=%+v err=%v", metas, listErr)
 	}
 	assertNoTransactionDirs(t, env.workDir)
@@ -268,9 +271,8 @@ func TestServerRestartRestoresExpectedCore(t *testing.T) {
 	}
 }
 
-// The process factory is only used when an application reaches its final
-// start step. These failure tests stop earlier, but keeping it deterministic
-// ensures an accidental start cannot spawn a real process.
+// The process factory keeps lifecycle assertions deterministic and ensures an
+// accidental application start cannot spawn a real process.
 type testProcessFactory struct{}
 
 func (*testProcessFactory) Start(core.ProcessSpec) (core.Process, error) {

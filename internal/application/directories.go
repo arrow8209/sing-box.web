@@ -16,7 +16,7 @@ import (
 var transactionStagingName = regexp.MustCompile(`^config\.staging-[0-9a-f]{32}$`)
 
 // DirectoryTransaction retains the previous config until the caller has
-// successfully started the core. Restore is safe to call repeatedly.
+// durably recorded the successful copy. Restore is safe to call repeatedly.
 type DirectoryTransaction struct {
 	layout        paths.Layout
 	staging       string

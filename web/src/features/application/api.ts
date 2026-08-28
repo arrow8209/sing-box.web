@@ -4,7 +4,7 @@ import type { ApplyResult, PreviewResult, ValidationResult } from "./types";
 export interface ApplicationApi {
   preview(profileId: string, revision: number): Promise<PreviewResult>;
   validate(profileId: string, revision: number): Promise<ValidationResult>;
-  apply(profileId: string, body: { revision: number; confirmedConfigDigest?: string }): Promise<ApplyResult>;
+  apply(profileId: string, body: { revision: number }): Promise<ApplyResult>;
 }
 
 export const applicationApi: ApplicationApi = {

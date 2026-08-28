@@ -18,8 +18,7 @@ const applyRequestLimit = 1024
 type Handler struct{ coordinator *Coordinator }
 
 type applyBody struct {
-	Revision              uint64 `json:"revision"`
-	ConfirmedConfigDigest string `json:"confirmedConfigDigest"`
+	Revision uint64 `json:"revision"`
 }
 
 func NewHandler(coordinator *Coordinator) *Handler { return &Handler{coordinator: coordinator} }
@@ -54,11 +53,11 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Once an application request has entered the lifecycle transaction, a
-	// disconnected browser must not strand the core between Stop and recovery.
+	// Once a copy request has entered its directory transaction, a disconnected
+	// browser must not strand config/ between replacement and restoration.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
-	result, err := h.coordinator.Apply(ctx, ApplyRequest{ProfileID: id, Revision: body.Revision, ConfirmedConfigDigest: body.ConfirmedConfigDigest})
+	result, err := h.coordinator.Apply(ctx, ApplyRequest{ProfileID: id, Revision: body.Revision})
 	if err != nil {
 		h.writeApplyError(w, err)
 		return
@@ -80,15 +79,9 @@ func (h *Handler) writeApplyError(w http.ResponseWriter, err error) {
 	case errors.Is(err, rules.ErrResourceNotDownloaded), errors.Is(err, rules.ErrResourceFileDrift):
 		apierror.Write(w, http.StatusBadRequest, apierror.Error{Code: "rule_resource_unavailable", Message: "规则资源尚不可用，请先更新网络规则", Stage: "check_config"})
 	case errors.Is(err, ErrExternalDrift):
-		digest, _ := DigestDirectory(h.coordinator.core.Layout().ConfigDir)
-		apierror.Write(w, http.StatusConflict, apierror.Error{
-			Code: "config_external_drift", Message: "正式配置已在主机侧变更，请确认后重试", Stage: "swap_config",
-			Details: map[string]string{"confirmationDigest": digest},
-		})
-	case errors.Is(err, ErrStartFailed):
-		apierror.Write(w, http.StatusBadGateway, apierror.Error{Code: "core_start_failed", Message: "新配置启动失败，已尝试恢复此前配置和核心", Stage: "start_core"})
+		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "config_copy_conflict", Message: "配置目录在复制期间发生变更，请重试", Stage: "copy_config"})
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		apierror.Write(w, http.StatusGatewayTimeout, apierror.Error{Code: "application_timeout", Message: "配置应用超时，正在以服务器状态为准恢复", Stage: "recover"})
+		apierror.Write(w, http.StatusGatewayTimeout, apierror.Error{Code: "application_timeout", Message: "配置检测或复制超时，请检查配置目录后重试", Stage: "restore_config"})
 	default:
 		apierror.WriteError(w, err)
 	}

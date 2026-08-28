@@ -77,7 +77,7 @@ describe("配置应用", () => {
     };
     const store = createApplicationStore(profileStore, api);
     const result = await store.apply();
-    expect(api.apply).toHaveBeenCalledWith(profileId, { revision: 4, confirmedConfigDigest: undefined });
+    expect(api.apply).toHaveBeenCalledWith(profileId, { revision: 4 });
     expect(result?.applied).toBe(false);
     expect(store.validation.value).toEqual(failed);
     expect(store.error.value).toBeNull();
@@ -98,16 +98,14 @@ describe("配置应用", () => {
     expect(store.validation.value?.valid).toBe(true);
   });
 
-  it("正式配置漂移时只保留服务端确认摘要", async () => {
+  it("配置复制冲突时显示服务端错误", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
-    const digest = "d".repeat(64);
     const api: ApplicationApi = {
       preview: vi.fn(), validate: vi.fn(),
-      apply: vi.fn(async () => { throw new ApiError(409, { code: "config_external_drift", message: "配置漂移", details: { confirmationDigest: digest } }); })
+      apply: vi.fn(async () => { throw new ApiError(409, { code: "config_copy_conflict", message: "配置目录在复制期间发生变更，请重试" }); })
     };
     const store = createApplicationStore(profileStore, api);
     expect(await store.apply()).toBeNull();
-    expect(store.driftDigest.value).toBe(digest);
-    expect(store.error.value).toBeNull();
+    expect(store.error.value).toEqual({ code: "config_copy_conflict", message: "配置目录在复制期间发生变更，请重试", stage: undefined, fieldPath: undefined, output: "" });
   });
 });

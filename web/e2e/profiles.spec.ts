@@ -45,8 +45,8 @@ test("创建、复制、改名和删除档案", async ({ page }) => {
   await expect(profileActions.getByRole("button")).toHaveText(["应用", "复制", "重命名", "删除"]);
   await expect(profileActions.getByRole("button", { name: "应用", exact: true })).toBeEnabled();
   await profileActions.getByRole("button", { name: "应用", exact: true }).click();
-  await expect(page.getByText("配置检测通过，已复制到运行目录并重新启动 sing-box。")).toBeVisible();
-  await expect(page.getByRole("img", { name: "sing-box 已启动，并已加载最新配置" })).toBeVisible();
+  await expect(page.getByText("配置检测通过，已复制配置文件。")).toBeVisible();
+  await expect(page.getByRole("img", { name: "sing-box 未启动，也未加载配置" })).toBeVisible();
   await profileActions.getByRole("button", { name: "复制" }).click();
   await expect(page.getByRole("heading", { name: "E2E 家庭出口 副本" })).toBeVisible();
   await expect(page.getByTitle("切换到 E2E 家庭出口", { exact: true })).toBeVisible();
@@ -63,8 +63,6 @@ test("创建、复制、改名和删除档案", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "E2E 家庭出口" })).toBeVisible();
   await profileActions.getByRole("button", { name: "删除" }).click();
   await page.getByLabel("确认名称").fill("E2E 家庭出口");
-  await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
-  await page.getByRole("dialog", { name: "删除档案" }).getByLabel("停止核心并删除当前配置").check();
   await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
   await expect(page.locator(".config-name")).toHaveCount(0);
 });

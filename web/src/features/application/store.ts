@@ -6,8 +6,8 @@ import type { ApplicationError, ApplyResult, PreviewResult, ValidationResult } f
 
 export interface ApplicationStore {
   previewResult: Ref<PreviewResult | null>; validation: Ref<ValidationResult | null>; error: Ref<ApplicationError | null>;
-  applying: Ref<boolean>; driftDigest: Ref<string | null>;
-  preview(): Promise<void>; validate(): Promise<void>; apply(confirmedConfigDigest?: string): Promise<ApplyResult | null>; clear(): void; dispose(): void;
+  applying: Ref<boolean>;
+  preview(): Promise<void>; validate(): Promise<void>; apply(): Promise<ApplyResult | null>; clear(): void; dispose(): void;
 }
 
 function errorFrom(cause: unknown): ApplicationError {
@@ -23,7 +23,6 @@ export function createApplicationStore(profiles: ProfileStore = useProfileStore(
   const validation = ref<ValidationResult | null>(null);
   const error = ref<ApplicationError | null>(null);
   const applying = ref(false);
-  const driftDigest = ref<string | null>(null);
   const active = () => ({ id: profiles.activeProfileId.value, revision: profiles.draft.value?.revision });
   async function prepare(): Promise<{ id: string; revision: number } | null> {
     await profiles.flush(); const value = active();
@@ -31,31 +30,26 @@ export function createApplicationStore(profiles: ProfileStore = useProfileStore(
   }
   async function preview(): Promise<void> { error.value = null; const value = await prepare(); if (!value) return; try { previewResult.value = await api.preview(value.id, value.revision); } catch (cause) { error.value = errorFrom(cause); } }
   async function validate(): Promise<void> { error.value = null; validation.value = null; const value = await prepare(); if (!value) return; try { validation.value = await api.validate(value.id, value.revision); await profiles.refresh(); } catch (cause) { error.value = errorFrom(cause); } }
-  async function apply(confirmedConfigDigest?: string): Promise<ApplyResult | null> {
-    error.value = null; validation.value = null; driftDigest.value = null;
+  async function apply(): Promise<ApplyResult | null> {
+    error.value = null; validation.value = null;
     const value = await prepare();
     if (!value) return null;
     applying.value = true;
     try {
-      const result = await api.apply(value.id, { revision: value.revision, confirmedConfigDigest });
+      const result = await api.apply(value.id, { revision: value.revision });
       validation.value = result.validation;
       await profiles.refresh();
       return result;
     } catch (cause) {
-      if (isApiError(cause) && cause.status === 409 && cause.body.code === "config_external_drift") {
-        const digest = cause.body.details?.confirmationDigest;
-        driftDigest.value = typeof digest === "string" ? digest : null;
-      } else {
-        error.value = errorFrom(cause);
-      }
+      error.value = errorFrom(cause);
       return null;
     } finally {
       applying.value = false;
     }
   }
   return {
-    previewResult, validation, error, applying, driftDigest, preview, validate, apply,
-    clear: () => { error.value = null; validation.value = null; previewResult.value = null; driftDigest.value = null; },
+    previewResult, validation, error, applying, preview, validate, apply,
+    clear: () => { error.value = null; validation.value = null; previewResult.value = null; },
     dispose: () => undefined
   };
 }

@@ -17,6 +17,5 @@ export interface ApplicationError { code: string; message: string; stage?: strin
 
 export const stageLabels: Record<string, string> = {
   semantic_check: "语义检查", core_check: "核心检查", check_config: "检查配置",
-  stop_core: "停止核心", swap_config: "复制配置", start_core: "启动核心",
-  commit_state: "提交状态", recover: "恢复此前配置"
+  copy_config: "复制配置", restore_config: "恢复此前配置"
 };
