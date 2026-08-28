@@ -61,15 +61,20 @@ describe("配置编辑器", () => {
     expect(wrapper.text()).not.toContain("订阅");
   });
 
-  it("通用设置只显示没有专属页面的基础日志参数", () => {
+  it("通用设置显示工作模式、API 与基础日志参数", () => {
     const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
+    expect(wrapper.text()).toContain("工作模式与 API");
     expect(wrapper.text()).toContain("日志设置");
     expect(wrapper.text()).toContain("参数归属");
     expect(wrapper.findAll(".setting-row")).toHaveLength(4);
+    expect(wrapper.findAll('[role="radio"]')).toHaveLength(3);
     expect(wrapper.findAll(".config-map-item")).toHaveLength(0);
+    expect(wrapper.get('[role="radio"][aria-label="规则"]').attributes("aria-checked")).toBe("true");
+    expect((wrapper.get('[aria-label="API 监听地址"]').element as HTMLInputElement).value).toBe("127.0.0.1:20213");
+    expect((wrapper.get('[aria-label="API 密钥"]').element as HTMLInputElement).value).toBe("");
     expect((wrapper.get('[aria-label="日志等级"]').element as HTMLSelectElement).value).toBe("info");
-    expect((wrapper.get('[aria-label="日志文件"]').element as HTMLInputElement).value).toBe("");
+    expect((wrapper.get('[aria-label="日志保存路径"]').element as HTMLInputElement).value).toBe("data/logs/sing-box.log");
     expect(wrapper.get('[role="switch"][aria-label="启用日志"]').attributes("aria-checked")).toBe("true");
     expect(wrapper.get('[role="switch"][aria-label="显示时间戳"]').attributes("aria-checked")).toBe("false");
     expect(wrapper.text()).not.toContain("配置概览");
@@ -77,6 +82,18 @@ describe("配置编辑器", () => {
     expect(wrapper.text()).not.toContain("Clash API 端口");
     expect(wrapper.text()).not.toContain("网络接口");
     expect(wrapper.text()).not.toContain("启用 IPv6");
+  });
+
+  it("工作模式和随机 API 密钥只更新当前原型状态", async () => {
+    const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
+
+    await wrapper.get('[role="radio"][aria-label="全局"]').trigger("click");
+    expect(wrapper.get('[role="radio"][aria-label="全局"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.get('[role="radio"][aria-label="规则"]').attributes("aria-checked")).toBe("false");
+
+    await wrapper.get(".generate-button").trigger("click");
+    expect((wrapper.get('[aria-label="API 密钥"]').element as HTMLInputElement).value).toMatch(/^[0-9a-f]{64}$/);
+    expect(wrapper.emitted("update")).toBeUndefined();
   });
 
   it("通用设置只改日志目标字段并保留未知字段和大整数文本", async () => {
@@ -96,7 +113,7 @@ describe("配置编辑器", () => {
     const mounted = () => mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
     const output = mounted();
-    await output.get('[aria-label="日志文件"]').setValue("logs/sing-box.log");
+    await output.get('[aria-label="日志保存路径"]').setValue("logs/sing-box.log");
     const outputDraft = output.emitted("update")?.[0]?.[0] as Draft;
     expect(JSON.parse(outputDraft.buffers.log).output).toBe("logs/sing-box.log");
 
