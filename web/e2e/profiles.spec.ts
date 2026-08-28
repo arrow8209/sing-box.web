@@ -16,7 +16,7 @@ test("创建、复制、改名和删除档案", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "E2E 家庭出口" })).toBeVisible();
   await expect(page.getByRole("group", { name: "档案操作" })).toHaveCount(0);
   await page.getByRole("link", { name: "打开配置工作台" }).click();
-  await expect(page.locator(".config-context-bar").getByRole("link", { name: "管理档案" })).toHaveAttribute("href", "/profiles");
+  await expect(page.locator(".config-context-bar").getByRole("link", { name: "管理档案" })).toHaveCount(0);
   await expect(page.getByRole("link", { name: /管理 E2E 家庭出口/ })).toHaveCount(0);
   const profileActions = page.getByRole("group", { name: "档案操作" });
   await expect(profileActions.getByRole("button")).toHaveText(["应用", "复制", "重命名", "删除"]);

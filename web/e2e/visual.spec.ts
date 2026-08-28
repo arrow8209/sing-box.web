@@ -90,6 +90,7 @@ for (const scenario of scenarios) {
     const applicationActions = contextBar.getByRole("group", { name: "配置操作" });
     const profileActions = contextBar.getByRole("group", { name: "档案操作" });
     await expect(contextBar).toBeVisible();
+    await expect(contextBar.getByRole("link", { name: "管理档案" })).toHaveCount(0);
     await expect(profileActions.getByRole("button")).toHaveText(["应用", "复制", "重命名", "删除"]);
     await expect(profileActions.getByRole("button", { name: "应用", exact: true })).toBeDisabled();
     await expect(applicationActions.getByRole("button")).toHaveText(["预览", "检查"]);
