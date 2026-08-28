@@ -105,6 +105,7 @@ func (s *store) corrupt(err error) error {
 
 func (s *store) validateMetas(metas []Meta) error {
 	seen := make(map[string]struct{}, len(metas))
+	currentConfigs := 0
 	for index, meta := range metas {
 		if !profileIDPattern.MatchString(meta.ID) {
 			return fmt.Errorf("profiles[%d].id 无效", index)
@@ -122,6 +123,12 @@ func (s *store) validateMetas(metas []Meta) error {
 		if meta.AppliedRevision != nil && (*meta.AppliedRevision == 0 || *meta.AppliedRevision > meta.DraftRevision) {
 			return fmt.Errorf("profiles[%d].appliedRevision 无效", index)
 		}
+		if meta.ConfigCurrent {
+			currentConfigs++
+			if meta.AppliedRevision == nil {
+				return fmt.Errorf("profiles[%d].configCurrent 缺少 appliedRevision", index)
+			}
+		}
 		if meta.AppliedResourceDigests == nil {
 			return fmt.Errorf("profiles[%d].appliedResourceDigests 不能为 null", index)
 		}
@@ -133,6 +140,9 @@ func (s *store) validateMetas(metas []Meta) error {
 		if err != nil || relative != meta.ID+".json" || filepath.IsAbs(relative) {
 			return fmt.Errorf("profiles[%d].id 派生的草稿路径无效", index)
 		}
+	}
+	if currentConfigs > 1 {
+		return fmt.Errorf("最多只能有一个档案对应当前 config 目录")
 	}
 	return nil
 }
@@ -151,7 +161,7 @@ func cloneDraft(source Draft) Draft {
 	for key, value := range source.EditorState {
 		result.EditorState[key] = append(json.RawMessage(nil), value...)
 	}
-	result.Bindings = append([]RuleBinding(nil), source.Bindings...)
+	result.Bindings = append([]RuleBinding{}, source.Bindings...)
 	return result
 }
 

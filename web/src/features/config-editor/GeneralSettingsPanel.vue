@@ -1,13 +1,13 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed } from "vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import type { Draft } from "@/features/profiles/types";
-import { applyGeneralSettingEdits, type GeneralSettingEdit } from "./general-settings";
+import { applyGeneralSettingEdits, type GeneralSettingEdit, type GeneralSettingsModule, type GeneralSettingsSave } from "./general-settings";
 import { isJsonObject } from "./json";
 
-const props = defineProps<{ draft: Draft; error?: string }>();
+const props = defineProps<{ draft: Draft; error?: string; experimentalError?: string }>();
 const emit = defineEmits<{
-  update: [draft: Draft, error?: string];
+  save: [payload: GeneralSettingsSave];
   editJson: [];
 }>();
 
@@ -19,46 +19,62 @@ const workModes = [
 ] as const;
 type WorkMode = (typeof workModes)[number]["value"];
 
-// These controls are interaction-prototype state only. They deliberately do
-// not change the draft or the server-side default profile.
-const workMode = ref<WorkMode>("rule");
-const apiController = ref("127.0.0.1:20213");
-const apiSecret = ref("");
-
 const log = computed(() => isJsonObject(props.draft.config.log) ? props.draft.config.log : {});
+const experimental = computed(() => isJsonObject(props.draft.config.experimental) ? props.draft.config.experimental : {});
+const clashApi = computed(() => isJsonObject(experimental.value.clash_api) ? experimental.value.clash_api : {});
+const workMode = computed<WorkMode>(() => workModes.some((item) => item.value === clashApi.value.default_mode)
+  ? clashApi.value.default_mode as WorkMode : "rule");
+const apiController = computed(() => typeof clashApi.value.external_controller === "string" ? clashApi.value.external_controller : "127.0.0.1:20124");
+const apiSecret = computed(() => typeof clashApi.value.secret === "string" ? clashApi.value.secret : "");
 const logEnabled = computed(() => log.value.disabled !== true);
 const logLevel = computed(() => typeof log.value.level === "string" ? log.value.level : "info");
 const logOutput = computed(() => typeof log.value.output === "string" && log.value.output.trim() ? log.value.output : defaultLogPath);
 const timestampEnabled = computed(() => log.value.timestamp === true);
 
-function update(edits: readonly GeneralSettingEdit[]): void {
-  const result = applyGeneralSettingEdits(props.draft, edits);
-  emit("update", result.draft, result.error?.message);
+function update(module: GeneralSettingsModule, edits: readonly GeneralSettingEdit[]): void {
+  const result = applyGeneralSettingEdits(props.draft, module, edits);
+  emit("save", { draft: result.draft, module, error: result.error?.message });
 }
 
 function changeLevel(event: Event): void {
-  update([{ path: ["level"], value: (event.currentTarget as HTMLSelectElement).value }]);
+  update("log", [{ path: ["level"], value: (event.currentTarget as HTMLSelectElement).value }]);
 }
 
 function changeOutput(event: Event): void {
   const input = event.currentTarget as HTMLInputElement;
   const value = input.value.trim() || defaultLogPath;
   input.value = value;
-  update([{ path: ["output"], value }]);
+  update("log", [{ path: ["output"], value }]);
 }
 
 function setLogEnabled(enabled: boolean): void {
-  update([{ path: ["disabled"], value: !enabled }]);
+  update("log", [{ path: ["disabled"], value: !enabled }]);
 }
 
 function setTimestamp(enabled: boolean): void {
-  update([{ path: ["timestamp"], value: enabled }]);
+  update("log", [{ path: ["timestamp"], value: enabled }]);
+}
+
+function setWorkMode(mode: WorkMode): void {
+  update("experimental", [{ path: ["clash_api", "default_mode"], value: mode }]);
+}
+
+function changeApiController(event: Event): void {
+  const input = event.currentTarget as HTMLInputElement;
+  const value = input.value.trim();
+  input.value = value;
+  update("experimental", [{ path: ["clash_api", "external_controller"], value }]);
+}
+
+function changeApiSecret(event: Event): void {
+  update("experimental", [{ path: ["clash_api", "secret"], value: (event.currentTarget as HTMLInputElement).value }]);
 }
 
 function generateApiSecret(): void {
   const bytes = new Uint8Array(32);
   globalThis.crypto.getRandomValues(bytes);
-  apiSecret.value = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  const secret = Array.from(bytes, (value) => value.toString(16).padStart(2, "0")).join("");
+  update("experimental", [{ path: ["clash_api", "secret"], value: secret }]);
 }
 </script>
 
@@ -88,7 +104,7 @@ function generateApiSecret(): void {
                 </div>
               </div>
               <div class="mode-options" role="radiogroup" aria-label="工作模式">
-                <button v-for="item in workModes" :key="item.value" class="mode-option" :class="{ active: workMode === item.value }" type="button" role="radio" :aria-label="item.label" :aria-checked="workMode === item.value" @click="workMode = item.value"><strong>{{ item.label }}</strong><small>{{ item.description }}</small></button>
+                <button v-for="item in workModes" :key="item.value" class="mode-option" :class="{ active: workMode === item.value }" type="button" role="radio" :aria-label="item.label" :aria-checked="workMode === item.value" :disabled="Boolean(experimentalError)" @click="setWorkMode(item.value)"><strong>{{ item.label }}</strong><small>{{ item.description }}</small></button>
               </div>
             </section>
 
@@ -98,7 +114,7 @@ function generateApiSecret(): void {
                 <strong>API 监听地址</strong>
                 <small>默认仅允许本机访问控制接口</small>
               </span>
-              <input v-model="apiController" class="api-control" aria-label="API 监听地址" spellcheck="false" />
+              <input :value="apiController" class="api-control" aria-label="API 监听地址" :disabled="Boolean(experimentalError)" spellcheck="false" @change="changeApiController" />
             </label>
 
             <div class="api-setting-row">
@@ -108,11 +124,12 @@ function generateApiSecret(): void {
                 <small>用于验证控制接口请求</small>
               </div>
               <div class="secret-control api-control">
-                <input v-model="apiSecret" aria-label="API 密钥" autocomplete="off" placeholder="点击右侧按钮生成" spellcheck="false" />
-                <button class="generate-button" type="button" @click="generateApiSecret"><AppIcon name="rotate" :size="13" />随机生成</button>
+                <input :value="apiSecret" type="password" aria-label="API 密钥" :disabled="Boolean(experimentalError)" autocomplete="new-password" placeholder="点击右侧按钮生成" spellcheck="false" @change="changeApiSecret" />
+                <button class="generate-button" type="button" :disabled="Boolean(experimentalError)" @click="generateApiSecret"><AppIcon name="rotate" :size="13" />随机生成</button>
               </div>
             </div>
           </div>
+          <p v-if="experimentalError" class="panel-error" role="alert">{{ experimentalError }}</p>
         </article>
 
         <article class="card log-settings-card">

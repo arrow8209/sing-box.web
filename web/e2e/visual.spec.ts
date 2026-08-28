@@ -113,12 +113,12 @@ for (const scenario of scenarios) {
     await expect(page.locator(".application-actions")).toHaveCount(1);
     await expect(page.getByRole("tab")).toHaveCount(7);
     await expect(page.getByRole("tab", { name: "端点" })).toHaveCount(0);
-    await expect(page.getByRole("tab", { name: "通用设置" })).toHaveAttribute("aria-selected", "true");
+    await expect(page.getByRole("tab", { name: "常规设置" })).toHaveAttribute("aria-selected", "true");
     await expect(page.getByRole("heading", { name: "工作模式与 API" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "日志设置" })).toBeVisible();
     await expect(page.getByRole("heading", { name: "参数归属" })).toBeVisible();
     await expect(page.getByRole("radio", { name: "规则" })).toHaveAttribute("aria-checked", "true");
-    await expect(page.getByLabel("API 监听地址")).toHaveValue("127.0.0.1:20213");
+    await expect(page.getByLabel("API 监听地址")).toHaveValue("127.0.0.1:20124");
     await expect(page.getByLabel("日志保存路径")).toHaveValue("data/logs/sing-box.log");
     await expect(page.locator(".general-settings-panel .setting-row")).toHaveCount(4);
     await expect(page.getByLabel("Mixed 入站端口")).toHaveCount(0);

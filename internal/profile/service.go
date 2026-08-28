@@ -183,7 +183,7 @@ func (s *Service) Create(ctx context.Context, input CreateInput) (Meta, Draft, e
 	if err != nil {
 		return Meta{}, Draft{}, err
 	}
-	draft := Draft{ProfileID: id, Revision: 1, Config: seed.Config, Buffers: seed.Buffers, EditorState: map[string]json.RawMessage{}, Bindings: bindings, SavedAt: seed.CreatedAt.UTC()}
+	draft := Draft{ProfileID: id, Revision: 1, Config: seed.Config, Buffers: seed.Buffers, EditorState: map[string]json.RawMessage{}, Bindings: append([]RuleBinding{}, bindings...), SavedAt: seed.CreatedAt.UTC()}
 	if err := validateDraftEnvelope(draft, maxModuleBytes, maxDraftBytes); err != nil {
 		return Meta{}, Draft{}, err
 	}
@@ -367,7 +367,7 @@ func (s *Service) SaveDraft(ctx context.Context, profileID, ifMatch string, inpu
 	if input.EditorState != nil {
 		nextEditorState = cloneConfig(input.EditorState)
 	}
-	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, Config: nextConfig, Buffers: nextBuffers, EditorState: nextEditorState, Bindings: append([]RuleBinding(nil), input.Bindings...), SavedAt: s.clock().UTC()}
+	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, Config: nextConfig, Buffers: nextBuffers, EditorState: nextEditorState, Bindings: append([]RuleBinding{}, input.Bindings...), SavedAt: s.clock().UTC()}
 	if err := validateDraftEnvelope(next, maxModuleBytes, maxDraftBytes); err != nil {
 		return Draft{}, "", err
 	}
@@ -491,6 +491,9 @@ func (s *Service) MarkApplied(ctx context.Context, result AppliedResult) error {
 	validation := result.Validation
 	validation.Revision = result.Revision
 	validation.CheckedAt = validation.CheckedAt.UTC()
+	for current := range metas {
+		metas[current].ConfigCurrent = current == index
+	}
 	metas[index].AppliedRevision = &revision
 	metas[index].AppliedDigest = result.Digest
 	metas[index].AppliedResourceDigests = cloneStringMap(result.ResourceDigests)

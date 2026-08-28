@@ -42,6 +42,7 @@ func TestValidateManagedStateRejectsDuplicateIDsAndInvalidRevision(t *testing.T)
 	}{
 		{name: "duplicate", body: `{"version":1,"profiles":[{"id":"` + strings.Repeat("a", 32) + `","name":"A","draftRevision":1,"appliedRevision":null,"appliedDigest":"","appliedResourceDigests":{},"appliedAt":null,"needsApply":true,"lastValidation":null},{"id":"` + strings.Repeat("a", 32) + `","name":"B","draftRevision":1,"appliedRevision":null,"appliedDigest":"","appliedResourceDigests":{},"appliedAt":null,"needsApply":true,"lastValidation":null}]}`},
 		{name: "revision", body: `{"version":1,"profiles":[{"id":"` + strings.Repeat("b", 32) + `","name":"A","draftRevision":0,"appliedRevision":null,"appliedDigest":"","appliedResourceDigests":{},"appliedAt":null,"needsApply":true,"lastValidation":null}]}`},
+		{name: "multiple current configs", body: `{"version":1,"profiles":[{"id":"` + strings.Repeat("c", 32) + `","name":"A","draftRevision":1,"appliedRevision":1,"appliedDigest":"a","appliedResourceDigests":{},"appliedAt":null,"configCurrent":true,"needsApply":false,"lastValidation":null},{"id":"` + strings.Repeat("d", 32) + `","name":"B","draftRevision":1,"appliedRevision":1,"appliedDigest":"b","appliedResourceDigests":{},"appliedAt":null,"configCurrent":true,"needsApply":false,"lastValidation":null}]}`},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			layout, err := paths.Resolve(t.TempDir())

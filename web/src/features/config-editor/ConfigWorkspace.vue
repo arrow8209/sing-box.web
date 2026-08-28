@@ -16,6 +16,7 @@ import AdvancedPanel from "./AdvancedPanel.vue";
 import ConfigTabs from "./ConfigTabs.vue";
 import DnsConfigPanel from "./DnsConfigPanel.vue";
 import GeneralSettingsPanel from "./GeneralSettingsPanel.vue";
+import type { GeneralSettingsSave } from "./general-settings";
 import InboundConfigPanel from "./InboundConfigPanel.vue";
 import ModuleJsonDialog from "./ModuleJsonDialog.vue";
 import OutboundConfigPanel from "./OutboundConfigPanel.vue";
@@ -189,7 +190,7 @@ function saveDns(payload: DnsPanelSave): void {
   result.draft.bindings = payload.bindings.map((binding) => ({ ...binding }));
   applyResult(result.draft, "dns", result.error?.message);
 }
-function fromGeneralSettings(next: Draft, error?: string): void { applyResult(next, "log", error); }
+function fromGeneralSettings(payload: GeneralSettingsSave): void { applyResult(payload.draft, payload.module, payload.error); }
 async function preview(): Promise<void> { await application.preview(); previewOpen.value = Boolean(application.previewResult.value); }
 async function validate(): Promise<void> { await application.validate(); }
 async function applyProfile(): Promise<void> {
@@ -227,7 +228,7 @@ function jumpTo(path: string): void {
       </header>
       <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
       <ConfigTabs :active="active" @select="active = $event" />
-      <GeneralSettingsPanel v-if="active === 'general'" :draft="draft" :error="errors.log" @update="fromGeneralSettings" @edit-json="dialogModule = 'log'" />
+      <GeneralSettingsPanel v-if="active === 'general'" :draft="draft" :error="errors.log" :experimental-error="errors.experimental" @save="fromGeneralSettings" @edit-json="dialogModule = 'log'" />
       <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" />
       <OutboundConfigPanel v-else-if="active === 'outbounds'" :draft="draft" :error="errors.outbounds" @edit-json="dialogModule = 'outbounds'" @save="saveOutbounds" />
       <RouteConfigPanel v-else-if="active === 'route'" :draft="draft" :error="errors.route" @edit-json="dialogModule = 'route'" @save="saveRoute" />

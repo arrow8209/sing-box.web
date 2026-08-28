@@ -20,7 +20,7 @@ function generalSettingsDraft(): Draft {
       experimental: {
         future: { enabled: true },
         cache_file: { enabled: true, path: "cache.db", store_fakeip: true },
-        clash_api: { external_controller: "127.0.0.1:20124" }
+        clash_api: { default_mode: "rule", external_controller: "127.0.0.1:20124", secret: "saved-secret" }
       }
     },
     buffers: {
@@ -29,7 +29,7 @@ function generalSettingsDraft(): Draft {
       inbounds: '[{"type":"mixed","tag":"mixed-in","listen_port":20122}]',
       outbounds: '[{"type":"direct","tag":"direct"}]',
       route: '{"default_interface":"eth0","rules":[{"action":"route","outbound":"direct"}]}',
-      experimental: '{"future":{"enabled":true},"cache_file":{"enabled":true,"path":"cache.db","store_fakeip":true},"clash_api":{"external_controller":"127.0.0.1:20124"}}'
+      experimental: '{"future":{"enabled":true,"large":9007199254740993},"cache_file":{"enabled":true,"path":"cache.db","store_fakeip":true},"clash_api":{"default_mode":"rule","external_controller":"127.0.0.1:20124","secret":"saved-secret"}}'
     },
     bindings: [],
     savedAt: "2026-08-28T00:00:00Z"
@@ -40,7 +40,7 @@ describe("配置编辑器", () => {
   it("按固定顺序显示七个标签且不提供端点模式", () => {
     const wrapper = mount(ConfigTabs, { props: { active: "general" } });
     expect(wrapper.findAll("button").map((button) => button.text())).toEqual([
-      "通用设置",
+      "常规设置",
       "入站",
       "出站",
       "路由",
@@ -61,7 +61,7 @@ describe("配置编辑器", () => {
     expect(wrapper.text()).not.toContain("订阅");
   });
 
-  it("通用设置显示工作模式、API 与基础日志参数", () => {
+  it("常规设置显示草稿中的工作模式、API 与基础日志参数", () => {
     const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
     expect(wrapper.text()).toContain("工作模式与 API");
@@ -71,8 +71,9 @@ describe("配置编辑器", () => {
     expect(wrapper.findAll('[role="radio"]')).toHaveLength(3);
     expect(wrapper.findAll(".config-map-item")).toHaveLength(0);
     expect(wrapper.get('[role="radio"][aria-label="规则"]').attributes("aria-checked")).toBe("true");
-    expect((wrapper.get('[aria-label="API 监听地址"]').element as HTMLInputElement).value).toBe("127.0.0.1:20213");
-    expect((wrapper.get('[aria-label="API 密钥"]').element as HTMLInputElement).value).toBe("");
+    expect((wrapper.get('[aria-label="API 监听地址"]').element as HTMLInputElement).value).toBe("127.0.0.1:20124");
+    expect((wrapper.get('[aria-label="API 密钥"]').element as HTMLInputElement).value).toBe("saved-secret");
+    expect(wrapper.get('[aria-label="API 密钥"]').attributes("type")).toBe("password");
     expect((wrapper.get('[aria-label="日志等级"]').element as HTMLSelectElement).value).toBe("info");
     expect((wrapper.get('[aria-label="日志保存路径"]').element as HTMLInputElement).value).toBe("data/logs/sing-box.log");
     expect(wrapper.get('[role="switch"][aria-label="启用日志"]').attributes("aria-checked")).toBe("true");
@@ -84,24 +85,37 @@ describe("配置编辑器", () => {
     expect(wrapper.text()).not.toContain("启用 IPv6");
   });
 
-  it("工作模式和随机 API 密钥只更新当前原型状态", async () => {
-    const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
+  it("工作模式、API 监听地址和密钥写入 experimental 草稿并保留未知整数", async () => {
+    const mode = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
+    await mode.get('[role="radio"][aria-label="全局"]').trigger("click");
+    const modeUpdate = mode.emitted("save")?.[0]?.[0] as { draft: Draft; module: string };
+    expect(modeUpdate.module).toBe("experimental");
+    expect(JSON.parse(modeUpdate.draft.buffers.experimental).clash_api.default_mode).toBe("global");
+    expect(modeUpdate.draft.buffers.experimental).toContain("9007199254740993");
 
-    await wrapper.get('[role="radio"][aria-label="全局"]').trigger("click");
-    expect(wrapper.get('[role="radio"][aria-label="全局"]').attributes("aria-checked")).toBe("true");
-    expect(wrapper.get('[role="radio"][aria-label="规则"]').attributes("aria-checked")).toBe("false");
+    const controller = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
+    await controller.get('[aria-label="API 监听地址"]').setValue(" 127.0.0.1:9090 ");
+    const controllerDraft = (controller.emitted("save")?.[0]?.[0] as { draft: Draft }).draft;
+    expect(JSON.parse(controllerDraft.buffers.experimental).clash_api.external_controller).toBe("127.0.0.1:9090");
 
-    await wrapper.get(".generate-button").trigger("click");
-    expect((wrapper.get('[aria-label="API 密钥"]').element as HTMLInputElement).value).toMatch(/^[0-9a-f]{64}$/);
-    expect(wrapper.emitted("update")).toBeUndefined();
+    const secret = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
+    await secret.get('[aria-label="API 密钥"]').setValue("manual-secret");
+    const secretDraft = (secret.emitted("save")?.[0]?.[0] as { draft: Draft }).draft;
+    expect(JSON.parse(secretDraft.buffers.experimental).clash_api.secret).toBe("manual-secret");
+
+    const generated = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
+    await generated.get(".generate-button").trigger("click");
+    const generatedDraft = (generated.emitted("save")?.[0]?.[0] as { draft: Draft }).draft;
+    const generatedSecret = JSON.parse(generatedDraft.buffers.experimental).clash_api.secret as string;
+    expect(generatedSecret).toMatch(/^[0-9a-f]{64}$/);
   });
 
-  it("通用设置只改日志目标字段并保留未知字段和大整数文本", async () => {
+  it("常规设置只改日志目标字段并保留未知字段和大整数文本", async () => {
     const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
     await wrapper.get('[aria-label="日志等级"]').setValue("debug");
-    const logUpdate = wrapper.emitted("update")?.[0];
-    const next = logUpdate?.[0] as Draft;
+    const logUpdate = wrapper.emitted("save")?.[0]?.[0] as { draft: Draft };
+    const next = logUpdate.draft;
     expect(next.buffers.log).toContain('"level": "debug"');
     expect(next.buffers.log).toContain('"large":9007199254740993');
     expect(next.buffers.inbounds).toBe(generalSettingsDraft().buffers.inbounds);
@@ -109,26 +123,26 @@ describe("配置编辑器", () => {
     expect(next.buffers.dns).toBe(generalSettingsDraft().buffers.dns);
   });
 
-  it("通用设置把输出路径和两个开关写入日志模块", async () => {
+  it("常规设置把输出路径和两个开关写入日志模块", async () => {
     const mounted = () => mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
 
     const output = mounted();
     await output.get('[aria-label="日志保存路径"]').setValue("logs/sing-box.log");
-    const outputDraft = output.emitted("update")?.[0]?.[0] as Draft;
+    const outputDraft = (output.emitted("save")?.[0]?.[0] as { draft: Draft }).draft;
     expect(JSON.parse(outputDraft.buffers.log).output).toBe("logs/sing-box.log");
 
     const enabled = mounted();
     await enabled.get('[role="switch"][aria-label="启用日志"]').trigger("click");
-    const enabledDraft = enabled.emitted("update")?.[0]?.[0] as Draft;
+    const enabledDraft = (enabled.emitted("save")?.[0]?.[0] as { draft: Draft }).draft;
     expect(JSON.parse(enabledDraft.buffers.log).disabled).toBe(true);
 
     const timestamp = mounted();
     await timestamp.get('[role="switch"][aria-label="显示时间戳"]').trigger("click");
-    const timestampDraft = timestamp.emitted("update")?.[0]?.[0] as Draft;
+    const timestampDraft = (timestamp.emitted("save")?.[0]?.[0] as { draft: Draft }).draft;
     expect(JSON.parse(timestampDraft.buffers.log).timestamp).toBe(true);
   });
 
-  it("通用设置保留日志完整 JSON 入口", async () => {
+  it("常规设置保留日志完整 JSON 入口", async () => {
     const wrapper = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
     await wrapper.get(".json-button").trigger("click");
     expect(wrapper.emitted("editJson")?.[0]).toEqual([]);

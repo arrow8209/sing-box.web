@@ -31,7 +31,7 @@ export function applyModuleBuffer(draft: Draft, module: string, text: string): B
     ...draft,
     config: { ...draft.config },
     buffers: { ...draft.buffers },
-    bindings: draft.bindings.map((binding) => ({ ...binding }))
+    bindings: (Array.isArray(draft.bindings) ? draft.bindings : []).map((binding) => ({ ...binding }))
   };
   next.buffers[module] = text;
   if (text.trim() === "") {

@@ -121,7 +121,7 @@ func TestApplicationChecksAndCopiesConfigWithoutOperatingRunningCore(t *testing.
 	assertPersistentStaging(t, env.workDir, profileID)
 	assertNoTransactionDirs(t, env.workDir)
 	metas, err := env.profiles.List(context.Background())
-	if err != nil || len(metas) != 1 || metas[0].NeedsApply || metas[0].AppliedRevision == nil || *metas[0].AppliedRevision != revision {
+	if err != nil || len(metas) != 1 || !metas[0].ConfigCurrent || metas[0].NeedsApply || metas[0].AppliedRevision == nil || *metas[0].AppliedRevision != revision {
 		t.Fatalf("metas=%+v err=%v", metas, err)
 	}
 }
@@ -144,7 +144,7 @@ func TestApplicationCopiesConfigWithoutStartingStoppedCore(t *testing.T) {
 		t.Fatalf("配置未复制: %v", statErr)
 	}
 	metas, listErr := env.profiles.List(context.Background())
-	if listErr != nil || len(metas) != 1 || metas[0].NeedsApply || metas[0].AppliedRevision == nil || *metas[0].AppliedRevision != revision {
+	if listErr != nil || len(metas) != 1 || !metas[0].ConfigCurrent || metas[0].NeedsApply || metas[0].AppliedRevision == nil || *metas[0].AppliedRevision != revision {
 		t.Fatalf("metas=%+v err=%v", metas, listErr)
 	}
 	assertNoTransactionDirs(t, env.workDir)

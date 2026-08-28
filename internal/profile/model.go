@@ -19,6 +19,7 @@ type Meta struct {
 	AppliedDigest          string             `json:"appliedDigest"`
 	AppliedResourceDigests map[string]string  `json:"appliedResourceDigests"`
 	AppliedAt              *time.Time         `json:"appliedAt"`
+	ConfigCurrent          bool               `json:"configCurrent,omitempty"`
 	NeedsApply             bool               `json:"needsApply"`
 	LastValidation         *ValidationSummary `json:"lastValidation"`
 	QuarantinedError       string             `json:"quarantinedError,omitempty"`

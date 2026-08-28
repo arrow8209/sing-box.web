@@ -7,14 +7,23 @@ export interface GeneralSettingEdit {
   value: unknown;
 }
 
+export type GeneralSettingsModule = "log" | "experimental";
+
+export interface GeneralSettingsSave {
+  draft: Draft;
+  module: GeneralSettingsModule;
+  error?: string;
+}
+
 export function applyGeneralSettingEdits(
   draft: Draft,
+  module: GeneralSettingsModule,
   edits: readonly GeneralSettingEdit[]
 ): ModuleSaveResult {
-  let source = draft.buffers.log;
-  if (!source?.trim()) source = JSON.stringify(draft.config.log ?? {}, null, 2);
+  let source = draft.buffers[module];
+  if (!source?.trim()) source = JSON.stringify(draft.config[module] ?? {}, null, 2);
 
-  const shapeError = validateModuleShape(source, "log", "object");
+  const shapeError = validateModuleShape(source, module, "object");
   if (shapeError) return { draft, error: shapeError };
 
   try {
@@ -24,10 +33,10 @@ export function applyGeneralSettingEdits(
       draft,
       error: {
         code: "invalid_module_shape",
-        message: "log 当前结构无法在通用设置中编辑，请改用完整 JSON",
-        fieldPath: "log"
+        message: `${module} 当前结构无法在常规设置中编辑，请改用完整 JSON`,
+        fieldPath: module
       }
     };
   }
-  return saveModuleBuffer(draft, "log", source);
+  return saveModuleBuffer(draft, module, source);
 }

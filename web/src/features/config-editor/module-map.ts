@@ -3,7 +3,7 @@ export type ConfigModule =
   | "ntp" | "certificate" | "certificate_providers" | "http_clients" | "network_namespaces" | "experimental";
 
 export const configTabs = [
-  { id: "general", label: "通用设置", modules: ["log"] },
+  { id: "general", label: "常规设置", modules: ["log"] },
   { id: "inbounds", label: "入站", modules: ["inbounds"] },
   { id: "outbounds", label: "出站", modules: ["outbounds"] },
   { id: "route", label: "路由", modules: ["route"] },

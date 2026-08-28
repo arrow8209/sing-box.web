@@ -85,11 +85,51 @@ func TestDuplicateProfileDoesNotInheritApplicationState(t *testing.T) {
 	if copiedMeta.Name != "家庭出口 副本" || copiedMeta.DraftRevision != 1 || !copiedMeta.NeedsApply {
 		t.Fatalf("copied meta=%+v", copiedMeta)
 	}
-	if copiedMeta.AppliedRevision != nil || copiedMeta.AppliedDigest != "" || copiedMeta.AppliedAt != nil || copiedMeta.LastValidation != nil {
+	if copiedMeta.AppliedRevision != nil || copiedMeta.AppliedDigest != "" || copiedMeta.AppliedAt != nil || copiedMeta.ConfigCurrent || copiedMeta.LastValidation != nil {
 		t.Fatalf("application state leaked into copy: %+v", copiedMeta)
 	}
 	if copiedDraft.ProfileID != copiedMeta.ID || copiedDraft.Revision != 1 || copiedDraft.Buffers["route"] != draft.Buffers["route"] {
 		t.Fatalf("copied draft=%+v", copiedDraft)
+	}
+}
+
+func TestOnlyMostRecentlyAppliedProfileOwnsCurrentConfig(t *testing.T) {
+	service, _ := newTestService(t)
+	first, firstDraft, err := service.Create(context.Background(), CreateInput{Name: "A"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, secondDraft, err := service.Create(context.Background(), CreateInput{Name: "B"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	apply := func(id string, revision uint64, at time.Time) {
+		t.Helper()
+		if err := service.MarkApplied(context.Background(), AppliedResult{
+			ProfileID: id, Revision: revision, Digest: id, AppliedAt: at,
+			Validation: ValidationSummary{Valid: true, CheckedAt: at},
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply(first.ID, firstDraft.Revision, time.Unix(2, 0))
+	apply(second.ID, secondDraft.Revision, time.Unix(3, 0))
+
+	metas, err := service.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	current := ""
+	for _, meta := range metas {
+		if meta.ConfigCurrent {
+			if current != "" {
+				t.Fatalf("multiple current config profiles: %+v", metas)
+			}
+			current = meta.ID
+		}
+	}
+	if current != second.ID {
+		t.Fatalf("current=%q want=%q metas=%+v", current, second.ID, metas)
 	}
 }
 
@@ -141,6 +181,9 @@ func TestDraftEditorStatePersistsOutsideGeneratedConfig(t *testing.T) {
 	}
 	if err != nil || !bytes.Equal(compact.Bytes(), state) {
 		t.Fatalf("editor state was not persisted, err=%v state=%s", err, draft.EditorState["outbounds"])
+	}
+	if draft.Bindings == nil {
+		t.Fatal("empty bindings were returned as null")
 	}
 }
 

@@ -181,7 +181,7 @@ function bufferText(): string {
 }
 
 function bindings() {
-  return props.draft.bindings.map((binding) => ({ ...binding }));
+  return (Array.isArray(props.draft.bindings) ? props.draft.bindings : []).map((binding) => ({ ...binding }));
 }
 
 function stateFrom(items = ruleItems.value, insertionPosition = editorState.value.insertionPosition): DnsEditorState {

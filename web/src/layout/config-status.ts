@@ -1,28 +1,57 @@
 import type { CoreStatus } from "@/features/core/types";
 import type { ProfileSummary } from "@/features/profiles/types";
 
-export type ProfileConfigState = "stopped" | "transition" | "unloaded" | "loaded" | "modified";
-export type ProfileConfigTone = "danger" | "neutral" | "success" | "warning";
+export type ProfileIndicatorTone = "success" | "warning";
 
-export interface ProfileConfigStatus {
-  state: ProfileConfigState;
-  icon: "power-off" | "core-transition" | "config-unloaded" | "config-loaded" | "config-pending";
-  tone: ProfileConfigTone;
+export interface ProfileIndicator {
+  icon: "power" | "config-loaded" | "config-pending";
+  tone: ProfileIndicatorTone;
   label: string;
 }
 
-export function profileConfigStatus(profile: ProfileSummary, core: CoreStatus | null): ProfileConfigStatus {
-  if (core?.state === "starting" || core?.state === "stopping") {
-    return { state: "transition", icon: "core-transition", tone: "neutral", label: "sing-box 正在切换运行状态，尚未确认加载配置" };
+export interface ProfileConfigIndicators {
+  active: ProfileIndicator | null;
+  pending: ProfileIndicator | null;
+}
+
+// configCurrent is written with the atomic config copy. The fallbacks keep
+// profiles created before that field existed useful until their next apply,
+// while still selecting at most one profile.
+export function currentConfigProfileId(profiles: readonly ProfileSummary[], core: CoreStatus | null): string | null {
+  const marked = profiles.find((profile) => profile.configCurrent);
+  if (marked) return marked.id;
+
+  let latest: ProfileSummary | undefined;
+  let latestTime = Number.NEGATIVE_INFINITY;
+  for (const profile of profiles) {
+    if (profile.appliedRevision === null) continue;
+    const appliedTime = profile.appliedAt ? new Date(profile.appliedAt).getTime() : Number.NEGATIVE_INFINITY;
+    if (!latest || (Number.isFinite(appliedTime) && appliedTime > latestTime)) {
+      latest = profile;
+      latestTime = appliedTime;
+    }
   }
-  if (core?.state !== "running") {
-    return { state: "stopped", icon: "power-off", tone: "danger", label: "sing-box 未启动，也未加载配置" };
-  }
-  if (core.currentProfileId !== profile.id) {
-    return { state: "unloaded", icon: "config-unloaded", tone: "neutral", label: "sing-box 已启动，但未加载此配置" };
-  }
-  if (profile.needsApply || core.appliedRevision !== profile.draftRevision) {
-    return { state: "modified", icon: "config-pending", tone: "warning", label: "sing-box 已启动并加载了此配置；配置有修改，尚未同步" };
-  }
-  return { state: "loaded", icon: "config-loaded", tone: "success", label: "sing-box 已启动，并已加载最新配置" };
+  if (latest) return latest.id;
+  return profiles.some((profile) => profile.id === core?.currentProfileId) ? core?.currentProfileId ?? null : null;
+}
+
+export function profileConfigIndicators(
+  profile: ProfileSummary,
+  core: CoreStatus | null,
+  currentProfileId: string | null,
+  locallyModified = false
+): ProfileConfigIndicators {
+  const current = profile.id === currentProfileId;
+  const started = current && core?.state === "running" && core.currentProfileId === profile.id;
+  const modified = locallyModified || profile.needsApply || profile.appliedRevision !== profile.draftRevision;
+  return {
+    active: !current ? null : started
+      ? { icon: "power", tone: "success", label: "已启动：sing-box 正在使用此配置" }
+      : { icon: "config-loaded", tone: "success", label: "应用中：此配置已同步到 config 目录" },
+    pending: !modified ? null : {
+      icon: "config-pending",
+      tone: "warning",
+      label: locallyModified ? "有修改尚未保存，也未同步到 config 目录" : "有修改尚未同步到 config 目录"
+    }
+  };
 }

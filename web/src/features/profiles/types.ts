@@ -19,6 +19,7 @@ export interface ProfileSummary {
   appliedRevision: number | null;
   appliedDigest: string;
   appliedAt: string | null;
+  configCurrent?: boolean;
   needsApply: boolean;
   lastValidation: ValidationSummary | null;
   quarantinedError?: string;

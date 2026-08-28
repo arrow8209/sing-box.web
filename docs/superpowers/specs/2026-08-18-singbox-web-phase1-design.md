@@ -10,6 +10,8 @@
 
 > 2026-08-28 停止核心覆盖：仪表盘“停止核心”接入受认证且要求 CSRF 的 `DELETE /core`。该操作只结束 CoreManager 当前持有的 sing-box 进程组，等待对应进程退出后返回，并将 `ExpectedRunning` 置为 `false`，避免 Web 重启后自动恢复。启动、重启和其他运行交互仍为页面演示状态。
 
+> 2026-08-28 配置状态与常规设置覆盖：侧栏将“当前应用/已启动”和“草稿有修改尚未同步到 `config/`”拆成两个独立图标；档案元数据只允许一个 `configCurrent`。一级“通用设置”改名为“常规设置”，工作模式、Clash API 监听地址和密钥直接维护当前草稿的 `experimental.clash_api`，不再使用页面演示值。
+
 ## 1. 背景
 
 当前仓库是一个零依赖的 sing-box Web 控制台交互原型。它已经覆盖仪表盘、多个配置档案、官方配置顶层模块、入站、出站、DNS、路由和设置等界面，但配置保存、规则资源、核心进程和运行操作仍是浏览器内的演示行为。
@@ -190,7 +192,8 @@ singbox-web admin set-password
 - `draftRevision`：最新服务器草稿修订，仅用于并发控制。
 - `appliedRevision`：最近成功应用的草稿修订；未应用时为空。
 - `appliedDigest`：最近生成配置和规则绑定的综合摘要。
-- `appliedAt`：最近成功启动时间。
+- `appliedAt`：最近成功复制到正式配置的时间。
+- `configCurrent`：该档案是否对应当前唯一正式 `config/`；全部档案中最多一个为真。
 - `needsApply`：草稿或规则资源是否晚于最近成功应用。
 - `lastValidation`：最近检查状态和错误摘要。
 
