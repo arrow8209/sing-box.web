@@ -98,8 +98,8 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
   await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
   expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
 
-  await page.goto("/profiles");
-  await page.getByRole("button", { name: "删除" }).click();
+  await page.goto("/workspace");
+  await page.getByRole("group", { name: "档案操作" }).getByRole("button", { name: "删除", exact: true }).click();
   await page.getByLabel("确认名称").fill("入站 E2E 配置");
   await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("button", { name: /入站 E2E 配置/ })).toHaveCount(0);

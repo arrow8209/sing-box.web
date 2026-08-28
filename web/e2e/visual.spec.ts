@@ -80,9 +80,7 @@ for (const scenario of scenarios) {
     await loginAndOpenProfile(page);
     await ensureVisualProfile(page);
     await setTheme(page, scenario.theme);
-    const profileActions = page.locator(".editor-actions");
-    await expect(profileActions.getByRole("button")).toHaveText(["应用", "复制", "重命名", "删除"]);
-    await expect(profileActions.getByRole("button", { name: "应用", exact: true })).toBeDisabled();
+    await expect(page.getByRole("group", { name: "档案操作" })).toHaveCount(0);
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-profiles.png`, { fullPage: true });
 
@@ -90,9 +88,11 @@ for (const scenario of scenarios) {
     await setTheme(page, scenario.theme);
     const contextBar = page.locator(".config-context-bar");
     const applicationActions = contextBar.getByRole("group", { name: "配置操作" });
+    const profileActions = contextBar.getByRole("group", { name: "档案操作" });
     await expect(contextBar).toBeVisible();
+    await expect(profileActions.getByRole("button")).toHaveText(["应用", "复制", "重命名", "删除"]);
+    await expect(profileActions.getByRole("button", { name: "应用", exact: true })).toBeDisabled();
     await expect(applicationActions.getByRole("button")).toHaveText(["预览", "检查"]);
-    await expect(applicationActions.getByRole("button", { name: "应用" })).toHaveCount(0);
     await expect(page.locator(".application-actions")).toHaveCount(1);
     await expect(page.getByRole("tab")).toHaveCount(7);
     await expect(page.getByRole("tab", { name: "端点" })).toHaveCount(0);

@@ -191,8 +191,8 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
     await expect(responsiveDialog).toBeHidden();
   }
 
-  await page.goto("/profiles");
-  await page.getByRole("button", { name: "删除" }).click();
+  await page.goto("/workspace");
+  await page.getByRole("group", { name: "档案操作" }).getByRole("button", { name: "删除", exact: true }).click();
   await page.getByLabel("确认名称").fill(profileName);
   await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("button", { name: new RegExp(profileName) })).toHaveCount(0);

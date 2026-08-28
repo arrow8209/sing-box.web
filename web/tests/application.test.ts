@@ -19,7 +19,7 @@ function profiles(): ReturnType<typeof createProfileStore> {
 describe("配置应用", () => {
   const stores: ReturnType<typeof createProfileStore>[] = [];
   afterEach(() => stores.splice(0).forEach((store) => store.dispose()));
-  it("配置工作台不再提供应用入口", async () => {
+  it("预览和检查组件不混入档案操作", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
     const wrapper = mount(ApplicationBar);
     expect(wrapper.find("[data-apply]").exists()).toBe(false);

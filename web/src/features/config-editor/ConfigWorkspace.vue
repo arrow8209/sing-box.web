@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import { computed, ref } from "vue";
 import AppIcon from "@/layout/AppIcon.vue";
+import { isApiError } from "@/features/profiles/api";
+import ProfileActions from "@/features/profiles/ProfileActions.vue";
+import ProfileDeleteDialog from "@/features/profiles/ProfileDeleteDialog.vue";
+import ProfileDialog from "@/features/profiles/ProfileDialog.vue";
 import { useProfileStore } from "@/features/profiles/store";
 import type { Draft } from "@/features/profiles/types";
 import ApplicationBar from "@/features/application/ApplicationBar.vue";
@@ -36,10 +40,16 @@ const active = ref<ConfigTabId>("overview");
 const dialogModule = ref<ConfigModule | null>(null);
 const errors = ref<Record<string, string>>({});
 const previewOpen = ref(false);
+const renameOpen = ref(false);
+const deletingId = ref<string | null>(null);
+const requiresCoreDecision = ref(false);
+const profileBusy = ref(false);
+const profileError = ref("");
 const topLevelModules = new Set(["$schema", ...Object.keys(moduleLabels)]);
 const topLevelModuleCount = topLevelModules.size;
 const draft = computed(() => store.draft.value);
 const profile = computed(() => store.profiles.value.find((item) => item.id === store.activeProfileId.value));
+const deleting = computed(() => store.profiles.value.find((item) => item.id === deletingId.value) ?? null);
 const activeModules = computed(() => configTabs.find((tab) => tab.id === active.value)?.modules ?? []);
 const configurationSummary = computed(() => {
   const config = draft.value?.config ?? {};
@@ -47,6 +57,31 @@ const configurationSummary = computed(() => {
   const route = config.route as Record<string, unknown> | undefined;
   return { configured, inbounds: Array.isArray(config.inbounds) ? config.inbounds.length : 0, outbounds: Array.isArray(config.outbounds) ? config.outbounds.length : 0, rules: Array.isArray(route?.rules) ? route.rules.length : 0 };
 });
+async function duplicateProfile(): Promise<void> {
+  if (!profile.value) return;
+  profileBusy.value = true; profileError.value = "";
+  try { await store.duplicate(profile.value.id); application.clear(); } catch (cause) { profileError.value = cause instanceof Error ? cause.message : "复制失败"; } finally { profileBusy.value = false; }
+}
+function openRename(): void { profileError.value = ""; renameOpen.value = true; }
+async function renameProfile(name: string): Promise<void> {
+  if (!profile.value) return;
+  profileBusy.value = true; profileError.value = "";
+  try { await store.rename(profile.value.id, name); renameOpen.value = false; } catch (cause) { profileError.value = cause instanceof Error ? cause.message : "重命名失败"; } finally { profileBusy.value = false; }
+}
+function openDelete(): void { profileError.value = ""; deletingId.value = store.activeProfileId.value; }
+async function deleteProfile(stopCurrent: boolean): Promise<void> {
+  if (!deleting.value) return;
+  profileBusy.value = true; profileError.value = "";
+  try {
+    await store.remove(deleting.value.id, deleting.value.name, stopCurrent);
+    deletingId.value = null;
+    requiresCoreDecision.value = false;
+    application.clear();
+  } catch (cause) {
+    if (isApiError(cause) && cause.status === 409 && cause.body.code === "current_profile_requires_core_decision") requiresCoreDecision.value = true;
+    else profileError.value = cause instanceof Error ? cause.message : "删除失败";
+  } finally { profileBusy.value = false; }
+}
 function applyResult(next: Draft, module: string, error?: string): void { store.mutate((current) => Object.assign(current, next)); if (error) errors.value = { ...errors.value, [module]: error }; else { const copy = { ...errors.value }; delete copy[module]; errors.value = copy; } }
 function persist(module: ConfigModule, text: string): boolean {
   if (!draft.value) return false;
@@ -143,9 +178,38 @@ function jumpTo(path: string): void {
 }
 </script>
 <template>
-  <section class="workspace"><template v-if="draft"><header class="config-context-bar"><span class="config-context-icon"><AppIcon name="config" /></span><div class="config-context-copy"><h1>{{ profile?.name || "配置工作台" }}</h1><p>草稿会自动保存，未识别字段会按原始 JSON 文本保留。</p></div><div class="config-context-controls"><span class="save-status" :class="store.saveState.value"><AppIcon :name="store.saveState.value === 'saved' ? 'check' : 'rotate'" :size="14" />{{ store.saveState.value === "saving" ? "正在保存" : store.saveState.value === "saved" ? "草稿已保存" : "存在未保存更改" }}</span><a class="manage-profiles" href="/profiles">管理档案</a><ApplicationBar @preview="preview" @validate="validate" /></div></header><div class="config-health-strip" aria-label="配置摘要"><div><span><AppIcon name="check" :size="17" /></span><strong>{{ configurationSummary.configured }}<small>/{{ topLevelModuleCount }}</small></strong><em>已配置模块</em></div><div><span><AppIcon name="inbound" :size="17" /></span><strong>{{ configurationSummary.inbounds }}</strong><em>入站</em></div><div><span><AppIcon name="outbound" :size="17" /></span><strong>{{ configurationSummary.outbounds }}</strong><em>出站</em></div><div><span><AppIcon name="route" :size="17" /></span><strong>{{ configurationSummary.rules }}</strong><em>路由规则</em></div></div><ConfigTabs :active="active" @select="active = $event" /><OverviewPanel v-if="active === 'overview'" :draft="draft" :error="errors.log" @update="fromStructured" @edit-json="dialogModule = $event" /><InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" /><OutboundConfigPanel v-else-if="active === 'outbounds'" :draft="draft" :error="errors.outbounds" @edit-json="dialogModule = 'outbounds'" @save="saveOutbounds" /><RouteConfigPanel v-else-if="active === 'route'" :draft="draft" :error="errors.route" @edit-json="dialogModule = 'route'" @save="saveRoute" /><DnsConfigPanel v-else-if="active === 'dns'" :draft="draft" :error="errors.dns" @edit-json="dialogModule = 'dns'" @save="saveDns" /><div v-else class="modules"><StructuredModulePanel v-for="module in activeModules" :key="module" :draft="draft" :module="module" :error="errors[module]" @edit-json="dialogModule = $event" /></div><ReferenceErrors :errors="errors" /><ValidationErrors :validation="application.validation.value" :error="application.error.value" @jump="jumpTo" /><ModuleJsonDialog v-if="dialogModule" :open="true" :title="`编辑 ${moduleLabels[dialogModule]} JSON`" :text="draft.buffers[dialogModule] ?? ''" :error="errors[dialogModule]" @close="dialogModule = null" @buffer="persist(dialogModule!, $event)" @save="save(dialogModule!, $event)" /><PreviewDialog :open="previewOpen" :preview="application.previewResult.value" @close="previewOpen = false" /></template><p v-else class="empty">请先在“配置档案”中选择一个可用档案。</p></section>
+  <section class="workspace">
+    <template v-if="draft">
+      <header class="config-context-bar">
+        <span class="config-context-icon"><AppIcon name="config" /></span>
+        <div class="config-context-copy"><h1>{{ profile?.name || "配置工作台" }}</h1><p>草稿会自动保存，未识别字段会按原始 JSON 文本保留。</p></div>
+        <div class="config-context-controls">
+          <span class="save-status" :class="store.saveState.value"><AppIcon :name="store.saveState.value === 'saved' ? 'check' : 'rotate'" :size="14" />{{ store.saveState.value === "saving" ? "正在保存" : store.saveState.value === "saved" ? "草稿已保存" : "存在未保存更改" }}</span>
+          <a class="manage-profiles" href="/profiles">管理档案</a>
+          <ProfileActions :busy="profileBusy" @duplicate="duplicateProfile" @rename="openRename" @remove="openDelete" />
+          <ApplicationBar @preview="preview" @validate="validate" />
+        </div>
+      </header>
+      <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
+      <div class="config-health-strip" aria-label="配置摘要"><div><span><AppIcon name="check" :size="17" /></span><strong>{{ configurationSummary.configured }}<small>/{{ topLevelModuleCount }}</small></strong><em>已配置模块</em></div><div><span><AppIcon name="inbound" :size="17" /></span><strong>{{ configurationSummary.inbounds }}</strong><em>入站</em></div><div><span><AppIcon name="outbound" :size="17" /></span><strong>{{ configurationSummary.outbounds }}</strong><em>出站</em></div><div><span><AppIcon name="route" :size="17" /></span><strong>{{ configurationSummary.rules }}</strong><em>路由规则</em></div></div>
+      <ConfigTabs :active="active" @select="active = $event" />
+      <OverviewPanel v-if="active === 'overview'" :draft="draft" :error="errors.log" @update="fromStructured" @edit-json="dialogModule = $event" />
+      <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" />
+      <OutboundConfigPanel v-else-if="active === 'outbounds'" :draft="draft" :error="errors.outbounds" @edit-json="dialogModule = 'outbounds'" @save="saveOutbounds" />
+      <RouteConfigPanel v-else-if="active === 'route'" :draft="draft" :error="errors.route" @edit-json="dialogModule = 'route'" @save="saveRoute" />
+      <DnsConfigPanel v-else-if="active === 'dns'" :draft="draft" :error="errors.dns" @edit-json="dialogModule = 'dns'" @save="saveDns" />
+      <div v-else class="modules"><StructuredModulePanel v-for="module in activeModules" :key="module" :draft="draft" :module="module" :error="errors[module]" @edit-json="dialogModule = $event" /></div>
+      <ReferenceErrors :errors="errors" />
+      <ValidationErrors :validation="application.validation.value" :error="application.error.value" @jump="jumpTo" />
+      <ModuleJsonDialog v-if="dialogModule" :open="true" :title="`编辑 ${moduleLabels[dialogModule]} JSON`" :text="draft.buffers[dialogModule] ?? ''" :error="errors[dialogModule]" @close="dialogModule = null" @buffer="persist(dialogModule!, $event)" @save="save(dialogModule!, $event)" />
+      <PreviewDialog :open="previewOpen" :preview="application.previewResult.value" @close="previewOpen = false" />
+      <ProfileDialog :open="renameOpen" title="重命名档案" :initial-name="profile?.name" :busy="profileBusy" @close="renameOpen = false" @submit="renameProfile" />
+      <ProfileDeleteDialog :open="deleting !== null" :name="deleting?.name ?? ''" :requires-core-decision="requiresCoreDecision" :busy="profileBusy" @close="deletingId = null; requiresCoreDecision = false" @submit="deleteProfile" />
+    </template>
+    <p v-else class="empty">请先在“配置档案”中选择一个可用档案。</p>
+  </section>
 </template>
 <style scoped>
-.workspace { max-width: 1240px; }.config-context-bar { display: flex; min-height: 68px; align-items: center; gap: 11px; margin-bottom: 12px; padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.config-context-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: var(--primary); background: var(--primary-soft); }.config-context-copy { min-width: 0; flex: 1; }.config-context-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }.workspace h1 { overflow: hidden; margin: 0; font-size: 17px; letter-spacing: -.25px; text-overflow: ellipsis; white-space: nowrap; }.workspace header p, .empty { overflow: hidden; margin: 3px 0 0; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.save-status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 999px; color: var(--orange); background: var(--orange-soft); font-size: 10px; font-weight: 650; white-space: nowrap; }.save-status.saved { color: var(--green); background: var(--green-soft); }.save-status.saving { color: var(--primary); background: var(--primary-soft); }.manage-profiles { padding: 7px 9px; border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); font-size: 10px; font-weight: 650; text-decoration: none; white-space: nowrap; }.manage-profiles:hover { color: var(--primary); background: var(--primary-soft); }.config-health-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }.config-health-strip > div { display: grid; grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: auto auto; align-items: center; gap: 0 9px; min-height: 64px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow-sm); }.config-health-strip > div > span { grid-row: span 2; display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.config-health-strip > div:nth-child(2) > span { color: var(--cyan); background: var(--cyan-soft); }.config-health-strip > div:nth-child(3) > span { color: var(--violet); background: color-mix(in srgb, var(--violet) 12%, transparent); }.config-health-strip > div:nth-child(4) > span { color: var(--orange); background: var(--orange-soft); }.config-health-strip strong { overflow: hidden; font-size: 18px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }.config-health-strip strong small { margin-left: 1px; color: var(--text-faint); font-size: 10px; }.config-health-strip em { color: var(--text-faint); font-size: 9px; font-style: normal; }.modules { display: grid; gap: 14px; margin-top: 18px; }.tabs + .panel, .tabs + .outbound-editor { margin-top: 0; }.empty { padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); }
+.workspace { max-width: 1240px; }.config-context-bar { display: flex; min-height: 68px; align-items: center; gap: 11px; margin-bottom: 12px; padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.config-context-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: var(--primary); background: var(--primary-soft); }.config-context-copy { min-width: 0; flex: 1; }.config-context-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }.workspace h1 { overflow: hidden; margin: 0; font-size: 17px; letter-spacing: -.25px; text-overflow: ellipsis; white-space: nowrap; }.workspace header p, .empty { overflow: hidden; margin: 3px 0 0; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }.save-status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 999px; color: var(--orange); background: var(--orange-soft); font-size: 10px; font-weight: 650; white-space: nowrap; }.save-status.saved { color: var(--green); background: var(--green-soft); }.save-status.saving { color: var(--primary); background: var(--primary-soft); }.manage-profiles { padding: 7px 9px; border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); font-size: 10px; font-weight: 650; text-decoration: none; white-space: nowrap; }.manage-profiles:hover { color: var(--primary); background: var(--primary-soft); }.profile-error { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: 11px; }.config-health-strip { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }.config-health-strip > div { display: grid; grid-template-columns: 34px minmax(0, 1fr); grid-template-rows: auto auto; align-items: center; gap: 0 9px; min-height: 64px; padding: 9px 11px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); box-shadow: var(--shadow-sm); }.config-health-strip > div > span { grid-row: span 2; display: grid; width: 34px; height: 34px; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.config-health-strip > div:nth-child(2) > span { color: var(--cyan); background: var(--cyan-soft); }.config-health-strip > div:nth-child(3) > span { color: var(--violet); background: color-mix(in srgb, var(--violet) 12%, transparent); }.config-health-strip > div:nth-child(4) > span { color: var(--orange); background: var(--orange-soft); }.config-health-strip strong { overflow: hidden; font-size: 18px; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }.config-health-strip strong small { margin-left: 1px; color: var(--text-faint); font-size: 10px; }.config-health-strip em { color: var(--text-faint); font-size: 9px; font-style: normal; }.modules { display: grid; gap: 14px; margin-top: 18px; }.tabs + .panel, .tabs + .outbound-editor { margin-top: 0; }.empty { padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); }
 @media (max-width: 760px) { .config-context-bar { flex-wrap: wrap; }.config-context-copy { min-width: calc(100% - 54px); }.config-context-controls { width: 100%; flex-wrap: wrap; justify-content: flex-end; }.config-health-strip { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }.config-health-strip > div { min-height: 56px; padding: 8px; }.config-health-strip > div > span { width: 30px; height: 30px; }.config-health-strip strong { font-size: 16px; } }
 </style>

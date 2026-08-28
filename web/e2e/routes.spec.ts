@@ -166,8 +166,8 @@ test("按原型编辑、停用、排序并持久化路由规则", async ({ page 
     await expect(responsiveDialog).toBeHidden();
   }
 
-  await page.goto("/profiles");
-  await page.getByRole("button", { name: "删除" }).click();
+  await page.goto("/workspace");
+  await page.getByRole("group", { name: "档案操作" }).getByRole("button", { name: "删除", exact: true }).click();
   await page.getByLabel("确认名称").fill(profileName);
   await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("button", { name: new RegExp(profileName) })).toHaveCount(0);

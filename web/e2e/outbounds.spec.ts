@@ -155,8 +155,8 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
     expect(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth)).toBe(true);
   }
 
-  await page.goto("/profiles");
-  await page.getByRole("button", { name: "删除" }).click();
+  await page.goto("/workspace");
+  await page.getByRole("group", { name: "档案操作" }).getByRole("button", { name: "删除", exact: true }).click();
   await page.getByLabel("确认名称").fill(profileName);
   await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("button", { name: new RegExp(profileName) })).toHaveCount(0);
