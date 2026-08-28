@@ -156,6 +156,7 @@ onBeforeUnmount(() => {
               <div class="hero-meta-item"><span>运行时间</span><strong>{{ uptime }}</strong></div>
               <div class="hero-meta-item"><span>核心版本</span><strong>{{ core.status.value?.installedVersion || "1.11.11" }}</strong></div>
               <div class="hero-meta-item"><span>活动配置</span><strong>{{ activeProfile?.name || "自定义配置 A" }}</strong></div>
+              <div class="hero-meta-item"><span>进程 ID</span><strong>{{ core.status.value?.pid || "--" }}</strong></div>
             </div>
             <div class="hero-actions">
               <button class="hero-btn" type="button" @click="restartCore"><AppIcon name="rotate" :size="14" />重启</button>

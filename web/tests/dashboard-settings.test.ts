@@ -64,6 +64,9 @@ describe("仪表盘与设置", () => {
     expect(wrapper.text()).toContain("sing-box 正在运行");
     expect(wrapper.text()).toContain("1.12.2");
     expect(wrapper.text()).toContain("家庭出口");
+    const processId = wrapper.findAll(".hero-meta-item")[3];
+    expect(processId.text()).toContain("进程 ID");
+    expect(processId.text()).toContain("4321");
     expect(wrapper.text()).toContain("实时流量");
     expect(wrapper.text()).toContain("内存占用");
     expect(wrapper.findAll(".metric-card")).toHaveLength(4);
