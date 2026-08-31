@@ -50,6 +50,18 @@ data/bin/sing-box check -C config.staging-<profile-id>
 
 代理地址必须是完整的 `http://` 或 `https://` URL，例如 `http://127.0.0.1:7890`，当前不接受 URL 内账号密码。该设置保存在权限为 `0600` 的 `data/settings.json`，只影响管理服务自身的下载，不修改浏览器请求或 sing-box 核心流量。
 
+## 代理出口测试
+
+启动并应用 sing-box 配置后，可以通过测试脚本设置客户端 HTTP/HTTPS 代理并查询出口 IP。脚本默认连接默认档案中的 Mixed 入站 `http://127.0.0.1:20122`：
+
+```bash
+scripts/test-proxy-ip.sh
+scripts/test-proxy-ip.sh http://127.0.0.1:7890
+PROXY_URL=http://127.0.0.1:7890 scripts/test-proxy-ip.sh
+```
+
+第二个参数或 `IP_LOOKUP_URL` 可以覆盖默认的 `https://api.ipify.org`。脚本会同时设置大小写形式的 `HTTP_PROXY`、`HTTPS_PROXY`、`http_proxy` 和 `https_proxy`，并为 `curl` 设置连接及总超时。
+
 ## JSON 订阅
 
 “订阅配置”用于将一组完整的 sing-box `outbounds` 作为本地 JSON 节点集合导入、查看和整体编辑。编辑器接受包含 `outbounds`（或 `nodes`）数组的对象，也接受直接的节点数组；每个节点必须包含唯一的非空 `type` 和 `tag`。节点中的其他字段会由服务端完整保存到权限为 `0600` 的 `data/subscriptions.json`。
