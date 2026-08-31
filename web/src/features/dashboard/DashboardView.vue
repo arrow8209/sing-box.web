@@ -20,7 +20,7 @@ const notice = ref("");
 const coreRunningOverride = ref<boolean | null>(null);
 const now = ref(Date.now());
 const routeMode = ref<RouteMode>("rule");
-const quickControls = reactive({ systemProxy: true, tunMode: true, allowLan: false });
+const quickControls = reactive({ systemProxy: false, tunMode: false, allowLan: false });
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 
 const metrics = [

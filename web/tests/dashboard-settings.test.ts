@@ -105,9 +105,11 @@ describe("仪表盘与设置", () => {
     expect(wrapper.get('[data-proxy-group-tag="🚀 节点选择"]').findAll(".proxy-node-card")).toHaveLength(6);
     expect(wrapper.get(".traffic-chart").attributes("aria-label")).toBe("实时流量折线图");
     const systemProxy = wrapper.get('[aria-label="切换系统代理"]');
-    expect(systemProxy.attributes("aria-checked")).toBe("true");
-    await systemProxy.trigger("click");
+    const tunMode = wrapper.get('[aria-label="切换 TUN 模式"]');
     expect(systemProxy.attributes("aria-checked")).toBe("false");
+    expect(tunMode.attributes("aria-checked")).toBe("false");
+    await systemProxy.trigger("click");
+    expect(systemProxy.attributes("aria-checked")).toBe("true");
     await wrapper.findAll(".mode-option")[2].trigger("click");
     expect(wrapper.findAll(".mode-option")[2].classes()).toContain("active");
     await wrapper.get("[data-core-toggle]").trigger("click");
