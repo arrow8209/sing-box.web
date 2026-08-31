@@ -126,6 +126,40 @@ func TestUnexpectedExitReportsFailureWithoutRestart(t *testing.T) {
 	}
 }
 
+func TestUnexpectedCleanExitClearsRestartIntent(t *testing.T) {
+	manager, factory, clock := newTestManager(t)
+	store := NewStore(manager.Layout().CoreFile)
+	if _, err := store.Update(func(state *PersistentState) error {
+		state.ExpectedRunning = true
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	manager.store = store
+	started := make(chan error, 1)
+	go func() { started <- manager.Start(context.Background(), StartRequest{}) }()
+	await(t, func() bool { return factory.LastProcess() != nil })
+	await(t, clock.HasWaiter)
+	clock.Advance(2 * time.Second)
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+	factory.LastProcess().Exit(ProcessResult{})
+	await(t, func() bool { return manager.Status(context.Background()).State == ProcessExited })
+	state, err := store.Load()
+	if err != nil || state.ExpectedRunning || state.LastStartError == "" {
+		t.Fatalf("state=%+v err=%v", state, err)
+	}
+}
+
+func TestCommitApplicationRequiresMatchingRunningProcess(t *testing.T) {
+	manager, _, _ := newTestManager(t)
+	manager.store = NewStore(manager.Layout().CoreFile)
+	if err := manager.CommitApplication("profile-a", 1, "digest"); !errors.Is(err, ErrNotRunning) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 func TestManagerRejectsSymlinkBinary(t *testing.T) {
 	root := t.TempDir()
 	layout, err := paths.Resolve(root)

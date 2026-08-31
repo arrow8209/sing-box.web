@@ -135,7 +135,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			deps.AuthHandler.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/capabilities" && deps.CapabilityHandler != nil:
 			deps.CapabilityHandler.ServeHTTP(w, r)
-		case r.URL.Path == "/api/v1/core":
+		case r.URL.Path == "/api/v1/core" || r.URL.Path == "/api/v1/core/restart":
 			core.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/core/releases/latest" || r.URL.Path == "/api/v1/core/update":
 			updater.ServeHTTP(w, r)

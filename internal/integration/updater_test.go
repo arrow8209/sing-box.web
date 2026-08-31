@@ -38,6 +38,18 @@ func (failingFactory) Start(core.ProcessSpec) (core.Process, error) {
 	return nil, errors.New("injected start failure")
 }
 
+type failOnceFactory struct {
+	starts int
+}
+
+func (factory *failOnceFactory) Start(core.ProcessSpec) (core.Process, error) {
+	factory.starts++
+	if factory.starts == 1 {
+		return nil, errors.New("injected new-core start failure")
+	}
+	return &testProcess{done: make(chan core.ProcessResult)}, nil
+}
+
 type failingRunner struct{}
 
 func (failingRunner) Run(context.Context, configgen.CommandSpec, time.Duration, int) (configgen.ProcessResult, error) {
@@ -144,7 +156,8 @@ func TestCoreUpdateStartFailureRestoresOldProgram(t *testing.T) {
 	env := newIntegrationEnvironment(t)
 	writeCoreScript(t, env.layout.CoreBinary, "old", 0, false)
 	prepared := preparedProgram(t, env, "1.12.0", true)
-	service, store := newUpdateService(t, env, fixedRelease{release: updater.Release{Version: "1.12.0"}}, fixedPreparer{prepared: prepared}, nil, failingFactory{})
+	factory := &failOnceFactory{}
+	service, store := newUpdateService(t, env, fixedRelease{release: updater.Release{Version: "1.12.0"}}, fixedPreparer{prepared: prepared}, nil, factory)
 	revision := uint64(1)
 	if _, err := store.Update(func(state *core.PersistentState) error {
 		state.CurrentProfileID = "profile"
@@ -164,5 +177,9 @@ func TestCoreUpdateStartFailureRestoresOldProgram(t *testing.T) {
 	}
 	if _, err := os.Stat(env.layout.CoreBackup); err != nil {
 		t.Fatalf("recovery should preserve one backup: %v", err)
+	}
+	state, err := store.Load()
+	if err != nil || !state.ExpectedRunning || factory.starts != 2 {
+		t.Fatalf("state=%+v starts=%d err=%v", state, factory.starts, err)
 	}
 }

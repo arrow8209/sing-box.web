@@ -57,3 +57,34 @@ test("仪表盘停止核心会请求结束当前 sing-box 进程", async ({ page
   await expect(page.getByRole("heading", { name: "sing-box 已停止" })).toBeVisible();
   await expect(page.getByText("sing-box 进程已结束。")).toBeVisible();
 });
+
+test("仪表盘启动和重启核心会发送受保护的真实请求", async ({ page }) => {
+  let status: {
+    installedVersion: string; installedDigest: string; state: string; pid: number;
+    currentProfileId: string; appliedRevision: number | null; expectedRunning: boolean;
+    configDirectoryDigest: string; startedAt: string | null; lastError: string; operation: { active: boolean };
+  } = {
+    installedVersion: "1.0.0", installedDigest: "", state: "stopped", pid: 0,
+    currentProfileId: "", appliedRevision: null, expectedRunning: false,
+    configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false }
+  };
+  await page.route(/\/api\/v1\/core(?:\/restart)?$/, async (route) => {
+    if (route.request().method() === "POST") {
+      status = { ...status, state: "running", pid: route.request().url().endsWith("/restart") ? 5102 : 5101, expectedRunning: true, startedAt: "2026-08-31T00:00:00Z" };
+    }
+    await route.fulfill({ json: status });
+  });
+  await page.goto("/");
+  await page.getByLabel("管理密码").fill("correct horse battery staple");
+  await page.getByRole("button", { name: "登录" }).click();
+
+  const startRequest = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/core");
+  await page.getByRole("button", { name: "启动核心" }).click();
+  expect((await startRequest).headers()["x-csrf-token"]).toBeTruthy();
+  await expect(page.getByText("5101", { exact: true })).toBeVisible();
+
+  const restartRequest = page.waitForRequest((request) => request.method() === "POST" && new URL(request.url()).pathname === "/api/v1/core/restart");
+  await page.getByRole("button", { name: "重启" }).click();
+  expect((await restartRequest).headers()["x-csrf-token"]).toBeTruthy();
+  await expect(page.getByText("5102", { exact: true })).toBeVisible();
+});

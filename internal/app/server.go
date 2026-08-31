@@ -241,7 +241,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		RuleResourceHandler: rules.NewHandler(ruleService, ruleCatalog),
 		ConfigHandler:       configHandler,
 		ApplicationHandler:  application.NewHandler(coordinator),
-		CoreHandler:         core.NewHandler(coreManager),
+		CoreHandler:         core.NewHandler(coreManager, coordinator),
 		UpdaterHandler:      updater.NewHandler(updateService),
 		SettingsHandler:     settings.NewHandler(settingsStore),
 		Authenticate:        authHandler.Middleware,

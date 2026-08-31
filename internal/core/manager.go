@@ -15,8 +15,10 @@ import (
 )
 
 var (
-	ErrAlreadyRunning = errors.New("core_already_running")
-	ErrNotInstalled   = errors.New("core_not_installed")
+	ErrAlreadyRunning  = errors.New("core_already_running")
+	ErrNotInstalled    = errors.New("core_not_installed")
+	ErrNoAppliedConfig = errors.New("core_config_not_applied")
+	ErrNotRunning      = errors.New("core_not_running")
 )
 
 type StartRequest struct {
@@ -264,6 +266,11 @@ func (m *Manager) CommitApplication(profileID string, revision uint64, digest st
 	if m == nil || m.store == nil {
 		return errors.New("核心状态存储不可用")
 	}
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.process == nil || m.state != ProcessRunning || m.current.ProfileID != profileID || m.current.DraftRevision != revision {
+		return ErrNotRunning
+	}
 	_, err := m.store.Update(func(state *PersistentState) error {
 		state.CurrentProfileID = profileID
 		state.AppliedRevision = &revision
@@ -339,7 +346,7 @@ func (m *Manager) finishExit(process Process, result ProcessResult) {
 	}
 	m.mu.Unlock()
 	close(done)
-	if !stopped && result.Err != nil {
+	if !stopped {
 		m.persistError(exitError(result), false)
 	}
 }
@@ -348,11 +355,15 @@ func (m *Manager) recordStartFailureLocked(err error) {
 	m.process, m.state, m.lastError = nil, ProcessStartFailed, err.Error()
 }
 
-func (m *Manager) persistError(message string, _ bool) {
+func (m *Manager) persistError(message string, expectedRunning bool) {
 	if m.store == nil {
 		return
 	}
-	_, _ = m.store.Update(func(state *PersistentState) error { state.LastStartError = message; return nil })
+	_, _ = m.store.Update(func(state *PersistentState) error {
+		state.ExpectedRunning = expectedRunning
+		state.LastStartError = message
+		return nil
+	})
 }
 
 func exitError(result ProcessResult) string {

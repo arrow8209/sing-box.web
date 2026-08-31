@@ -85,13 +85,13 @@ describe("核心状态", () => {
   });
   it("更新期间每 500ms 轮询，页面隐藏时暂停", async () => {
     vi.useFakeTimers();
-    const api: CoreApi = { status: vi.fn(async () => status()), stop: vi.fn(async () => status("stopped")), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "downloading", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
+    const api: CoreApi = { status: vi.fn(async () => status()), start: vi.fn(async () => status()), restart: vi.fn(async () => status()), stop: vi.fn(async () => status("stopped")), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "downloading", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
     const store = createCoreStore(api); store.startPolling(); await store.startUpdate("1.12.3"); await vi.advanceTimersByTimeAsync(500);
     expect(api.updateStatus).toHaveBeenCalled(); store.dispose();
   });
   it("重新进入页面时会恢复未完成更新的轮询", async () => {
     vi.useFakeTimers();
-    const api: CoreApi = { status: vi.fn(async () => status()), stop: vi.fn(async () => status("stopped")), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "installing", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
+    const api: CoreApi = { status: vi.fn(async () => status()), start: vi.fn(async () => status()), restart: vi.fn(async () => status()), stop: vi.fn(async () => status("stopped")), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "u", stage: "installing", startedAt: "now" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
     const store = createCoreStore(api);
     store.startPolling();
     await vi.advanceTimersByTimeAsync(0);
@@ -101,7 +101,7 @@ describe("核心状态", () => {
   });
   it("空闲状态不会启动更新轮询", async () => {
     vi.useFakeTimers();
-    const api: CoreApi = { status: vi.fn(async () => status()), stop: vi.fn(async () => status("stopped")), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "", stage: "idle", startedAt: "" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
+    const api: CoreApi = { status: vi.fn(async () => status()), start: vi.fn(async () => status()), restart: vi.fn(async () => status()), stop: vi.fn(async () => status("stopped")), latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })), updateStatus: vi.fn(async () => ({ operationId: "", stage: "idle", startedAt: "" })), startUpdate: vi.fn(async () => ({ operationId: "u" })), cancelUpdate: vi.fn(async () => ({ operationId: "u" })) };
     const store = createCoreStore(api);
     store.startPolling();
     await vi.advanceTimersByTimeAsync(0);
@@ -112,6 +112,8 @@ describe("核心状态", () => {
   it("停止下载后刷新取消状态", async () => {
     const api = {
       status: vi.fn(async () => status()),
+      start: vi.fn(async () => status()),
+      restart: vi.fn(async () => status()),
       stop: vi.fn(async () => status("stopped")),
       latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
       updateStatus: vi.fn(async () => ({ operationId: "u", stage: "cancelling", startedAt: "now" })),
@@ -128,6 +130,8 @@ describe("核心状态", () => {
   it("停止核心后使用服务端返回的已停止状态", async () => {
     const api: CoreApi = {
       status: vi.fn(async () => status()),
+      start: vi.fn(async () => status()),
+      restart: vi.fn(async () => status()),
       stop: vi.fn(async () => ({ ...status("stopped"), pid: 0, expectedRunning: false })),
       latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
       updateStatus: vi.fn(async () => ({ operationId: "", stage: "idle", startedAt: "" })),
@@ -139,5 +143,22 @@ describe("核心状态", () => {
     expect(await store.stopCore()).toBe(true);
     expect(api.stop).toHaveBeenCalledTimes(1);
     expect(store.status.value).toMatchObject({ state: "stopped", pid: 0, expectedRunning: false });
+  });
+  it("启动和重启核心后使用服务端返回的真实状态", async () => {
+    const api: CoreApi = {
+      status: vi.fn(async () => status("stopped")),
+      start: vi.fn(async () => ({ ...status(), pid: 5101 })),
+      restart: vi.fn(async () => ({ ...status(), pid: 5102 })),
+      stop: vi.fn(async () => status("stopped")),
+      latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
+      updateStatus: vi.fn(async () => ({ operationId: "", stage: "idle", startedAt: "" })),
+      startUpdate: vi.fn(async () => ({ operationId: "u" })),
+      cancelUpdate: vi.fn(async () => ({ operationId: "u" }))
+    };
+    const store = createCoreStore(api);
+    expect(await store.startCore()).toBe(true);
+    expect(store.status.value?.pid).toBe(5101);
+    expect(await store.restartCore()).toBe(true);
+    expect(store.status.value?.pid).toBe(5102);
   });
 });

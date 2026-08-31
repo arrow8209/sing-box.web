@@ -179,7 +179,7 @@ func TestRouterAuthenticatesCoreControlAndRequiresCSRFWrites(t *testing.T) {
 		})
 	}
 	core := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.Method != http.MethodGet && r.Method != http.MethodDelete {
+		if r.Method != http.MethodGet && r.Method != http.MethodPost && r.Method != http.MethodDelete {
 			w.WriteHeader(http.StatusMethodNotAllowed)
 			return
 		}
@@ -214,6 +214,27 @@ func TestRouterAuthenticatesCoreControlAndRequiresCSRFWrites(t *testing.T) {
 	if response.Code != http.StatusForbidden {
 		t.Fatalf("status=%d", response.Code)
 	}
+	request.Header.Set("X-Test-CSRF", "ok")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", response.Code)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/core", nil)
+	request.Header.Set("X-Test-Session", "ok")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusForbidden {
+		t.Fatalf("status=%d", response.Code)
+	}
+	request.Header.Set("X-Test-CSRF", "ok")
+	response = httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	if response.Code != http.StatusNoContent {
+		t.Fatalf("status=%d", response.Code)
+	}
+	request = httptest.NewRequest(http.MethodPost, "/api/v1/core/restart", nil)
+	request.Header.Set("X-Test-Session", "ok")
 	request.Header.Set("X-Test-CSRF", "ok")
 	response = httptest.NewRecorder()
 	router.ServeHTTP(response, request)

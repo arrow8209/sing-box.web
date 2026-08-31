@@ -3,6 +3,8 @@ import type { CoreStatus, CoreUpdateStatus, LatestRelease } from "./types";
 
 export interface CoreApi {
   status(): Promise<CoreStatus>;
+  start(): Promise<CoreStatus>;
+  restart(): Promise<CoreStatus>;
   stop(): Promise<CoreStatus>;
   latest(): Promise<LatestRelease>;
   updateStatus(): Promise<CoreUpdateStatus>;
@@ -12,6 +14,8 @@ export interface CoreApi {
 
 export const coreApi: CoreApi = {
   async status() { return (await request<CoreStatus>("/core")).data; },
+  async start() { return (await request<CoreStatus>("/core", { method: "POST" })).data; },
+  async restart() { return (await request<CoreStatus>("/core/restart", { method: "POST" })).data; },
   async stop() { return (await request<CoreStatus>("/core", { method: "DELETE" })).data; },
   async latest() { return (await request<LatestRelease>("/core/releases/latest")).data; },
   async updateStatus() { return (await request<CoreUpdateStatus>("/core/update")).data; },

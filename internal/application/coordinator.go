@@ -13,11 +13,125 @@ import (
 	"singbox-web/internal/configgen"
 	"singbox-web/internal/core"
 	"singbox-web/internal/profile"
+	"singbox-web/internal/storage"
 )
 
 type ApplyRequest struct {
 	ProfileID string
 	Revision  uint64
+}
+
+type coreStartTarget struct {
+	profileID string
+	revision  uint64
+	digest    string
+}
+
+// StartCore starts the sole managed process from the configuration currently
+// installed in config/. The durable running intent is committed only after
+// the process survives Manager's startup observation window.
+func (c *Coordinator) StartCore(ctx context.Context) error {
+	if c == nil || c.profiles == nil || c.core == nil {
+		return errors.New("核心启动协调器不可用")
+	}
+	operation, release, err := c.operations.Enter(ctx, core.OperationCoreStart)
+	if err != nil {
+		return err
+	}
+	defer release()
+	operation.SetStage("resolve_config")
+	target, err := c.resolveCoreStartTarget(ctx)
+	if err != nil {
+		operation.SetError(err.Error())
+		return err
+	}
+	return c.startAndCommitCore(ctx, operation, target)
+}
+
+// RestartCore preserves the formal config, stops the currently managed
+// process and starts a new process using the latest applied config/ owner.
+func (c *Coordinator) RestartCore(ctx context.Context) error {
+	if c == nil || c.profiles == nil || c.core == nil {
+		return errors.New("核心重启协调器不可用")
+	}
+	operation, release, err := c.operations.Enter(ctx, core.OperationCoreRestart)
+	if err != nil {
+		return err
+	}
+	defer release()
+	if c.core.Status(ctx).State != core.ProcessRunning {
+		operation.SetError(core.ErrNotRunning.Error())
+		return core.ErrNotRunning
+	}
+	operation.SetStage("resolve_config")
+	target, err := c.resolveCoreStartTarget(ctx)
+	if err != nil {
+		operation.SetError(err.Error())
+		return err
+	}
+	operation.SetStage("stop_core")
+	if err := c.core.Stop(ctx); err != nil {
+		operation.SetError(err.Error())
+		return err
+	}
+	return c.startAndCommitCore(ctx, operation, target)
+}
+
+func (c *Coordinator) resolveCoreStartTarget(ctx context.Context) (coreStartTarget, error) {
+	metas, err := c.profiles.List(ctx)
+	if err != nil {
+		return coreStartTarget{}, err
+	}
+	var current *profile.Meta
+	for index := range metas {
+		if metas[index].ConfigCurrent {
+			current = &metas[index]
+			break
+		}
+	}
+	if current == nil || current.AppliedRevision == nil || current.QuarantinedError != "" {
+		return coreStartTarget{}, core.ErrNoAppliedConfig
+	}
+	configDir := c.core.Layout().ConfigDir
+	if err := storage.RejectSymlinkPath(configDir); err != nil {
+		return coreStartTarget{}, fmt.Errorf("%w: %v", core.ErrNoAppliedConfig, err)
+	}
+	info, err := os.Stat(configDir)
+	if err != nil {
+		if os.IsNotExist(err) {
+			return coreStartTarget{}, core.ErrNoAppliedConfig
+		}
+		return coreStartTarget{}, err
+	}
+	if !info.IsDir() {
+		return coreStartTarget{}, core.ErrNoAppliedConfig
+	}
+	digest, err := DigestDirectory(configDir)
+	if err != nil {
+		return coreStartTarget{}, err
+	}
+	if digest == "" {
+		return coreStartTarget{}, core.ErrNoAppliedConfig
+	}
+	return coreStartTarget{profileID: current.ID, revision: *current.AppliedRevision, digest: digest}, nil
+}
+
+func (c *Coordinator) startAndCommitCore(ctx context.Context, operation *core.Operation, target coreStartTarget) error {
+	operation.SetStage("start_core")
+	if err := c.core.Start(ctx, core.StartRequest{ProfileID: target.profileID, DraftRevision: target.revision}); err != nil {
+		operation.SetError(err.Error())
+		return err
+	}
+	operation.SetStage("commit_state")
+	if err := c.core.CommitApplication(target.profileID, target.revision, target.digest); err != nil {
+		stopCtx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
+		defer cancel()
+		stopErr := c.core.Stop(stopCtx)
+		joined := errors.Join(fmt.Errorf("提交核心启动状态: %w", err), stopErr)
+		operation.SetError(joined.Error())
+		return joined
+	}
+	return nil
 }
 
 // ApplyResult always includes the result produced by the same checker used by

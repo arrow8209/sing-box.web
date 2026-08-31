@@ -15,9 +15,8 @@ const profileStore = useProfileStore();
 const profiles = ref<ProfileSummary[]>([]);
 const error = ref("");
 const refreshing = ref(false);
-const coreStopping = ref(false);
+const coreAction = ref<"start" | "stop" | "restart" | null>(null);
 const notice = ref("");
-const coreRunningOverride = ref<boolean | null>(null);
 const now = ref(Date.now());
 const routeMode = ref<RouteMode>("rule");
 const quickControls = reactive({ systemProxy: false, tunMode: false, allowLan: false });
@@ -31,11 +30,13 @@ const metrics = [
 ] as const;
 
 const serviceRunning = computed(() => ["running", "starting", "stopping"].includes(core.status.value?.state ?? ""));
-const running = computed(() => coreRunningOverride.value ?? serviceRunning.value);
-const coreTransitioning = computed(() => coreStopping.value || core.status.value?.state === "starting" || core.status.value?.state === "stopping");
-const coreActionLabel = computed(() => coreStopping.value || core.status.value?.state === "stopping"
+const running = computed(() => serviceRunning.value);
+const coreTransitioning = computed(() => Boolean(coreAction.value) || core.status.value?.state === "starting" || core.status.value?.state === "stopping" || core.status.value?.operation.active);
+const coreActionLabel = computed(() => coreAction.value === "stop" || core.status.value?.state === "stopping"
   ? "正在停止"
-  : core.status.value?.state === "starting" ? "正在启动" : running.value ? "停止核心" : "启动核心");
+  : coreAction.value === "start" || core.status.value?.state === "starting" ? "正在启动" : running.value ? "停止核心" : "启动核心");
+const restartLabel = computed(() => coreAction.value === "restart" ? "正在重启" : "重启");
+const dashboardError = computed(() => error.value || core.error.value || core.status.value?.lastError || "");
 const activeProfile = computed(() => profiles.value.find((item) => item.id === core.status.value?.currentProfileId)
   ?? profiles.value.find((item) => item.id === profileStore.activeProfileId.value)
   ?? profiles.value[0]);
@@ -94,7 +95,6 @@ async function refreshProfiles(): Promise<void> {
 
 async function refresh(): Promise<void> {
   refreshing.value = true;
-  coreRunningOverride.value = null;
   try {
     await Promise.all([core.refresh(), refreshProfiles()]);
     showNotice("状态已刷新，流量、连接与核心状态均已更新。");
@@ -103,25 +103,35 @@ async function refresh(): Promise<void> {
   }
 }
 
-function restartCore(): void {
-  coreRunningOverride.value = true;
-  showNotice("核心已重新启动，页面演示状态已更新。");
+async function restartCore(): Promise<void> {
+  if (!running.value || coreAction.value) return;
+  coreAction.value = "restart";
+  try {
+    if (await core.restartCore()) showNotice("sing-box 核心已重新启动。");
+    else showNotice(core.error.value || "重启核心失败。");
+  } finally {
+    coreAction.value = null;
+  }
 }
 
 async function toggleCore(): Promise<void> {
+  if (coreAction.value) return;
   if (!running.value) {
-    coreRunningOverride.value = true;
-    showNotice("核心已启动，页面演示状态已更新。");
+    coreAction.value = "start";
+    try {
+      if (await core.startCore()) showNotice("sing-box 核心已启动。");
+      else showNotice(core.error.value || "启动核心失败。");
+    } finally {
+      coreAction.value = null;
+    }
     return;
   }
-  coreStopping.value = true;
+  coreAction.value = "stop";
   try {
-    if (await core.stopCore()) {
-      coreRunningOverride.value = null;
-      showNotice("sing-box 进程已结束。");
-    }
+    if (await core.stopCore()) showNotice("sing-box 进程已结束。");
+    else showNotice(core.error.value || "停止核心失败。");
   } finally {
-    coreStopping.value = false;
+    coreAction.value = null;
   }
 }
 
@@ -163,7 +173,7 @@ onBeforeUnmount(() => {
       </div>
     </header>
 
-    <p v-if="error || core.error.value" class="page-error" role="alert"><AppIcon name="info" :size="15" />{{ error || core.error.value }}</p>
+    <p v-if="dashboardError" class="page-error" role="alert"><AppIcon name="info" :size="15" />{{ dashboardError }}</p>
 
     <div class="dashboard-grid">
       <article class="card hero-status">
@@ -181,8 +191,8 @@ onBeforeUnmount(() => {
               <div class="hero-meta-item"><span>进程 ID</span><strong>{{ core.status.value?.pid || "--" }}</strong></div>
             </div>
             <div class="hero-actions">
-              <button class="hero-btn" type="button" :disabled="coreTransitioning" @click="restartCore"><AppIcon name="rotate" :size="14" />重启</button>
-              <button class="hero-btn" :class="{ 'hero-btn-danger': running }" data-core-toggle type="button" :disabled="coreTransitioning" @click="toggleCore"><AppIcon :name="coreStopping ? 'rotate' : 'power'" :size="14" />{{ coreActionLabel }}</button>
+              <button class="hero-btn" data-core-restart type="button" :disabled="coreTransitioning || !running" @click="restartCore"><AppIcon name="rotate" :size="14" />{{ restartLabel }}</button>
+              <button class="hero-btn" :class="{ 'hero-btn-danger': running }" data-core-toggle type="button" :disabled="coreTransitioning" @click="toggleCore"><AppIcon :name="coreAction ? 'rotate' : 'power'" :size="14" />{{ coreActionLabel }}</button>
             </div>
           </div>
         </div>

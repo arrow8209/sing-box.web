@@ -293,8 +293,13 @@ func (s *Service) restartPrevious(ctx context.Context, previous core.Status, cau
 	if previous.AppliedRevision == nil {
 		return errors.Join(cause, errors.New("旧核心缺少应用修订，无法恢复"))
 	}
-	err := s.core.Start(ctx, core.StartRequest{ProfileID: previous.CurrentProfileID, DraftRevision: *previous.AppliedRevision})
-	return errors.Join(cause, err)
+	if err := s.core.Start(ctx, core.StartRequest{ProfileID: previous.CurrentProfileID, DraftRevision: *previous.AppliedRevision}); err != nil {
+		return errors.Join(cause, err)
+	}
+	if err := s.core.CommitApplication(previous.CurrentProfileID, *previous.AppliedRevision, previous.ConfigDirectoryDigest); err != nil {
+		return errors.Join(cause, err, s.core.Stop(ctx))
+	}
+	return cause
 }
 
 func (s *Service) setStage(stage string) {

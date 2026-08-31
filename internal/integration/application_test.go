@@ -150,6 +150,68 @@ func TestApplicationCopiesConfigWithoutStartingStoppedCore(t *testing.T) {
 	assertNoTransactionDirs(t, env.workDir)
 }
 
+func TestCoreStartUsesCurrentAppliedConfigurationAndCommitsRunningIntent(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	profileID, revision := createApplicationProfile(t, env)
+	factory := &countingProcessFactory{}
+	manager, coordinator, _, store := newApplicationCoordinatorWithFactory(t, env, nil, factory)
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
+	if err != nil || !result.Applied {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if err := coordinator.StartCore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Stop(context.Background()) })
+	digest, err := application.DigestDirectory(env.layout.ConfigDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	status := manager.Status(context.Background())
+	if status.State != core.ProcessRunning || status.PID == 0 || status.CurrentProfileID != profileID || status.AppliedRevision == nil || *status.AppliedRevision != revision || !status.ExpectedRunning || status.ConfigDirectoryDigest != digest {
+		t.Fatalf("status=%+v", status)
+	}
+	state, err := store.Load()
+	if err != nil || !state.ExpectedRunning || state.CurrentProfileID != profileID || state.AppliedRevision == nil || *state.AppliedRevision != revision {
+		t.Fatalf("state=%+v err=%v", state, err)
+	}
+}
+
+func TestCoreRestartReplacesManagedProcess(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	profileID, revision := createApplicationProfile(t, env)
+	factory := &countingProcessFactory{}
+	manager, coordinator, _, _ := newApplicationCoordinatorWithFactory(t, env, nil, factory)
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
+	if err != nil || !result.Applied {
+		t.Fatalf("result=%+v err=%v", result, err)
+	}
+	if err := coordinator.StartCore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Stop(context.Background()) })
+	firstPID := manager.Status(context.Background()).PID
+	if err := coordinator.RestartCore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	status := manager.Status(context.Background())
+	if factory.starts != 2 || status.State != core.ProcessRunning || status.PID == firstPID || !status.ExpectedRunning {
+		t.Fatalf("starts=%d status=%+v", factory.starts, status)
+	}
+}
+
+func TestCoreStartRequiresCurrentAppliedConfiguration(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	_, _, err := env.profiles.Create(context.Background(), profile.CreateInput{Name: "尚未应用"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	_, coordinator, _, _ := newApplicationCoordinator(t, env, nil)
+	if err := coordinator.StartCore(context.Background()); !errors.Is(err, core.ErrNoAppliedConfig) {
+		t.Fatalf("err=%v", err)
+	}
+}
+
 type applicationCheckRunner struct {
 	manager             *core.Manager
 	err                 error
@@ -191,6 +253,15 @@ func (factory *failSecondStartFactory) Start(core.ProcessSpec) (core.Process, er
 	return &testProcess{done: make(chan core.ProcessResult)}, nil
 }
 
+type countingProcessFactory struct {
+	starts int
+}
+
+func (factory *countingProcessFactory) Start(core.ProcessSpec) (core.Process, error) {
+	factory.starts++
+	return &testProcess{pid: 4200 + factory.starts, done: make(chan core.ProcessResult)}, nil
+}
+
 func prepareRunningCore(t *testing.T, env *integrationEnvironment, manager *core.Manager, store *core.Store) {
 	t.Helper()
 	if err := os.MkdirAll(env.layout.ConfigDir, 0o700); err != nil {
@@ -206,10 +277,10 @@ func prepareRunningCore(t *testing.T, env *integrationEnvironment, manager *core
 	if err := store.RecordInstalled("1.13.0", "installed-digest"); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.CommitApplication("old-profile", 1, digest); err != nil {
+	if err := manager.Start(context.Background(), core.StartRequest{ProfileID: "old-profile", DraftRevision: 1}); err != nil {
 		t.Fatal(err)
 	}
-	if err := manager.Start(context.Background(), core.StartRequest{ProfileID: "old-profile", DraftRevision: 1}); err != nil {
+	if err := manager.CommitApplication("old-profile", 1, digest); err != nil {
 		t.Fatal(err)
 	}
 }
@@ -279,9 +350,17 @@ func (*testProcessFactory) Start(core.ProcessSpec) (core.Process, error) {
 	return &testProcess{done: make(chan core.ProcessResult)}, nil
 }
 
-type testProcess struct{ done chan core.ProcessResult }
+type testProcess struct {
+	pid  int
+	done chan core.ProcessResult
+}
 
-func (*testProcess) PID() int { return 4242 }
+func (p *testProcess) PID() int {
+	if p.pid != 0 {
+		return p.pid
+	}
+	return 4242
+}
 func (p *testProcess) SignalGroup(_ syscall.Signal) error {
 	select {
 	case p.done <- core.ProcessResult{}:

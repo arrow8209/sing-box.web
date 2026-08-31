@@ -2,6 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { routerKey } from "vue-router";
 import DashboardView from "@/features/dashboard/DashboardView.vue";
+import type { CoreStatus } from "@/features/core/types";
 import { useProfileStore } from "@/features/profiles/store";
 import AppearanceSettings from "@/features/settings/AppearanceSettings.vue";
 import CoreSettings from "@/features/settings/CoreSettings.vue";
@@ -117,6 +118,30 @@ describe("仪表盘与设置", () => {
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/core", expect.objectContaining({ method: "DELETE" }));
     expect(wrapper.text()).toContain("sing-box 已停止");
     expect(wrapper.text()).toContain("sing-box 进程已结束");
+    wrapper.unmount();
+  });
+  it("仪表盘通过真实 API 启动并重启核心", async () => {
+    let current: CoreStatus = { installedVersion: "1.12.2", installedDigest: "", state: "stopped", pid: 0, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: false, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };
+    const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const path = String(input);
+      if (path.endsWith("/core/restart") && init?.method === "POST") current = { ...current, state: "running", pid: 5102, expectedRunning: true, startedAt: "2026-08-31T00:00:00Z" };
+      else if (path.endsWith("/core") && init?.method === "POST") current = { ...current, state: "running", pid: 5101, expectedRunning: true, startedAt: "2026-08-31T00:00:00Z" };
+      const data = path.endsWith("/core") || path.endsWith("/core/restart") ? current : path.endsWith("/profiles") ? [] : { operationId: "", stage: "idle", startedAt: "" };
+      return Promise.resolve(new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }));
+    });
+    vi.stubGlobal("fetch", fetchMock);
+    const wrapper = mount(DashboardView);
+    await flushPromises();
+
+    await wrapper.get("[data-core-toggle]").trigger("click");
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/core", expect.objectContaining({ method: "POST" }));
+    expect(wrapper.text()).toContain("5101");
+
+    await wrapper.get("[data-core-restart]").trigger("click");
+    await flushPromises();
+    expect(fetchMock).toHaveBeenCalledWith("/api/v1/core/restart", expect.objectContaining({ method: "POST" }));
+    expect(wrapper.text()).toContain("5102");
     wrapper.unmount();
   });
 });

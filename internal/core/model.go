@@ -37,10 +37,12 @@ type PersistentState struct {
 type OperationKind string
 
 const (
-	OperationValidate   OperationKind = "validate"
-	OperationApply      OperationKind = "apply"
-	OperationCoreUpdate OperationKind = "core_update"
-	OperationCoreStop   OperationKind = "core_stop"
+	OperationValidate    OperationKind = "validate"
+	OperationApply       OperationKind = "apply"
+	OperationCoreStart   OperationKind = "core_start"
+	OperationCoreRestart OperationKind = "core_restart"
+	OperationCoreUpdate  OperationKind = "core_update"
+	OperationCoreStop    OperationKind = "core_stop"
 )
 
 // OperationStatus is safe to expose in the core status API.
