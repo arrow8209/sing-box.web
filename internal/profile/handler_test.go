@@ -45,6 +45,35 @@ func TestDraftAPIRequiresIfMatchAndReturnsLatestRevision(t *testing.T) {
 	assertProfileJSON(t, stale.Body.Bytes(), "error.latestRevision", float64(2))
 }
 
+func TestDraftSaveHookRunsOnlyAfterSuccessfulPut(t *testing.T) {
+	service, _ := newTestService(t)
+	meta, _, err := service.Create(context.Background(), CreateInput{Name: "自动重载"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls int
+	handler := NewHandler(service, func(_ context.Context, profileID string, revision uint64) *DraftSaveOutcome {
+		calls++
+		if profileID != meta.ID || revision != 2 {
+			t.Errorf("profileID=%q revision=%d", profileID, revision)
+		}
+		return &DraftSaveOutcome{Attempted: true, Applied: true, Reloaded: false, Message: "配置已自动应用"}
+	})
+	get := httptest.NewRecorder()
+	handler.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/v1/profiles/"+meta.ID+"/draft", nil))
+	if get.Code != http.StatusOK || calls != 0 {
+		t.Fatalf("get=%d calls=%d body=%s", get.Code, calls, get.Body.String())
+	}
+	request := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/"+meta.ID+"/draft", strings.NewReader(validDraftBody()))
+	request.Header.Set("If-Match", `"rev-1"`)
+	put := httptest.NewRecorder()
+	handler.ServeHTTP(put, request)
+	if put.Code != http.StatusOK || calls != 1 {
+		t.Fatalf("put=%d calls=%d body=%s", put.Code, calls, put.Body.String())
+	}
+	assertProfileJSON(t, put.Body.Bytes(), "autoReload.message", "配置已自动应用")
+}
+
 func TestProfileCreateRejectsDirectoryFields(t *testing.T) {
 	handler, session := newAuthenticatedProfileAPI(t)
 	for _, body := range []string{`{"name":"x","configDir":"x"}`, `{"name":"x","path":"../x"}`} {

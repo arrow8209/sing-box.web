@@ -1,5 +1,9 @@
 import { request, type ApiError } from "@/api/client";
-import type { Draft, DraftInput, ProfileSummary } from "./types";
+import type { AutoReloadOutcome, Draft, DraftInput, ProfileSummary } from "./types";
+
+interface DraftSaveResponse extends Draft {
+  autoReload?: AutoReloadOutcome;
+}
 
 export interface ProfileApi {
   list(): Promise<ProfileSummary[]>;
@@ -8,7 +12,7 @@ export interface ProfileApi {
   rename(id: string, name: string): Promise<ProfileSummary>;
   remove(id: string, confirmName: string, stopCurrent: boolean): Promise<void>;
   getDraft(id: string): Promise<{ data: Draft; etag: string }>;
-  saveDraft(id: string, etag: string, draft: Draft): Promise<{ data: Draft; etag: string }>;
+  saveDraft(id: string, etag: string, draft: Draft): Promise<{ data: Draft; etag: string; autoReload?: AutoReloadOutcome }>;
 }
 
 function requiredETag(etag: string | undefined): string {
@@ -38,12 +42,13 @@ export const profileApi: ProfileApi = {
   },
   async saveDraft(id, etag, draft) {
     const input: DraftInput = { buffers: draft.buffers, editorState: draft.editorState ?? {}, bindings: draft.bindings };
-    const response = await request<Draft>(`/profiles/${encodeURIComponent(id)}/draft`, {
+    const response = await request<DraftSaveResponse>(`/profiles/${encodeURIComponent(id)}/draft`, {
       method: "PUT",
       headers: { "If-Match": etag },
       body: input
     });
-    return { data: response.data, etag: requiredETag(response.etag) };
+    const { autoReload, ...data } = response.data;
+    return { data, etag: requiredETag(response.etag), autoReload };
   }
 };
 

@@ -23,6 +23,14 @@ func TestStorePersistsNormalizedProxyURL(t *testing.T) {
 	if err != nil || initial.ProxyURL != "" {
 		t.Fatalf("initial=%+v err=%v", initial, err)
 	}
+	coreSettings, err := store.GetCore()
+	if err != nil || !coreSettings.AutoStart || coreSettings.AutoReload {
+		t.Fatalf("coreSettings=%+v err=%v", coreSettings, err)
+	}
+	updatedCore, err := store.UpdateCore(CoreSettings{AutoStart: false, AutoReload: true})
+	if err != nil || updatedCore.AutoStart || !updatedCore.AutoReload {
+		t.Fatalf("updatedCore=%+v err=%v", updatedCore, err)
+	}
 	updated, err := store.UpdateProxy("  HTTPS://proxy.example.test:8443/  ")
 	if err != nil {
 		t.Fatal(err)
@@ -38,12 +46,31 @@ func TestStorePersistsNormalizedProxyURL(t *testing.T) {
 	if err != nil || persisted != updated {
 		t.Fatalf("persisted=%+v updated=%+v err=%v", persisted, updated, err)
 	}
+	persistedCore, err := reopened.GetCore()
+	if err != nil || persistedCore != updatedCore {
+		t.Fatalf("persistedCore=%+v updatedCore=%+v err=%v", persistedCore, updatedCore, err)
+	}
 	info, err := os.Stat(path)
 	if err != nil {
 		t.Fatal(err)
 	}
 	if info.Mode().Perm() != 0o600 {
 		t.Fatalf("mode=%o", info.Mode().Perm())
+	}
+}
+
+func TestOpenStoreKeepsLegacyCoreBehaviorDefaults(t *testing.T) {
+	path := t.TempDir() + "/settings.json"
+	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":""}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := store.GetCore()
+	if err != nil || !value.AutoStart || value.AutoReload {
+		t.Fatalf("value=%+v err=%v", value, err)
 	}
 }
 

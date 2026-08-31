@@ -1,6 +1,6 @@
 import { computed, ref, toRaw, type Ref } from "vue";
 import { isApiError, profileApi, type ProfileApi } from "./api";
-import type { Draft, DraftConflict, ProfileSummary, SaveState } from "./types";
+import type { AutoReloadOutcome, Draft, DraftConflict, ProfileSummary, SaveState } from "./types";
 
 const SAVE_DELAY = 600;
 
@@ -11,6 +11,7 @@ export interface ProfileStore {
   etag: Ref<string | null>;
   saveState: Ref<SaveState>;
   conflict: Ref<DraftConflict | null>;
+  autoReloadOutcome: Ref<AutoReloadOutcome | null>;
   hasPendingChanges: Ref<boolean>;
   refresh(): Promise<void>;
   open(id: string): Promise<boolean>;
@@ -40,6 +41,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
   const serverRevision = ref(0);
   const saveState = ref<SaveState>("idle");
   const conflict = ref<DraftConflict | null>(null);
+  const autoReloadOutcome = ref<AutoReloadOutcome | null>(null);
   let pendingGeneration = 0;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let saveInFlight: Promise<void> | undefined;
@@ -88,6 +90,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
     etag.value = response.etag;
     serverRevision.value = response.data.revision;
     conflict.value = null;
+    autoReloadOutcome.value = null;
     saveState.value = "saved";
     return true;
   }
@@ -96,6 +99,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
     if (!draft.value || saveState.value === "conflict") return;
     change(draft.value);
     draft.value.revision = serverRevision.value;
+    autoReloadOutcome.value = null;
     saveState.value = "dirty";
     pendingGeneration += 1;
     scheduleSave(pendingGeneration);
@@ -113,6 +117,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
       serverRevision.value = response.data.revision;
       if (generation === pendingGeneration) {
         draft.value = response.data;
+        autoReloadOutcome.value = response.autoReload ?? null;
         saveState.value = "saved";
         await refresh();
       } else {
@@ -143,6 +148,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
     etag.value = response.etag;
     serverRevision.value = response.data.revision;
     conflict.value = null;
+    autoReloadOutcome.value = null;
     saveState.value = "saved";
   }
 
@@ -188,6 +194,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
       draft.value = null;
       etag.value = null;
       saveState.value = "idle";
+      autoReloadOutcome.value = null;
     }
     await refresh();
   }
@@ -202,7 +209,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
   window.addEventListener("online", onOnline);
   window.addEventListener("beforeunload", onBeforeUnload);
 
-  return { profiles, activeProfileId, draft, etag, saveState, conflict, hasPendingChanges, refresh, open, mutate, flush, loadServerVersion, overwriteServerVersion, create, duplicate, rename, remove, dispose: () => { cancelTimer(); window.removeEventListener("online", onOnline); window.removeEventListener("beforeunload", onBeforeUnload); } };
+  return { profiles, activeProfileId, draft, etag, saveState, conflict, autoReloadOutcome, hasPendingChanges, refresh, open, mutate, flush, loadServerVersion, overwriteServerVersion, create, duplicate, rename, remove, dispose: () => { cancelTimer(); window.removeEventListener("online", onOnline); window.removeEventListener("beforeunload", onBeforeUnload); } };
 }
 
 const defaultStore = createProfileStore();

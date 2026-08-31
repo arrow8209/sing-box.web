@@ -285,7 +285,7 @@ func TestRouterAuthenticatesRuntimeConnectionsAndRequiresCSRFWrites(t *testing.T
 	}
 }
 
-func TestRouterAuthenticatesProxySettingsAndRequiresCSRFWrites(t *testing.T) {
+func TestRouterAuthenticatesSettingsAndRequiresCSRFWrites(t *testing.T) {
 	settings := http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -308,24 +308,26 @@ func TestRouterAuthenticatesProxySettingsAndRequiresCSRFWrites(t *testing.T) {
 		})
 	}
 	router := httpapi.NewRouter(httpapi.Dependencies{SettingsHandler: settings, Authenticate: authenticated, RequireCSRF: csrf})
-	for _, test := range []struct {
-		method  string
-		session string
-		csrf    string
-		want    int
-	}{
-		{method: http.MethodGet, want: http.StatusUnauthorized},
-		{method: http.MethodGet, session: "ok", want: http.StatusNoContent},
-		{method: http.MethodPut, session: "ok", want: http.StatusForbidden},
-		{method: http.MethodPut, session: "ok", csrf: "ok", want: http.StatusNoContent},
-	} {
-		request := httptest.NewRequest(test.method, "/api/v1/settings/proxy", nil)
-		request.Header.Set("X-Test-Session", test.session)
-		request.Header.Set("X-Test-CSRF", test.csrf)
-		response := httptest.NewRecorder()
-		router.ServeHTTP(response, request)
-		if response.Code != test.want {
-			t.Fatalf("method=%s status=%d want=%d", test.method, response.Code, test.want)
+	for _, path := range []string{"/api/v1/settings/proxy", "/api/v1/settings/core"} {
+		for _, test := range []struct {
+			method  string
+			session string
+			csrf    string
+			want    int
+		}{
+			{method: http.MethodGet, want: http.StatusUnauthorized},
+			{method: http.MethodGet, session: "ok", want: http.StatusNoContent},
+			{method: http.MethodPut, session: "ok", want: http.StatusForbidden},
+			{method: http.MethodPut, session: "ok", csrf: "ok", want: http.StatusNoContent},
+		} {
+			request := httptest.NewRequest(test.method, path, nil)
+			request.Header.Set("X-Test-Session", test.session)
+			request.Header.Set("X-Test-CSRF", test.csrf)
+			response := httptest.NewRecorder()
+			router.ServeHTTP(response, request)
+			if response.Code != test.want {
+				t.Fatalf("path=%s method=%s status=%d want=%d", path, test.method, response.Code, test.want)
+			}
 		}
 	}
 }

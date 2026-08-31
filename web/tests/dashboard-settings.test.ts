@@ -44,11 +44,13 @@ describe("仪表盘与设置", () => {
     expect(wrapper.text()).toContain("代理设置已保存并即时生效");
     expect(wrapper.text()).toContain("使用代理");
   });
-  it("核心设置只展示真实状态和稳定版能力", async () => {
+  it("读取并保存核心行为设置", async () => {
+    let behavior = { autoStart: true, autoReload: false };
     const api = {
       status: vi.fn(async () => ({ installedVersion: "1.12.2", installedDigest: "", state: "running" as const, pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } })),
       latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
-      profiles: vi.fn(async () => [{ id: "profile-a", name: "A", draftRevision: 1, appliedRevision: 1, appliedDigest: "", appliedAt: null, configCurrent: true, needsApply: false, lastValidation: null }])
+      get: vi.fn(async () => behavior),
+      update: vi.fn(async (input: typeof behavior) => { behavior = input; return behavior; })
     };
     const wrapper = mount(CoreSettings, {
       props: { api },
@@ -58,24 +60,42 @@ describe("仪表盘与设置", () => {
     expect(wrapper.text()).toContain("v1.12.2");
     expect(wrapper.text()).toContain("Stable · 1.12.3");
     expect(wrapper.text()).toContain("当前 1.12.2 · 最新 1.12.3");
-    expect(wrapper.get('[aria-label="开机自动运行（只读）"]').attributes("aria-checked")).toBe("true");
+    const autoStart = wrapper.get('[aria-label="开机自动运行"]');
+    const autoReload = wrapper.get('[aria-label="配置变更自动重载"]');
+    expect(autoStart.attributes("aria-checked")).toBe("true");
     expect(wrapper.text()).toContain("没有配置则保持停止");
-    expect(wrapper.get('[aria-label="配置变更自动重载（只读）"]').attributes("aria-checked")).toBe("false");
+    expect(autoReload.attributes("aria-checked")).toBe("false");
+    await autoStart.trigger("click");
+    await flushPromises();
+    expect(api.update).toHaveBeenLastCalledWith({ autoStart: false, autoReload: false });
+    expect(autoStart.attributes("aria-checked")).toBe("false");
+    expect(wrapper.text()).toContain("开机自动运行设置已保存");
+    await autoReload.trigger("click");
+    await flushPromises();
+    expect(api.update).toHaveBeenLastCalledWith({ autoStart: false, autoReload: true });
+    expect(autoReload.attributes("aria-checked")).toBe("true");
+    expect(wrapper.text()).toContain("当前已应用档案保存后自动检查并应用");
     expect(wrapper.text()).not.toContain("Beta");
   });
-  it("没有已应用配置时不会显示为自动启动", async () => {
+  it("核心行为设置保存失败时回滚开关", async () => {
     const api = {
       status: vi.fn(async () => ({ installedVersion: "1.12.2", installedDigest: "", state: "stopped" as const, pid: 0, currentProfileId: "", appliedRevision: null, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } })),
       latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
-      profiles: vi.fn(async () => [])
+      get: vi.fn(async () => ({ autoStart: false, autoReload: false })),
+      update: vi.fn(async () => { throw new Error("设置写入失败"); })
     };
     const wrapper = mount(CoreSettings, {
       props: { api },
       global: { stubs: { RouterLink: { template: '<a href="/core"><slot /></a>' } } }
     });
     await flushPromises();
-    expect(wrapper.get('[aria-label="开机自动运行（只读）"]').attributes("aria-checked")).toBe("false");
+    const autoStart = wrapper.get('[aria-label="开机自动运行"]');
+    expect(autoStart.attributes("aria-checked")).toBe("false");
     expect(wrapper.text()).toContain("未启用");
+    await autoStart.trigger("click");
+    await flushPromises();
+    expect(autoStart.attributes("aria-checked")).toBe("false");
+    expect(wrapper.text()).toContain("设置写入失败");
   });
   it("仪表盘按原型渲染完整运行概览并保留服务端状态", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };

@@ -44,3 +44,10 @@ export type SaveState = "idle" | "dirty" | "saving" | "saved" | "offline" | "con
 export interface DraftConflict {
   latestRevision?: number;
 }
+
+export interface AutoReloadOutcome {
+  attempted: boolean;
+  applied: boolean;
+  reloaded: boolean;
+  message: string;
+}

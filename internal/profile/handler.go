@@ -1,10 +1,12 @@
 package profile
 
 import (
+	"context"
 	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
+	"time"
 
 	"singbox-web/internal/apierror"
 	"singbox-web/internal/httpapi"
@@ -25,15 +27,29 @@ type deleteRequest struct {
 	StopCurrent bool   `json:"stopCurrent"`
 }
 
+type DraftSaveOutcome struct {
+	Attempted bool   `json:"attempted"`
+	Applied   bool   `json:"applied"`
+	Reloaded  bool   `json:"reloaded"`
+	Message   string `json:"message"`
+}
+
+type DraftSavedHook func(context.Context, string, uint64) *DraftSaveOutcome
+
 // Handler serves profile CRUD and draft endpoints. Authentication and CSRF are
 // intentionally supplied by the top-level router, keeping this package free of
 // auth dependencies.
 type Handler struct {
-	service *Service
+	service    *Service
+	draftSaved DraftSavedHook
 }
 
-func NewHandler(service *Service) *Handler {
-	return &Handler{service: service}
+func NewHandler(service *Service, hooks ...DraftSavedHook) *Handler {
+	handler := &Handler{service: service}
+	if len(hooks) > 0 {
+		handler.draftSaved = hooks[0]
+	}
+	return handler
 }
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -196,7 +212,16 @@ func (h *Handler) putDraft(w http.ResponseWriter, r *http.Request, profileID str
 		return
 	}
 	w.Header().Set("ETag", etag)
-	httpapi.WriteJSON(w, http.StatusOK, draft)
+	var outcome *DraftSaveOutcome
+	if h.draftSaved != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute+15*time.Second)
+		outcome = h.draftSaved(ctx, profileID, draft.Revision)
+		cancel()
+	}
+	httpapi.WriteJSON(w, http.StatusOK, struct {
+		Draft
+		AutoReload *DraftSaveOutcome `json:"autoReload,omitempty"`
+	}{Draft: draft, AutoReload: outcome})
 }
 
 func validProfileID(value string) bool {

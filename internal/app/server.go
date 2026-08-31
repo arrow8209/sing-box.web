@@ -137,6 +137,10 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	coreSettings, err := settingsStore.GetCore()
+	if err != nil {
+		return nil, err
+	}
 	if err := profile.RecoverDeletingDrafts(layout); err != nil {
 		return nil, err
 	}
@@ -220,12 +224,20 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		switch {
 		case listErr != nil:
 			coreManager.RecordRecoveryFailure(fmt.Errorf("检查自动启动配置: %w", listErr))
-		case hasAppliedConfig:
+		case hasAppliedConfig && coreSettings.AutoStart:
 			if err := coordinator.StartCore(context.Background()); err != nil {
 				coreManager.RecordRecoveryFailure(fmt.Errorf("自动启动最近已应用配置: %w", err))
 			}
 		case state.CurrentProfileID != "" || state.AppliedRevision != nil || state.ExpectedRunning || state.ConfigDirectoryDigest != "":
-			if err := coreManager.ClearApplication(); err != nil {
+			if hasAppliedConfig {
+				if _, err := coreStore.Update(func(state *core.PersistentState) error {
+					state.ExpectedRunning = false
+					state.LastStartError = ""
+					return nil
+				}); err != nil {
+					coreManager.RecordRecoveryFailure(fmt.Errorf("记录已关闭的自动启动状态: %w", err))
+				}
+			} else if err := coreManager.ClearApplication(); err != nil {
 				coreManager.RecordRecoveryFailure(fmt.Errorf("清理无配置的自动启动状态: %w", err))
 			}
 		}
@@ -243,7 +255,34 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
-		ProfileHandler:      profile.NewHandler(profileService),
+		ProfileHandler: profile.NewHandler(profileService, func(ctx context.Context, profileID string, revision uint64) *profile.DraftSaveOutcome {
+			behavior, err := settingsStore.GetCore()
+			if err != nil {
+				return &profile.DraftSaveOutcome{Attempted: true, Message: "草稿已保存，但读取自动重载设置失败"}
+			}
+			if !behavior.AutoReload {
+				return nil
+			}
+			result, err := coordinator.AutoReload(ctx, application.ApplyRequest{ProfileID: profileID, Revision: revision})
+			if !result.Attempted {
+				return nil
+			}
+			outcome := &profile.DraftSaveOutcome{Attempted: true, Applied: result.Applied, Reloaded: result.Reloaded}
+			switch {
+			case err != nil:
+				outcome.Message = "草稿已保存，但自动重载失败，请查看检查结果或手动应用"
+			case !result.Applied:
+				outcome.Message = result.Validation.Message
+				if outcome.Message == "" {
+					outcome.Message = "草稿已保存，但配置检查未通过"
+				}
+			case result.Reloaded:
+				outcome.Message = "配置已自动应用并重新加载运行核心"
+			default:
+				outcome.Message = "配置已自动应用；核心当前保持停止"
+			}
+			return outcome
+		}),
 		SubscriptionHandler: subscriptions.NewHandler(subscriptionService),
 		InboundHandler:      inbounds.NewHandler(inboundService),
 		RuleResourceHandler: rules.NewHandler(ruleService, ruleCatalog),

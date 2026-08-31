@@ -4,38 +4,36 @@ import { RouterLink } from "vue-router";
 import AppIcon from "@/layout/AppIcon.vue";
 import { coreApi, type CoreApi } from "@/features/core/api";
 import type { CoreStatus, LatestRelease } from "@/features/core/types";
-import { profileApi } from "@/features/profiles/api";
-import type { ProfileSummary } from "@/features/profiles/types";
+import { coreBehaviorSettingsApi, type CoreBehaviorSettings, type CoreBehaviorSettingsApi } from "./api";
 
-export interface CoreSettingsApi extends Pick<CoreApi, "status" | "latest"> {
-  profiles(): Promise<ProfileSummary[]>;
-}
+export interface CoreSettingsApi extends Pick<CoreApi, "status" | "latest">, CoreBehaviorSettingsApi {}
 
 const props = withDefaults(defineProps<{ api?: CoreSettingsApi }>(), {
-  api: () => ({ status: coreApi.status, latest: coreApi.latest, profiles: profileApi.list })
+  api: () => ({ status: coreApi.status, latest: coreApi.latest, get: coreBehaviorSettingsApi.get, update: coreBehaviorSettingsApi.update })
 });
 
 const status = ref<CoreStatus | null>(null);
 const latest = ref<LatestRelease | null>(null);
-const profiles = ref<ProfileSummary[]>([]);
+const behavior = ref<CoreBehaviorSettings>({ autoStart: true, autoReload: false });
+const behaviorLoaded = ref(false);
 const loading = ref(true);
+const saving = ref(false);
 const error = ref("");
+const savedMessage = ref("");
 
 const currentVersion = computed(() => status.value?.installedVersion || "未安装");
 const latestVersion = computed(() => latest.value?.version || "暂不可用");
 const stableLabel = computed(() => `Stable · ${latest.value?.version || status.value?.installedVersion || "暂不可用"}`);
-const autoStart = computed(() => profiles.value.some((profile) => profile.configCurrent && profile.appliedRevision !== null)
-  || Boolean(status.value?.currentProfileId && status.value.appliedRevision !== null));
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback;
 }
 
 onMounted(async () => {
-  const [statusResult, latestResult, profilesResult] = await Promise.allSettled([
+  const [statusResult, latestResult, behaviorResult] = await Promise.allSettled([
     props.api.status(),
     props.api.latest(),
-    props.api.profiles()
+    props.api.get()
   ]);
   const failures: string[] = [];
   if (statusResult.status === "fulfilled") {
@@ -48,14 +46,33 @@ onMounted(async () => {
   } else {
     failures.push(errorMessage(latestResult.reason, "读取最新稳定版失败"));
   }
-  if (profilesResult.status === "fulfilled") {
-    profiles.value = profilesResult.value;
+  if (behaviorResult.status === "fulfilled") {
+    behavior.value = behaviorResult.value;
+    behaviorLoaded.value = true;
   } else {
-    failures.push(errorMessage(profilesResult.reason, "读取已应用配置失败"));
+    failures.push(errorMessage(behaviorResult.reason, "读取核心行为设置失败"));
   }
   error.value = failures.join("；");
   loading.value = false;
 });
+
+async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
+  if (!behaviorLoaded.value || saving.value) return;
+  const previous = { ...behavior.value };
+  behavior.value = { ...previous, [key]: !previous[key] };
+  saving.value = true;
+  error.value = "";
+  savedMessage.value = "";
+  try {
+    behavior.value = await props.api.update(behavior.value);
+    savedMessage.value = key === "autoStart" ? "开机自动运行设置已保存" : "配置自动重载设置已保存";
+  } catch (cause) {
+    behavior.value = previous;
+    error.value = errorMessage(cause, "保存核心行为设置失败");
+  } finally {
+    saving.value = false;
+  }
+}
 </script>
 
 <template>
@@ -71,24 +88,26 @@ onMounted(async () => {
     </header>
 
     <p v-if="error" class="load-error" role="alert">{{ error }}</p>
+    <p v-if="savedMessage" class="save-success" role="status">{{ savedMessage }}</p>
 
     <div class="setting-list" :aria-busy="loading">
       <div class="setting-row">
         <div class="setting-copy">
           <strong>开机自动运行</strong>
-          <span>存在已应用配置时，控制台每次启动都会自动运行 sing-box；没有配置则保持停止</span>
+          <span>{{ behavior.autoStart ? "存在已应用配置时，控制台启动会自动运行 sing-box；没有配置则保持停止" : "控制台启动时保持 sing-box 停止，仍可从仪表盘手动启动" }}</span>
         </div>
         <div class="setting-control switch-control">
-          <span>{{ loading ? "读取中" : autoStart ? "已启用" : "未启用" }}</span>
+          <span>{{ loading ? "读取中" : saving ? "保存中" : behavior.autoStart ? "已启用" : "未启用" }}</span>
           <button
             class="setting-switch"
-            :class="{ on: autoStart }"
+            :class="{ on: behavior.autoStart }"
             type="button"
             role="switch"
-            aria-label="开机自动运行（只读）"
-            :aria-checked="autoStart"
-            disabled
-            title="由最近一次成功应用的配置自动决定"
+            aria-label="开机自动运行"
+            :aria-checked="behavior.autoStart"
+            :disabled="!behaviorLoaded || saving"
+            title="切换控制台启动时是否自动运行已应用配置"
+            @click="toggle('autoStart')"
           ><span /></button>
         </div>
       </div>
@@ -96,18 +115,20 @@ onMounted(async () => {
       <div class="setting-row">
         <div class="setting-copy">
           <strong>配置变更自动重载</strong>
-          <span>草稿保存后不会直接影响运行核心，请在配置工作台手动应用</span>
+          <span>{{ behavior.autoReload ? "当前已应用档案保存后自动检查并应用；核心运行中会自动重启加载" : "草稿保存后不会直接影响运行核心，请在配置工作台手动应用" }}</span>
         </div>
         <div class="setting-control switch-control">
-          <span>手动应用</span>
+          <span>{{ loading ? "读取中" : saving ? "保存中" : behavior.autoReload ? "自动重载" : "手动应用" }}</span>
           <button
             class="setting-switch"
+            :class="{ on: behavior.autoReload }"
             type="button"
             role="switch"
-            aria-label="配置变更自动重载（只读）"
-            aria-checked="false"
-            disabled
-            title="当前仅支持确认后手动应用配置"
+            aria-label="配置变更自动重载"
+            :aria-checked="behavior.autoReload"
+            :disabled="!behaviorLoaded || saving"
+            title="仅自动处理当前已应用档案，其他档案仍保持草稿状态"
+            @click="toggle('autoReload')"
           ><span /></button>
         </div>
       </div>
@@ -149,6 +170,7 @@ onMounted(async () => {
 .version-badge::before { width: 5px; height: 5px; border-radius: 50%; content: ""; background: currentColor; }
 .version-badge.installed { color: var(--green); background: var(--green-soft); }
 .load-error { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--red); background: var(--red-soft); font-size: 10px; }
+.save-success { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--green); background: var(--green-soft); font-size: 10px; }
 .setting-list { padding: 4px 18px; }
 .setting-row { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--line); }
 .setting-row:last-child { border-bottom: 0; }
@@ -161,8 +183,9 @@ onMounted(async () => {
 .setting-control select:disabled { cursor: default; opacity: 1; color: var(--text-soft); background: var(--surface-soft); }
 .switch-control { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
 .switch-control > span { color: var(--text-faint); font-size: 9px; font-weight: 620; }
-.setting-switch { position: relative; width: 34px; min-height: 20px; flex: 0 0 auto; padding: 0; border-radius: 7px; background: var(--line-strong); }
-.setting-switch:disabled { cursor: default; opacity: 1; }
+.setting-switch { position: relative; width: 34px; min-height: 20px; flex: 0 0 auto; padding: 0; border-radius: 7px; cursor: pointer; background: var(--line-strong); }
+.setting-switch:disabled { cursor: wait; opacity: .7; }
+.setting-switch:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 65%, transparent); outline-offset: 2px; }
 .setting-switch > span { position: absolute; top: 4px; left: 4px; width: 12px; height: 12px; border-radius: 4px; background: #fff; transition: transform 150ms ease; }
 .setting-switch.on { background: var(--primary); }
 .setting-switch.on > span { transform: translateX(14px); }

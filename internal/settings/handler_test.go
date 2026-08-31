@@ -35,6 +35,33 @@ func TestHandlerReadsAndUpdatesProxySettings(t *testing.T) {
 	}
 }
 
+func TestHandlerReadsAndUpdatesCoreSettings(t *testing.T) {
+	path := t.TempDir() + "/settings.json"
+	store, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(store)
+	get := httptest.NewRecorder()
+	handler.ServeHTTP(get, httptest.NewRequest(http.MethodGet, "/api/v1/settings/core", nil))
+	if get.Code != http.StatusOK || strings.TrimSpace(get.Body.String()) != `{"autoStart":true,"autoReload":false}` {
+		t.Fatalf("get=%d %s", get.Code, get.Body.String())
+	}
+	put := httptest.NewRecorder()
+	handler.ServeHTTP(put, httptest.NewRequest(http.MethodPut, "/api/v1/settings/core", strings.NewReader(`{"autoStart":false,"autoReload":true}`)))
+	if put.Code != http.StatusOK || strings.TrimSpace(put.Body.String()) != `{"autoStart":false,"autoReload":true}` {
+		t.Fatalf("put=%d %s", put.Code, put.Body.String())
+	}
+	reopened, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	value, err := reopened.GetCore()
+	if err != nil || value.AutoStart || !value.AutoReload {
+		t.Fatalf("value=%+v err=%v", value, err)
+	}
+}
+
 func TestHandlerReportsInvalidProxyURLField(t *testing.T) {
 	store, err := OpenStore(t.TempDir() + "/settings.json")
 	if err != nil {

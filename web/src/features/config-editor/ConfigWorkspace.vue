@@ -227,6 +227,12 @@ function jumpTo(path: string): void {
         </div>
       </header>
       <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
+      <p
+        v-if="store.autoReloadOutcome.value"
+        class="auto-reload-status"
+        :class="{ success: store.autoReloadOutcome.value.applied }"
+        :role="store.autoReloadOutcome.value.applied ? 'status' : 'alert'"
+      >{{ store.autoReloadOutcome.value.message }}</p>
       <ConfigTabs :active="active" @select="active = $event" />
       <GeneralSettingsPanel v-if="active === 'general'" :draft="draft" :error="errors.log" :experimental-error="errors.experimental" @save="fromGeneralSettings" @edit-json="dialogModule = 'log'" />
       <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" />
@@ -258,6 +264,8 @@ function jumpTo(path: string): void {
 .save-status.saved { color: var(--green); background: var(--green-soft); }
 .save-status.saving { color: var(--primary); background: var(--primary-soft); }
 .profile-error { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: 11px; }
+.auto-reload-status { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: 11px; }
+.auto-reload-status.success { color: var(--green); background: var(--green-soft); }
 .modules { display: grid; gap: 14px; }
 .tabs + .panel, .tabs + .outbound-editor { margin-top: 0; }
 .empty { padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); }

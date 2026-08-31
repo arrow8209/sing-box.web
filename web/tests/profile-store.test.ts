@@ -76,6 +76,21 @@ describe("档案草稿保存", () => {
     expect(api.saveDraft.mock.calls[0]?.[2].buffers.inbounds).toContain("mixed-in");
   });
 
+  it("保存后公开服务端自动重载结果", async () => {
+    const api = fakeApi(); const store = createProfileStore(api); stores.push(store);
+    api.saveDraft.mockImplementation(async (_id: string, _etag: string, input: Draft) => ({
+      data: { ...input, revision: 4, savedAt: "2026-08-21T00:01:00Z" },
+      etag: '"rev-4"',
+      autoReload: { attempted: true, applied: true, reloaded: true, message: "配置已自动应用并重新加载运行核心" }
+    }));
+    await store.refresh(); await store.open("profile-a");
+    store.mutate((value) => { value.buffers.log = '{"level":"debug"}'; });
+    await store.flush();
+    expect(store.autoReloadOutcome.value).toEqual({ attempted: true, applied: true, reloaded: true, message: "配置已自动应用并重新加载运行核心" });
+    store.mutate((value) => { value.buffers.log = '{"level":"warn"}'; });
+    expect(store.autoReloadOutcome.value).toBeNull();
+  });
+
   it("复制前保存当前草稿并打开新档案", async () => {
     const copied = { ...profile, id: "profile-copy", name: "家庭出口 副本", draftRevision: 1 };
     const api = fakeApi();

@@ -145,6 +145,16 @@ type ApplyResult struct {
 	Validation configgen.ValidateResult `json:"validation"`
 }
 
+// AutoReloadResult distinguishes a non-current profile (not attempted), a
+// failed validation, an applied configuration while the core is stopped, and
+// a configuration that was also loaded into a running core.
+type AutoReloadResult struct {
+	Attempted  bool
+	Applied    bool
+	Reloaded   bool
+	Validation configgen.ValidateResult
+}
+
 type Coordinator struct {
 	profiles      *profile.Service
 	configuration *configgen.Handler
@@ -164,16 +174,43 @@ func NewCoordinator(profiles *profile.Service, configuration *configgen.Handler,
 	return &Coordinator{profiles: profiles, configuration: configuration, generator: generator, core: manager, operations: operations, now: time.Now}
 }
 
-func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result ApplyResult, err error) {
+func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (ApplyResult, error) {
+	result, _, _, err := c.apply(ctx, request, false)
+	return result, err
+}
+
+// AutoReload applies only when profileID still owns the formal config. A
+// running core is restarted under the same global operation lock; a stopped
+// core remains stopped after its formal configuration is updated.
+func (c *Coordinator) AutoReload(ctx context.Context, request ApplyRequest) (AutoReloadResult, error) {
+	result, attempted, reloaded, err := c.apply(ctx, request, true)
+	return AutoReloadResult{Attempted: attempted, Applied: result.Applied, Reloaded: reloaded, Validation: result.Validation}, err
+}
+
+func (c *Coordinator) apply(ctx context.Context, request ApplyRequest, autoReload bool) (result ApplyResult, attempted bool, reloaded bool, err error) {
 	result.ProfileID, result.Revision = request.ProfileID, request.Revision
 	if c == nil || c.profiles == nil || c.configuration == nil || c.generator == nil {
-		return result, errors.New("应用协调器不可用")
+		return result, false, false, errors.New("应用协调器不可用")
+	}
+	if autoReload && c.core == nil {
+		return result, false, false, errors.New("核心重载协调器不可用")
 	}
 	operation, release, err := c.operations.Enter(ctx, core.OperationApply)
 	if err != nil {
-		return result, err
+		return result, false, false, err
 	}
 	defer release()
+	if autoReload {
+		current, err := c.isCurrentProfile(ctx, request.ProfileID)
+		if err != nil {
+			operation.SetError(err.Error())
+			return result, false, false, err
+		}
+		if !current {
+			return result, false, false, nil
+		}
+		attempted = true
+	}
 
 	// A failed check may refresh only the profile check directory and validation
 	// summary. The formal configuration remains untouched.
@@ -181,35 +218,35 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 	validation, err := c.configuration.ValidateInOperation(ctx, request.ProfileID, request.Revision)
 	result.Validation, result.Digest = validation, validation.Digest
 	if err != nil {
-		return result, err
+		return result, attempted, false, err
 	}
 	if !validation.Valid {
-		return result, nil
+		return result, attempted, false, nil
 	}
 
 	// Reject a draft saved after the successful check before copying anything.
 	draft, _, err := c.profiles.GetDraft(ctx, request.ProfileID)
 	if err != nil {
-		return result, err
+		return result, attempted, false, err
 	}
 	if draft.Revision != request.Revision {
-		return result, profile.RevisionConflict{LatestRevision: draft.Revision}
+		return result, attempted, false, profile.RevisionConflict{LatestRevision: draft.Revision}
 	}
 
 	// Copy the exact in-memory output that produced the successful check. The
 	// stable config.staging-<profileID> directory stays available for review.
 	token, err := transactionToken()
 	if err != nil {
-		return result, err
+		return result, attempted, false, err
 	}
 	layout := c.configuration.Layout()
 	staging, err := layout.StagingConfigDir(token)
 	if err != nil {
-		return result, err
+		return result, attempted, false, err
 	}
 	output := configgen.Output{Files: validation.Files, Digest: validation.Digest, ResourceDigests: validation.ResourceDigests}
 	if err := c.generator.WriteDirectory(ctx, output, staging); err != nil {
-		return result, fmt.Errorf("copy_config: %w", err)
+		return result, attempted, false, fmt.Errorf("copy_config: %w", err)
 	}
 	defer func() { _ = removeOwnedDirectory(staging) }()
 
@@ -218,13 +255,13 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 	// edit is never silently overwritten.
 	currentDigest, err := DigestDirectory(layout.ConfigDir)
 	if err != nil {
-		return result, err
+		return result, attempted, false, err
 	}
 
 	operation.SetStage("copy_config")
 	transaction, err := BeginDirectorySwap(layout, staging, currentDigest)
 	if err != nil {
-		return result, err
+		return result, attempted, false, err
 	}
 	defer transaction.Cleanup()
 	now := c.now().UTC()
@@ -235,12 +272,42 @@ func (c *Coordinator) Apply(ctx context.Context, request ApplyRequest) (result A
 	}
 	if err := c.profiles.MarkApplied(ctx, applied); err != nil {
 		operation.SetStage("restore_config")
-		return result, errors.Join(err, transaction.Restore())
+		return result, attempted, false, errors.Join(err, transaction.Restore())
 	}
 
 	transaction.Commit()
 	result.Applied = true
-	return result, nil
+	if !autoReload || !c.core.Status(ctx).Running() {
+		return result, attempted, false, nil
+	}
+	operation.SetStage("stop_core")
+	if err := c.core.Stop(ctx); err != nil {
+		operation.SetError(err.Error())
+		return result, attempted, false, err
+	}
+	operation.SetStage("resolve_config")
+	target, err := c.resolveCoreStartTarget(ctx)
+	if err != nil {
+		operation.SetError(err.Error())
+		return result, attempted, false, err
+	}
+	if err := c.startAndCommitCore(ctx, operation, target); err != nil {
+		return result, attempted, false, err
+	}
+	return result, attempted, true, nil
+}
+
+func (c *Coordinator) isCurrentProfile(ctx context.Context, profileID string) (bool, error) {
+	metas, err := c.profiles.List(ctx)
+	if err != nil {
+		return false, err
+	}
+	for _, meta := range metas {
+		if meta.ConfigCurrent {
+			return meta.ID == profileID && meta.AppliedRevision != nil && meta.QuarantinedError == "", nil
+		}
+	}
+	return false, nil
 }
 
 func transactionToken() (string, error) {

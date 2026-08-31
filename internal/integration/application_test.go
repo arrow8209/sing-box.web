@@ -16,6 +16,7 @@ import (
 	"singbox-web/internal/configgen"
 	"singbox-web/internal/core"
 	"singbox-web/internal/profile"
+	"singbox-web/internal/settings"
 )
 
 func createApplicationProfile(t *testing.T, env *integrationEnvironment) (string, uint64) {
@@ -148,6 +149,95 @@ func TestApplicationCopiesConfigWithoutStartingStoppedCore(t *testing.T) {
 		t.Fatalf("metas=%+v err=%v", metas, listErr)
 	}
 	assertNoTransactionDirs(t, env.workDir)
+}
+
+func TestAutoReloadAppliesCurrentProfileAndReplacesRunningCore(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	profileID, revision := createApplicationProfile(t, env)
+	factory := &countingProcessFactory{}
+	manager, coordinator, _, _ := newApplicationCoordinatorWithFactory(t, env, nil, factory)
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
+	if err != nil || !result.Applied {
+		t.Fatalf("initial apply=%+v err=%v", result, err)
+	}
+	if err := coordinator.StartCore(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = manager.Stop(context.Background()) })
+	firstPID := manager.Status(context.Background()).PID
+	draft, etag, err := env.profiles.GetDraft(context.Background(), profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := env.profiles.SaveDraft(context.Background(), profileID, etag, profile.DraftInput{Buffers: draft.Buffers, EditorState: draft.EditorState, Bindings: draft.Bindings})
+	if err != nil {
+		t.Fatal(err)
+	}
+	automatic, err := coordinator.AutoReload(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: saved.Revision})
+	if err != nil || !automatic.Attempted || !automatic.Applied || !automatic.Reloaded {
+		t.Fatalf("automatic=%+v err=%v", automatic, err)
+	}
+	status := manager.Status(context.Background())
+	if factory.starts != 2 || status.State != core.ProcessRunning || status.PID == firstPID || status.AppliedRevision == nil || *status.AppliedRevision != saved.Revision {
+		t.Fatalf("starts=%d status=%+v", factory.starts, status)
+	}
+	metas, err := env.profiles.List(context.Background())
+	if err != nil || len(metas) != 1 || metas[0].NeedsApply || metas[0].AppliedRevision == nil || *metas[0].AppliedRevision != saved.Revision {
+		t.Fatalf("metas=%+v err=%v", metas, err)
+	}
+}
+
+func TestAutoReloadSkipsNonCurrentProfile(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	currentID, currentRevision := createApplicationProfile(t, env)
+	manager, coordinator, _, _ := newApplicationCoordinator(t, env, nil)
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: currentID, Revision: currentRevision})
+	if err != nil || !result.Applied {
+		t.Fatalf("initial apply=%+v err=%v", result, err)
+	}
+	otherID, otherRevision := createApplicationProfile(t, env)
+	automatic, err := coordinator.AutoReload(context.Background(), application.ApplyRequest{ProfileID: otherID, Revision: otherRevision})
+	if err != nil || automatic.Attempted || automatic.Applied || automatic.Reloaded {
+		t.Fatalf("automatic=%+v err=%v", automatic, err)
+	}
+	if status := manager.Status(context.Background()); status.State != core.ProcessStopped || status.PID != 0 {
+		t.Fatalf("status=%+v", status)
+	}
+	metas, err := env.profiles.List(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, meta := range metas {
+		if meta.ID == otherID && (!meta.NeedsApply || meta.AppliedRevision != nil || meta.ConfigCurrent) {
+			t.Fatalf("other meta=%+v", meta)
+		}
+	}
+}
+
+func TestAutoReloadAppliesCurrentProfileWithoutStartingStoppedCore(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	profileID, revision := createApplicationProfile(t, env)
+	factory := &countingProcessFactory{}
+	manager, coordinator, _, _ := newApplicationCoordinatorWithFactory(t, env, nil, factory)
+	result, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: revision})
+	if err != nil || !result.Applied {
+		t.Fatalf("initial apply=%+v err=%v", result, err)
+	}
+	draft, etag, err := env.profiles.GetDraft(context.Background(), profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	saved, _, err := env.profiles.SaveDraft(context.Background(), profileID, etag, profile.DraftInput{Buffers: draft.Buffers, EditorState: draft.EditorState, Bindings: draft.Bindings})
+	if err != nil {
+		t.Fatal(err)
+	}
+	automatic, err := coordinator.AutoReload(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: saved.Revision})
+	if err != nil || !automatic.Attempted || !automatic.Applied || automatic.Reloaded {
+		t.Fatalf("automatic=%+v err=%v", automatic, err)
+	}
+	if status := manager.Status(context.Background()); status.State != core.ProcessStopped || status.PID != 0 || factory.starts != 0 {
+		t.Fatalf("starts=%d status=%+v", factory.starts, status)
+	}
 }
 
 func TestCoreStartUsesCurrentAppliedConfigurationAndCommitsRunningIntent(t *testing.T) {
@@ -329,6 +419,60 @@ func TestServerRestartStartsMostRecentlyAppliedCoreWithoutPriorStart(t *testing.
 	}
 	state, err := store.Load()
 	if err != nil || !state.ExpectedRunning || state.CurrentProfileID != meta.ID || state.AppliedRevision == nil || *state.AppliedRevision != draft.Revision || state.ConfigDirectoryDigest != digest || state.InstalledVersion != "1.12.0" {
+		t.Fatalf("state=%+v err=%v", state, err)
+	}
+}
+
+func TestServerRestartHonorsDisabledAutoStart(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	meta, draft, err := env.profiles.Create(context.Background(), profile.CreateInput{Name: "关闭自动启动"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(env.layout.ConfigDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(env.layout.ConfigDir, "config.json"), []byte("{}"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	digest, err := application.DigestDirectory(env.layout.ConfigDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now().UTC()
+	if err := env.profiles.MarkApplied(context.Background(), profile.AppliedResult{ProfileID: meta.ID, Revision: draft.Revision, Digest: digest, ResourceDigests: map[string]string{}, AppliedAt: now, Validation: profile.ValidationSummary{Valid: true, Revision: draft.Revision, CheckedAt: now}}); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.MkdirAll(env.layout.BinDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\ncase \"$1\" in\nversion) echo 'sing-box version 1.12.0';;\ncheck) exit 0;;\nrun) echo run >> fake-run.log; trap 'exit 0' TERM INT; while :; do sleep 1; done;;\nesac\n"
+	if err := os.WriteFile(env.layout.CoreBinary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := core.NewStore(env.layout.CoreFile).RecordInstalled("old", "old"); err != nil {
+		t.Fatal(err)
+	}
+	settingsStore, err := settings.OpenStore(env.layout.SettingsFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := settingsStore.UpdateCore(settings.CoreSettings{AutoStart: false, AutoReload: false}); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.NewStore(env.layout.AuthFile, nil).SetPassword([]byte("correct horse battery staple")); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.NewServer(env.workDir, app.Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close(context.Background())
+	if _, err := os.Stat(filepath.Join(env.workDir, "fake-run.log")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("core unexpectedly started: %v", err)
+	}
+	state, err := core.NewStore(env.layout.CoreFile).Load()
+	if err != nil || state.ExpectedRunning {
 		t.Fatalf("state=%+v err=%v", state, err)
 	}
 }
