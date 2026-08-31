@@ -12,6 +12,8 @@
 
 > 2026-08-31 启动与重启覆盖：仪表盘“启动核心”和“重启”接入受认证且要求 CSRF 的 `POST /core`、`POST /core/restart`。服务端只能从唯一 `configCurrent` 档案及其已应用修订启动固定 `data/bin/sing-box run -C config` 命令；进程通过启动观察窗后才原子提交 `CurrentProfileID`、`AppliedRevision`、`ConfigDirectoryDigest` 与 `ExpectedRunning=true`。重启在同一全局操作锁中依次停止旧进程并启动正式配置，启动失败或进程异常退出必须清除恢复意图。前端不得再用本地覆盖值伪造运行状态。
 
+> 2026-08-31 自动启动覆盖：Web 控制台每次启动都以唯一 `configCurrent` 已应用档案决定是否启动 sing-box，不再以 `ExpectedRunning` 作为跨控制台重启的开关。存在有效已应用配置时自动启动并在观察成功后提交运行状态；不存在已应用配置时不得启动，并清理遗留的应用关联与运行意图。管理员手动停止只影响当前控制台进程生命周期。设置页的只读“开机自动运行”状态同样由已应用配置决定。
+
 > 2026-08-28 配置状态与常规设置覆盖：侧栏将“当前应用/已启动”和“草稿有修改尚未同步到 `config/`”拆成两个独立图标；档案元数据只允许一个 `configCurrent`。一级“通用设置”改名为“常规设置”，工作模式、Clash API 监听地址和密钥直接维护当前草稿的 `experimental.clash_api`，不再使用页面演示值。
 
 ## 1. 背景

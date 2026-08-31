@@ -285,7 +285,7 @@ func prepareRunningCore(t *testing.T, env *integrationEnvironment, manager *core
 	}
 }
 
-func TestServerRestartRestoresExpectedCore(t *testing.T) {
+func TestServerRestartStartsMostRecentlyAppliedCoreWithoutPriorStart(t *testing.T) {
 	env := newIntegrationEnvironment(t)
 	meta, draft, err := env.profiles.Create(context.Background(), profile.CreateInput{Name: "恢复测试"})
 	if err != nil {
@@ -316,15 +316,6 @@ func TestServerRestartRestoresExpectedCore(t *testing.T) {
 	if err := store.RecordInstalled("old", "old"); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := store.Update(func(state *core.PersistentState) error {
-		state.CurrentProfileID = meta.ID
-		state.AppliedRevision = &draft.Revision
-		state.ExpectedRunning = true
-		state.ConfigDirectoryDigest = digest
-		return nil
-	}); err != nil {
-		t.Fatal(err)
-	}
 	if err := auth.NewStore(env.layout.AuthFile, nil).SetPassword([]byte("correct horse battery staple")); err != nil {
 		t.Fatal(err)
 	}
@@ -337,7 +328,43 @@ func TestServerRestartRestoresExpectedCore(t *testing.T) {
 		t.Fatalf("core was not restored: %q err=%v", contents, err)
 	}
 	state, err := store.Load()
-	if err != nil || !state.ExpectedRunning || state.InstalledVersion != "1.12.0" {
+	if err != nil || !state.ExpectedRunning || state.CurrentProfileID != meta.ID || state.AppliedRevision == nil || *state.AppliedRevision != draft.Revision || state.ConfigDirectoryDigest != digest || state.InstalledVersion != "1.12.0" {
+		t.Fatalf("state=%+v err=%v", state, err)
+	}
+}
+
+func TestServerRestartDoesNotStartCoreWithoutAppliedConfiguration(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	if err := os.MkdirAll(env.layout.BinDir, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	script := "#!/bin/sh\ncase \"$1\" in\nversion) echo 'sing-box version 1.12.0';;\nrun) echo run >> fake-run.log;;\nesac\n"
+	if err := os.WriteFile(env.layout.CoreBinary, []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	revision := uint64(9)
+	if _, err := core.NewStore(env.layout.CoreFile).Update(func(state *core.PersistentState) error {
+		state.CurrentProfileID = "ffffffffffffffffffffffffffffffff"
+		state.AppliedRevision = &revision
+		state.ExpectedRunning = true
+		state.ConfigDirectoryDigest = "stale-config-digest"
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if err := auth.NewStore(env.layout.AuthFile, nil).SetPassword([]byte("correct horse battery staple")); err != nil {
+		t.Fatal(err)
+	}
+	server, err := app.NewServer(env.workDir, app.Dependencies{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer server.Close(context.Background())
+	if _, err := os.Stat(filepath.Join(env.workDir, "fake-run.log")); !errors.Is(err, os.ErrNotExist) {
+		t.Fatalf("core unexpectedly started without applied config: %v", err)
+	}
+	state, err := core.NewStore(env.layout.CoreFile).Load()
+	if err != nil || state.ExpectedRunning || state.CurrentProfileID != "" || state.AppliedRevision != nil {
 		t.Fatalf("state=%+v err=%v", state, err)
 	}
 }

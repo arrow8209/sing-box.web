@@ -194,10 +194,10 @@ func (m *Manager) Stop(ctx context.Context) error {
 	}
 }
 
-// RequestStop records an administrator's durable stop intent and terminates
-// only the sing-box process currently owned by this Manager. Internal update
-// and shutdown flows call Stop directly because they intentionally preserve
-// ExpectedRunning for a later restart.
+// RequestStop records that the core should remain stopped for the current Web
+// process lifetime and terminates only the sing-box process owned by this
+// Manager. A later Web startup derives auto-start from the applied config,
+// while internal update and shutdown flows call Stop directly.
 func (m *Manager) RequestStop(ctx context.Context) error {
 	if m == nil {
 		return errors.New("核心管理器不可用")

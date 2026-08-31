@@ -192,6 +192,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		return nil, err
 	}
 	coreManager := core.NewManager(layout, coreStore, coreLog, operation)
+	coordinator := application.NewCoordinator(profileService, configHandler, nil, coreManager, operation)
 	// Configuration and program recovery happen only after every managed JSON
 	// file passed its read-only validation gate and while app.lock is held.
 	state, recoveryErr := coreStore.Load()
@@ -205,22 +206,28 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		// A recovery problem must not lock administrators out of the UI. Core
 		// actions stay refused by the start_failed state until repaired.
 		coreManager.RecordRecoveryFailure(recoveryErr)
-	} else if state.ExpectedRunning {
+	} else {
 		metas, listErr := profileService.List(context.Background())
-		valid := listErr == nil && state.CurrentProfileID != "" && state.AppliedRevision != nil
-		if valid {
-			valid = false
+		hasAppliedConfig := false
+		if listErr == nil {
 			for _, meta := range metas {
-				if meta.ID == state.CurrentProfileID && meta.AppliedRevision != nil && *meta.AppliedRevision == *state.AppliedRevision {
-					valid = true
+				if meta.ConfigCurrent && meta.AppliedRevision != nil {
+					hasAppliedConfig = true
 					break
 				}
 			}
 		}
-		if !valid {
-			coreManager.RecordRecoveryFailure(fmt.Errorf("无法恢复核心：当前已应用档案不存在或修订不匹配"))
-		} else if err := coreManager.Start(context.Background(), core.StartRequest{ProfileID: state.CurrentProfileID, DraftRevision: *state.AppliedRevision}); err != nil {
-			coreManager.RecordRecoveryFailure(err)
+		switch {
+		case listErr != nil:
+			coreManager.RecordRecoveryFailure(fmt.Errorf("检查自动启动配置: %w", listErr))
+		case hasAppliedConfig:
+			if err := coordinator.StartCore(context.Background()); err != nil {
+				coreManager.RecordRecoveryFailure(fmt.Errorf("自动启动最近已应用配置: %w", err))
+			}
+		case state.CurrentProfileID != "" || state.AppliedRevision != nil || state.ExpectedRunning || state.ConfigDirectoryDigest != "":
+			if err := coreManager.ClearApplication(); err != nil {
+				coreManager.RecordRecoveryFailure(fmt.Errorf("清理无配置的自动启动状态: %w", err))
+			}
 		}
 	}
 	updateService := updater.NewService(
@@ -232,7 +239,6 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		checker,
 		operation,
 	)
-	coordinator := application.NewCoordinator(profileService, configHandler, nil, coreManager, operation)
 	runtimeService := runtimeapi.NewService(layout, coreManager)
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
@@ -311,8 +317,8 @@ func (s *Server) Run(ctx context.Context) error {
 }
 
 // Close stops accepting HTTP requests, cancels scheduling, lets one existing
-// transaction finish, then gracefully stops the child core. ExpectedRunning is
-// intentionally preserved so a normal Web restart can restore it.
+// transaction finish, then gracefully stops the child core. The applied
+// configuration remains intact, so the next Web startup can run it again.
 func (s *Server) Close(ctx context.Context) error {
 	if s == nil {
 		return nil

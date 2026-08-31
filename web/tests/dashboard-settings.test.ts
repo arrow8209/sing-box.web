@@ -47,7 +47,8 @@ describe("仪表盘与设置", () => {
   it("核心设置只展示真实状态和稳定版能力", async () => {
     const api = {
       status: vi.fn(async () => ({ installedVersion: "1.12.2", installedDigest: "", state: "running" as const, pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } })),
-      latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" }))
+      latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
+      profiles: vi.fn(async () => [{ id: "profile-a", name: "A", draftRevision: 1, appliedRevision: 1, appliedDigest: "", appliedAt: null, configCurrent: true, needsApply: false, lastValidation: null }])
     };
     const wrapper = mount(CoreSettings, {
       props: { api },
@@ -58,8 +59,23 @@ describe("仪表盘与设置", () => {
     expect(wrapper.text()).toContain("Stable · 1.12.3");
     expect(wrapper.text()).toContain("当前 1.12.2 · 最新 1.12.3");
     expect(wrapper.get('[aria-label="开机自动运行（只读）"]').attributes("aria-checked")).toBe("true");
+    expect(wrapper.text()).toContain("没有配置则保持停止");
     expect(wrapper.get('[aria-label="配置变更自动重载（只读）"]').attributes("aria-checked")).toBe("false");
     expect(wrapper.text()).not.toContain("Beta");
+  });
+  it("没有已应用配置时不会显示为自动启动", async () => {
+    const api = {
+      status: vi.fn(async () => ({ installedVersion: "1.12.2", installedDigest: "", state: "stopped" as const, pid: 0, currentProfileId: "", appliedRevision: null, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } })),
+      latest: vi.fn(async () => ({ version: "1.12.3", arch: "amd64" })),
+      profiles: vi.fn(async () => [])
+    };
+    const wrapper = mount(CoreSettings, {
+      props: { api },
+      global: { stubs: { RouterLink: { template: '<a href="/core"><slot /></a>' } } }
+    });
+    await flushPromises();
+    expect(wrapper.get('[aria-label="开机自动运行（只读）"]').attributes("aria-checked")).toBe("false");
+    expect(wrapper.text()).toContain("未启用");
   });
   it("仪表盘按原型渲染完整运行概览并保留服务端状态", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };

@@ -4,31 +4,38 @@ import { RouterLink } from "vue-router";
 import AppIcon from "@/layout/AppIcon.vue";
 import { coreApi, type CoreApi } from "@/features/core/api";
 import type { CoreStatus, LatestRelease } from "@/features/core/types";
+import { profileApi } from "@/features/profiles/api";
+import type { ProfileSummary } from "@/features/profiles/types";
 
-export type CoreSettingsApi = Pick<CoreApi, "status" | "latest">;
+export interface CoreSettingsApi extends Pick<CoreApi, "status" | "latest"> {
+  profiles(): Promise<ProfileSummary[]>;
+}
 
 const props = withDefaults(defineProps<{ api?: CoreSettingsApi }>(), {
-  api: () => coreApi
+  api: () => ({ status: coreApi.status, latest: coreApi.latest, profiles: profileApi.list })
 });
 
 const status = ref<CoreStatus | null>(null);
 const latest = ref<LatestRelease | null>(null);
+const profiles = ref<ProfileSummary[]>([]);
 const loading = ref(true);
 const error = ref("");
 
 const currentVersion = computed(() => status.value?.installedVersion || "未安装");
 const latestVersion = computed(() => latest.value?.version || "暂不可用");
 const stableLabel = computed(() => `Stable · ${latest.value?.version || status.value?.installedVersion || "暂不可用"}`);
-const autoStart = computed(() => Boolean(status.value?.expectedRunning));
+const autoStart = computed(() => profiles.value.some((profile) => profile.configCurrent && profile.appliedRevision !== null)
+  || Boolean(status.value?.currentProfileId && status.value.appliedRevision !== null));
 
 function errorMessage(cause: unknown, fallback: string): string {
   return cause instanceof Error ? cause.message : fallback;
 }
 
 onMounted(async () => {
-  const [statusResult, latestResult] = await Promise.allSettled([
+  const [statusResult, latestResult, profilesResult] = await Promise.allSettled([
     props.api.status(),
-    props.api.latest()
+    props.api.latest(),
+    props.api.profiles()
   ]);
   const failures: string[] = [];
   if (statusResult.status === "fulfilled") {
@@ -40,6 +47,11 @@ onMounted(async () => {
     latest.value = latestResult.value;
   } else {
     failures.push(errorMessage(latestResult.reason, "读取最新稳定版失败"));
+  }
+  if (profilesResult.status === "fulfilled") {
+    profiles.value = profilesResult.value;
+  } else {
+    failures.push(errorMessage(profilesResult.reason, "读取已应用配置失败"));
   }
   error.value = failures.join("；");
   loading.value = false;
@@ -64,7 +76,7 @@ onMounted(async () => {
       <div class="setting-row">
         <div class="setting-copy">
           <strong>开机自动运行</strong>
-          <span>控制台重新启动后，恢复最近已应用的 sing-box 核心</span>
+          <span>存在已应用配置时，控制台每次启动都会自动运行 sing-box；没有配置则保持停止</span>
         </div>
         <div class="setting-control switch-control">
           <span>{{ loading ? "读取中" : autoStart ? "已启用" : "未启用" }}</span>
@@ -76,7 +88,7 @@ onMounted(async () => {
             aria-label="开机自动运行（只读）"
             :aria-checked="autoStart"
             disabled
-            title="该状态由最近一次成功应用的配置决定"
+            title="由最近一次成功应用的配置自动决定"
           ><span /></button>
         </div>
       </div>
