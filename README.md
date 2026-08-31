@@ -60,7 +60,7 @@ scripts/test-proxy-ip.sh http://127.0.0.1:7890
 PROXY_URL=http://127.0.0.1:7890 scripts/test-proxy-ip.sh
 ```
 
-第二个参数或 `IP_LOOKUP_URL` 可以覆盖默认的 `https://api.ipify.org`。脚本会同时设置大小写形式的 `HTTP_PROXY`、`HTTPS_PROXY`、`http_proxy` 和 `https_proxy`，并为 `curl` 设置连接及总超时。
+第二个参数或 `IP_LOOKUP_URL` 可以覆盖默认的 `https://api.ipify.org`。脚本会同时设置大小写形式的 `HTTP_PROXY`、`HTTPS_PROXY`、`http_proxy` 和 `https_proxy`，并为 `curl` 设置连接及总超时；获得出口 IP 后，还会通过 `https://ipwho.is` 输出中文国家、省州和城市信息。
 
 ## JSON 订阅
 

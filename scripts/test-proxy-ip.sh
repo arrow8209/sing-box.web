@@ -52,18 +52,55 @@ https_proxy="$proxy_url"
 export HTTP_PROXY HTTPS_PROXY http_proxy https_proxy
 unset NO_PROXY no_proxy
 
-ip_address="$(curl \
-  --fail \
-  --silent \
-  --show-error \
-  --location \
-  --connect-timeout "${CURL_CONNECT_TIMEOUT:-10}" \
-  --max-time "${CURL_MAX_TIME:-30}" \
-  "$ip_lookup_url")"
+curl_lookup() {
+  curl \
+    --fail \
+    --silent \
+    --show-error \
+    --location \
+    --connect-timeout "${CURL_CONNECT_TIMEOUT:-10}" \
+    --max-time "${CURL_MAX_TIME:-30}" \
+    "$1"
+}
+
+json_string_field() {
+  printf '%s\n' "$1" |
+    sed -n 's/.*"'"$2"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p'
+}
+
+ip_address="$(curl_lookup "$ip_lookup_url")"
 
 if [ -z "$ip_address" ]; then
   printf 'IP 查询接口返回了空结果。\n' >&2
   exit 1
 fi
 
+case "$ip_address" in
+  *[!0-9A-Fa-f:.]*)
+    printf 'IP 查询接口返回了无效结果：%s\n' "$ip_address" >&2
+    exit 1
+    ;;
+esac
+
 printf '代理出口 IP：%s\n' "$ip_address"
+
+geo_lookup_url="https://ipwho.is/${ip_address}?lang=zh-CN"
+geo_response="$(curl_lookup "$geo_lookup_url")"
+country="$(json_string_field "$geo_response" "country")"
+region="$(json_string_field "$geo_response" "region")"
+city="$(json_string_field "$geo_response" "city")"
+
+ip_location="$country"
+if [ -n "$region" ] && [ "$region" != "$country" ]; then
+  ip_location="${ip_location}${ip_location:+ / }${region}"
+fi
+if [ -n "$city" ] && [ "$city" != "$country" ] && [ "$city" != "$region" ]; then
+  ip_location="${ip_location}${ip_location:+ / }${city}"
+fi
+
+if [ -z "$country" ]; then
+  printf 'IP 归属地查询失败。\n' >&2
+  exit 1
+fi
+
+printf 'IP 归属地：%s\n' "$ip_location"
