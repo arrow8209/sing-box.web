@@ -1,104 +1,40 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref } from "vue";
+import { computed, onBeforeUnmount, ref, watch } from "vue";
 import AppIcon from "@/layout/AppIcon.vue";
+import { buildDashboardProxyGroups, type DashboardProxyGroup, type DashboardProxyMember } from "./proxy-groups";
 
-interface ProxyMember {
-  id: string;
-  name: string;
-  type: string;
-  network: string;
-  latency: number | null;
-  icon?: string;
-  groupId?: string;
-}
-
-interface ProxyGroup {
-  id: string;
-  icon: string;
-  name: string;
-  type: string;
-  selected: string;
-  expanded: boolean;
-  members: ProxyMember[];
-}
-
+const props = withDefaults(defineProps<{ outbounds?: unknown[]; editorState?: unknown; loading?: boolean }>(), {
+  outbounds: () => [],
+  loading: false
+});
 const emit = defineEmits<{ notice: [message: string] }>();
 const testing = ref(false);
 let testTimer: ReturnType<typeof setTimeout> | undefined;
 
-const groups = ref<ProxyGroup[]>([
-  {
-    id: "node-select",
-    icon: "🚀",
-    name: "节点选择",
-    type: "Selector",
-    selected: "nas-ss",
-    expanded: true,
-    members: [
-      { id: "nas-ss", name: "nas-ss", type: "Shadowsocks", network: "udp", latency: 206 },
-      { id: "vless-60016", name: "vless-60016", type: "VLESS", network: "udp", latency: 0 },
-      { id: "ssh-nas-600001", name: "ssh-nas-600001", type: "SSH", network: "", latency: 0 }
-    ]
-  },
-  {
-    id: "auto-select",
-    icon: "📍",
-    name: "自动选择",
-    type: "URLTest",
-    selected: "node-select-ref",
-    expanded: true,
-    members: [
-      { id: "node-select-ref", name: "节点选择", type: "Selector", network: "udp", latency: 206, icon: "🚀", groupId: "node-select" }
-    ]
-  },
-  {
-    id: "global-direct",
-    icon: "🎯",
-    name: "全球直连",
-    type: "Selector",
-    selected: "direct",
-    expanded: false,
-    members: [{ id: "direct", name: "direct", type: "Direct", network: "", latency: 4 }]
-  },
-  {
-    id: "global-block",
-    icon: "🛑",
-    name: "全球拦截",
-    type: "Selector",
-    selected: "block",
-    expanded: false,
-    members: [{ id: "block", name: "block", type: "Block", network: "", latency: null }]
-  },
-  {
-    id: "fallback",
-    icon: "🐟",
-    name: "漏网之鱼",
-    type: "Selector",
-    selected: "nas-ss",
-    expanded: false,
-    members: [
-      { id: "nas-ss", name: "nas-ss", type: "Shadowsocks", network: "udp", latency: 206 },
-      { id: "vless-60016", name: "vless-60016", type: "VLESS", network: "udp", latency: 0 },
-      { id: "direct", name: "direct", type: "Direct", network: "", latency: 4 }
-    ]
-  },
-  {
-    id: "global",
-    icon: "🌐",
-    name: "GLOBAL",
-    type: "Selector",
-    selected: "global-direct-ref",
-    expanded: false,
-    members: [
-      { id: "global-direct-ref", name: "全球直连", type: "Selector", network: "", latency: 4, icon: "🎯", groupId: "global-direct" },
-      { id: "direct", name: "direct", type: "Direct", network: "", latency: 4 }
-    ]
-  }
-]);
+const groups = ref<DashboardProxyGroup[]>([]);
 
-const onlineNodes = computed(() => groups.value.flatMap((group) => group.members).filter((member) => Number(member.latency) > 0).length);
+watch([() => props.outbounds, () => props.editorState], () => {
+  const previous = new Map(groups.value.map((group) => [group.id, group]));
+  groups.value = buildDashboardProxyGroups(props.outbounds, props.editorState).map((group) => {
+    const current = previous.get(group.id);
+    if (!current) return group;
+    const latencyByTag = new Map(current.members.map((member) => [member.tag, member.latency]));
+    group.expanded = current.expanded;
+    group.selected = group.members.some((member) => member.id === current.selected) ? current.selected : group.selected;
+    group.members.forEach((member) => {
+      if (latencyByTag.has(member.tag)) member.latency = latencyByTag.get(member.tag);
+    });
+    return group;
+  });
+}, { immediate: true });
 
-function selectedLabel(group: ProxyGroup): string {
+const leafMembers = computed(() => groups.value.flatMap((group) => group.members).filter((member) => !member.groupId && member.type !== "Block"));
+const configuredNodes = computed(() => new Set(leafMembers.value.map((member) => member.tag)).size);
+const hasTestedNodes = computed(() => leafMembers.value.some((member) => typeof member.latency === "number"));
+const onlineNodes = computed(() => new Set(leafMembers.value.filter((member) => Number(member.latency) > 0).map((member) => member.tag)).size);
+const nodeSummary = computed(() => hasTestedNodes.value ? `${onlineNodes.value} 个节点可用` : `${configuredNodes.value} 个节点已配置`);
+
+function selectedLabel(group: DashboardProxyGroup): string {
   const selected = group.members.find((member) => member.id === group.selected);
   if (!selected) return "未选择";
   if (!selected.groupId) return selected.name;
@@ -107,13 +43,14 @@ function selectedLabel(group: ProxyGroup): string {
   return referencedNode ? `${selected.name} / ${referencedNode.name}` : selected.name;
 }
 
-function initials(member: ProxyMember): string {
+function initials(member: DashboardProxyMember): string {
   if (member.icon) return member.icon;
   const characters = Array.from(member.name);
   return /^[a-z]/i.test(member.name) ? characters.slice(0, 2).join("").toUpperCase() : characters[0] ?? "?";
 }
 
-function latencyTone(member: ProxyMember): string {
+function latencyTone(member: DashboardProxyMember): string {
+  if (member.latency === undefined) return "untested";
   if (member.latency === null) return "unavailable";
   if (!member.latency) return "timeout";
   if (member.latency <= 100) return "fast";
@@ -121,22 +58,23 @@ function latencyTone(member: ProxyMember): string {
   return "slow";
 }
 
-function latencyLabel(member: ProxyMember): string {
+function latencyLabel(member: DashboardProxyMember): string {
+  if (member.latency === undefined) return "未测速";
   if (member.latency === null) return "不适用";
   if (!member.latency) return "超时";
   return `${member.latency} ms`;
 }
 
-function selectNode(group: ProxyGroup, member: ProxyMember): void {
+function selectNode(group: DashboardProxyGroup, member: DashboardProxyMember): void {
   group.selected = member.id;
   emit("notice", `${group.name} 已切换到 ${member.name}。`);
 }
 
-function toggleGroup(group: ProxyGroup): void {
+function toggleGroup(group: DashboardProxyGroup): void {
   group.expanded = !group.expanded;
 }
 
-function startTest(targets: ProxyGroup[], message: string): void {
+function startTest(targets: DashboardProxyGroup[], message: string): void {
   if (testing.value) return;
   testing.value = true;
   if (testTimer) clearTimeout(testTimer);
@@ -162,13 +100,13 @@ onBeforeUnmount(() => {
     <header class="card-head proxy-selector-head">
       <div><h3 class="card-title">节点选择</h3><p class="card-subtitle">选择策略组当前使用的出站节点</p></div>
       <div class="proxy-selector-actions">
-        <span class="proxy-online-summary"><i />{{ onlineNodes }} 个节点可用</span>
-        <button class="btn btn-sm" type="button" :disabled="testing" @click="startTest(groups, '全部节点延迟已刷新。')"><AppIcon name="gauge" :size="14" />{{ testing ? "测速中" : "全部测速" }}</button>
+        <span class="proxy-online-summary"><i />{{ nodeSummary }}</span>
+        <button class="btn btn-sm" type="button" :disabled="testing || !groups.length" @click="startTest(groups, '全部节点延迟已刷新。')"><AppIcon name="gauge" :size="14" />{{ testing ? "测速中" : "全部测速" }}</button>
       </div>
     </header>
 
     <div class="proxy-group-list">
-      <section v-for="group in groups" :key="group.id" class="proxy-group" :class="{ expanded: group.expanded }">
+      <section v-for="group in groups" :key="group.id" class="proxy-group" :class="{ expanded: group.expanded }" :data-proxy-group-tag="group.tag">
         <div class="proxy-group-head">
           <button class="proxy-group-main" type="button" :aria-expanded="group.expanded" @click="toggleGroup(group)">
             <span class="proxy-group-avatar">{{ group.icon }}</span>
@@ -181,7 +119,7 @@ onBeforeUnmount(() => {
         </div>
 
         <div v-if="group.expanded" class="proxy-node-grid">
-          <button v-for="member in group.members" :key="member.id" class="proxy-node-card" :class="{ selected: member.id === group.selected }" type="button" :aria-pressed="member.id === group.selected" @click="selectNode(group, member)">
+          <button v-for="member in group.members" :key="member.id" class="proxy-node-card" :class="{ selected: member.id === group.selected }" type="button" :aria-pressed="member.id === group.selected" :data-proxy-member-tag="member.tag" @click="selectNode(group, member)">
             <span class="proxy-node-avatar" :class="{ emoji: member.icon }">{{ initials(member) }}</span>
             <span class="proxy-node-copy">
               <strong>{{ member.name }}</strong>
@@ -193,6 +131,11 @@ onBeforeUnmount(() => {
           </button>
         </div>
       </section>
+      <div v-if="!groups.length" class="proxy-empty-state">
+        <AppIcon name="outbound" :size="24" />
+        <strong>{{ loading ? "正在读取当前配置" : "没有可选择的策略组" }}</strong>
+        <span>{{ loading ? "节点列表加载后会自动显示" : "请先在当前配置中添加 Selector 或 URLTest 出站" }}</span>
+      </div>
     </div>
   </article>
 </template>
@@ -243,10 +186,13 @@ onBeforeUnmount(() => {
 .proxy-latency.fast, .proxy-latency.medium { color: var(--green); }
 .proxy-latency.slow { color: var(--orange); }
 .proxy-latency.timeout { color: var(--red); }
-.proxy-latency.unavailable, .proxy-latency.testing { color: var(--text-faint); }
+.proxy-latency.unavailable, .proxy-latency.untested, .proxy-latency.testing { color: var(--text-faint); }
 .proxy-latency.testing :deep(.icon) { animation: proxy-spin 800ms linear infinite; }
 .proxy-node-check { position: absolute; right: 12px; bottom: 12px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; color: #fff; background: transparent; }
 .proxy-node-card.selected .proxy-node-check { background: var(--primary); }
+.proxy-empty-state { display: grid; min-height: 150px; place-items: center; align-content: center; gap: 7px; color: var(--primary); }
+.proxy-empty-state strong { color: var(--text); font-size: 12px; }
+.proxy-empty-state span { color: var(--text-faint); font-size: 9px; }
 @keyframes fade-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes proxy-spin { to { transform: rotate(360deg); } }
 @media (min-width: 1081px) {

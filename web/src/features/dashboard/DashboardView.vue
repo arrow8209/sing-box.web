@@ -50,6 +50,11 @@ const draftStats = computed(() => {
     routeRules: Array.isArray(route?.rules) ? route.rules.length : 0
   };
 });
+const dashboardOutbounds = computed<unknown[]>(() => {
+  const outbounds = profileStore.draft.value?.config.outbounds;
+  return Array.isArray(outbounds) ? outbounds : [];
+});
+const dashboardOutboundEditorState = computed(() => profileStore.draft.value?.editorState?.outbounds);
 const uptime = computed(() => {
   if (!running.value) return "--";
   const startedAt = core.status.value?.startedAt;
@@ -251,7 +256,7 @@ onBeforeUnmount(() => {
           </article>
         </div>
 
-        <DashboardProxySelector @notice="showNotice" />
+        <DashboardProxySelector :outbounds="dashboardOutbounds" :editor-state="dashboardOutboundEditorState" :loading="!profileStore.draft.value" @notice="showNotice" />
       </div>
     </div>
 

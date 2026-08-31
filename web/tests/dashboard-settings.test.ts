@@ -2,13 +2,19 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { routerKey } from "vue-router";
 import DashboardView from "@/features/dashboard/DashboardView.vue";
+import { useProfileStore } from "@/features/profiles/store";
 import AppearanceSettings from "@/features/settings/AppearanceSettings.vue";
 import CoreSettings from "@/features/settings/CoreSettings.vue";
 import PasswordSettings from "@/features/settings/PasswordSettings.vue";
 import ProxySettings from "@/features/settings/ProxySettings.vue";
 
 describe("仪表盘与设置", () => {
-  afterEach(() => localStorage.clear());
+  afterEach(() => {
+    localStorage.clear();
+    const profiles = useProfileStore();
+    profiles.activeProfileId.value = null;
+    profiles.draft.value = null;
+  });
   it("外观偏好只写入白名单键", async () => {
     const wrapper = mount(AppearanceSettings); await wrapper.get("select").setValue("dark");
     expect(localStorage.getItem("singbox-theme")).toBe("dark");
@@ -56,6 +62,27 @@ describe("仪表盘与设置", () => {
   });
   it("仪表盘按原型渲染完整运行概览并保留服务端状态", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };
+    const outbounds = [
+      { type: "selector", tag: "🚀 节点选择", outbounds: ["香港 01", "香港 02", "香港 03", "香港 04", "新加坡 01", "日本 01"] },
+      { type: "urltest", tag: "🎈 自动选择", outbounds: ["direct"] },
+      { type: "selector", tag: "🎯 全球直连", outbounds: ["direct", "block"] },
+      { type: "selector", tag: "🛑 全球拦截", outbounds: ["block", "direct"] },
+      { type: "selector", tag: "🐟 漏网之鱼", outbounds: ["🚀 节点选择", "🎯 全球直连"] },
+      { type: "selector", tag: "GLOBAL", outbounds: ["🚀 节点选择", "🎈 自动选择", "🎯 全球直连", "🛑 全球拦截", "🐟 漏网之鱼"] },
+      ...["香港 01", "香港 02", "香港 03", "香港 04", "新加坡 01", "日本 01"].map((tag) => ({ type: "anytls", tag })),
+      { type: "direct", tag: "direct" },
+      { type: "block", tag: "block" }
+    ];
+    const profiles = useProfileStore();
+    profiles.activeProfileId.value = "profile-a";
+    profiles.draft.value = {
+      profileId: "profile-a",
+      revision: 1,
+      config: { inbounds: [{}], outbounds, route: { rules: new Array(11).fill({}) } },
+      buffers: {},
+      bindings: [],
+      savedAt: "2026-08-31T00:00:00Z"
+    };
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
       const data = path.endsWith("/core") && init?.method === "DELETE"
@@ -75,6 +102,7 @@ describe("仪表盘与设置", () => {
     expect(wrapper.text()).toContain("内存占用");
     expect(wrapper.findAll(".metric-card")).toHaveLength(4);
     expect(wrapper.findAll(".proxy-group")).toHaveLength(6);
+    expect(wrapper.get('[data-proxy-group-tag="🚀 节点选择"]').findAll(".proxy-node-card")).toHaveLength(6);
     expect(wrapper.get(".traffic-chart").attributes("aria-label")).toBe("实时流量折线图");
     const systemProxy = wrapper.get('[aria-label="切换系统代理"]');
     expect(systemProxy.attributes("aria-checked")).toBe("true");
