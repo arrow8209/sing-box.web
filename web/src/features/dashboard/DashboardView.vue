@@ -9,6 +9,7 @@ import AppIcon from "@/layout/AppIcon.vue";
 import DashboardProxySelector from "./DashboardProxySelector.vue";
 
 type RouteMode = "rule" | "global" | "direct";
+interface DashboardMetric { icon: string; tone: string; label: string; value: string; unit: string; trend: string; neutral: boolean; href?: string }
 
 const core = useCoreStore();
 const profileStore = useProfileStore();
@@ -22,12 +23,12 @@ const routeMode = ref<RouteMode>("rule");
 const quickControls = reactive({ systemProxy: false, tunMode: false, allowLan: false });
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 
-const metrics = [
+const metrics: DashboardMetric[] = [
   { icon: "upload", tone: "", label: "实时上传", value: "2.48", unit: "MB/s", trend: "较 1 小时前 +12.4%", neutral: false },
   { icon: "download", tone: "cyan", label: "实时下载", value: "8.72", unit: "MB/s", trend: "较 1 小时前 +6.8%", neutral: false },
-  { icon: "link", tone: "green", label: "活动连接", value: "128", unit: "条", trend: "峰值 246", neutral: true },
+  { icon: "link", tone: "green", label: "活动连接", value: "128", unit: "条", trend: "峰值 246", neutral: true, href: "/connections" },
   { icon: "memory", tone: "orange", label: "内存占用", value: "86.4", unit: "MB", trend: "稳定运行", neutral: true }
-] as const;
+];
 
 const serviceRunning = computed(() => ["running", "starting", "stopping"].includes(core.status.value?.state ?? ""));
 const running = computed(() => serviceRunning.value);
@@ -223,14 +224,14 @@ onBeforeUnmount(() => {
       </article>
 
       <div class="metric-grid">
-        <article v-for="metric in metrics" :key="metric.label" class="card metric-card">
+        <component :is="metric.href ? 'a' : 'article'" v-for="metric in metrics" :key="metric.label" class="card metric-card" :class="{ 'metric-card-link': metric.href }" :href="metric.href">
           <span class="metric-icon" :class="metric.tone"><AppIcon :name="metric.icon" :size="20" /></span>
           <span class="metric-copy">
             <span class="metric-label">{{ metric.label }}</span>
             <span class="metric-value">{{ metric.value }}<small>{{ metric.unit }}</small></span>
             <span class="metric-trend" :class="{ neutral: metric.neutral }"><AppIcon :name="metric.neutral ? 'clock' : 'arrow-up'" :size="10" /><span>{{ metric.trend }}</span></span>
           </span>
-        </article>
+        </component>
       </div>
 
       <div class="dashboard-lower">
@@ -331,6 +332,7 @@ onBeforeUnmount(() => {
 .switch.on::after { transform: translateX(15px); }
 .metric-grid { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
 .metric-card { display: flex; min-height: 88px; align-items: center; gap: 13px; padding: 13px; }
+.metric-card-link { color: inherit; text-decoration: none; transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; }.metric-card-link:hover { border-color: color-mix(in srgb, var(--primary) 32%, var(--line)); box-shadow: var(--shadow-md); transform: translateY(-1px); }
 .metric-icon { display: grid; width: 42px; height: 42px; flex: 0 0 auto; place-items: center; border-radius: 12px; color: var(--primary); background: var(--primary-soft); }
 .metric-icon.green { color: var(--green); background: var(--green-soft); }
 .metric-icon.cyan { color: var(--cyan); background: var(--cyan-soft); }

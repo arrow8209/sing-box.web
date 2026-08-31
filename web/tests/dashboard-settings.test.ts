@@ -102,6 +102,7 @@ describe("仪表盘与设置", () => {
     expect(wrapper.text()).toContain("实时流量");
     expect(wrapper.text()).toContain("内存占用");
     expect(wrapper.findAll(".metric-card")).toHaveLength(4);
+    expect(wrapper.get('a.metric-card-link[href="/connections"]').text()).toContain("活动连接");
     expect(wrapper.findAll(".proxy-group")).toHaveLength(6);
     expect(wrapper.get('[data-proxy-group-tag="🚀 节点选择"]').findAll(".proxy-node-card")).toHaveLength(6);
     expect(wrapper.get(".traffic-chart").attributes("aria-label")).toBe("实时流量折线图");

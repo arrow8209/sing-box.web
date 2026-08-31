@@ -22,6 +22,7 @@ import (
 	"singbox-web/internal/paths"
 	"singbox-web/internal/profile"
 	"singbox-web/internal/rules"
+	runtimeapi "singbox-web/internal/runtime"
 	"singbox-web/internal/settings"
 	"singbox-web/internal/storage"
 	"singbox-web/internal/subscriptions"
@@ -232,6 +233,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		operation,
 	)
 	coordinator := application.NewCoordinator(profileService, configHandler, nil, coreManager, operation)
+	runtimeService := runtimeapi.NewService(layout, coreManager)
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
 	handler := httpapi.NewRouter(httpapi.Dependencies{
@@ -244,6 +246,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		CoreHandler:         core.NewHandler(coreManager, coordinator),
 		UpdaterHandler:      updater.NewHandler(updateService),
 		SettingsHandler:     settings.NewHandler(settingsStore),
+		RuntimeHandler:      runtimeapi.NewHandler(runtimeService),
 		Authenticate:        authHandler.Middleware,
 		RequireCSRF:         auth.RequireCSRF,
 		AuthHandler:         authHandler,

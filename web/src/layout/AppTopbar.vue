@@ -18,6 +18,7 @@ const meta = computed(() => ({
   "/subscriptions": ["订阅配置", "资源"],
   "/rules": ["规则集中心", "资源"],
   "/core": ["核心管理", "系统"],
+  "/connections": ["活动连接", "运行数据"],
   "/runtime": ["运行数据", "系统"],
   "/settings": ["设置", "系统"]
 }[route.path] ?? ["管理面板", "控制台"]));
