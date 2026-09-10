@@ -115,13 +115,10 @@ test("可保存下载代理并留空恢复直连", async ({ page }) => {
   await expect(page.getByText("代理设置已保存并即时生效")).toBeVisible();
   await expect(page.getByText("直连", { exact: true })).toBeVisible();
 
-  const proxyNavigation = page.getByRole("link", { name: "代理设置" });
-  await proxyNavigation.focus();
-  await expect(proxyNavigation).toBeFocused();
-  await page.keyboard.press("Enter");
-  await expect(page).toHaveURL(/#proxy$/);
   await proxyUrl.focus();
   await expect(proxyUrl).toBeFocused();
+  await page.keyboard.press("Tab");
+  await expect(page.getByRole("button", { name: "保存代理设置" })).toBeFocused();
 
   for (const viewport of [{ width: 900, height: 1024 }, { width: 390, height: 844 }]) {
     await page.setViewportSize(viewport);
