@@ -2,6 +2,7 @@
 import { computed, onMounted, ref } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
+import { createRuleKeyResolver } from "./rule-keys";
 import type { Draft } from "@/features/profiles/types";
 import { useRuleResourceStore } from "@/features/rule-resources/store";
 import DnsRuleEditorDialog from "./DnsRuleEditorDialog.vue";
@@ -117,9 +118,9 @@ const editingServer = computed<DnsServer | null>(() => {
 const editingServerText = computed(() => editingServerIndex.value === null ? undefined : serverItems.value.find((item) => item.index === editingServerIndex.value)?.text);
 const reservedServerTags = computed(() => serverItems.value.flatMap((item) => item.server && typeof item.server.tag === "string" && item.index !== editingServerIndex.value ? [item.server.tag] : []));
 
+const resolveRuleKeys = createRuleKeyResolver();
 const ruleItems = computed<DnsRuleViewItem[]>(() => {
-  const active = activeRules.value.map((rule, index): DnsRuleViewItem => ({
-    key: `active:${index}`,
+  const active = activeRules.value.map((rule, index): Omit<DnsRuleViewItem, "key"> => ({
     enabled: true,
     sourceIndex: index,
     text: dnsArrayItemText(bufferText(), "rules", index) ?? JSON.stringify(rule, null, 2),
@@ -128,7 +129,6 @@ const ruleItems = computed<DnsRuleViewItem[]>(() => {
   const result = [...active];
   for (const item of editorState.value.disabledRules) {
     result.splice(Math.max(0, Math.min(item.position, result.length)), 0, {
-      key: `disabled:${item.id}`,
       enabled: false,
       disabledId: item.id,
       text: item.text,
@@ -136,7 +136,7 @@ const ruleItems = computed<DnsRuleViewItem[]>(() => {
     });
   }
   let builtInAssigned = false;
-  return result.map((item) => {
+  return resolveRuleKeys(result).map((item) => {
     if (!builtInAssigned && isDefaultFakeIpDnsRule(item.rule)) {
       builtInAssigned = true;
       return { ...item, builtIn: "fakeip" };
@@ -316,11 +316,11 @@ function toggleRule(item: DnsRuleViewItem): void {
   if (item.enabled && item.sourceIndex !== undefined) {
     const id = createDnsStateId();
     text = removeDnsArrayItem(text, "rules", item.sourceIndex);
-    nextItems[position] = { ...item, key: `disabled:${id}`, enabled: false, sourceIndex: undefined, disabledId: id };
+    nextItems[position] = { ...item, enabled: false, sourceIndex: undefined, disabledId: id };
   } else {
     const sourceIndex = ruleItems.value.slice(0, position).filter((candidate) => candidate.enabled).length;
     text = insertDnsRuleText(text, sourceIndex, item.text);
-    nextItems[position] = { ...item, key: `active:new:${createDnsStateId()}`, enabled: true, sourceIndex, disabledId: undefined };
+    nextItems[position] = { ...item, enabled: true, sourceIndex, disabledId: undefined };
   }
   save(text, stateFrom(nextItems));
   if (item.builtIn === "fakeip") {

@@ -5,6 +5,7 @@ import AppIcon from "@/layout/AppIcon.vue";
 import type { Draft } from "@/features/profiles/types";
 import { useRuleResourceStore } from "@/features/rule-resources/store";
 import RouteRuleEditorDialog from "./RouteRuleEditorDialog.vue";
+import { createRuleKeyResolver } from "./rule-keys";
 import {
   buildRouteRuleSetOptions,
   createRouteStateId,
@@ -46,6 +47,7 @@ const resourceError = ref("");
 const notice = ref("");
 const noticeTone = ref<"info" | "error" | "success">("info");
 const renderVersion = ref(0);
+const resolveRuleKeys = createRuleKeyResolver();
 
 interface RouteRuleViewItem {
   key: string;
@@ -107,8 +109,7 @@ const dnsOptions = computed(() => withCurrent(dnsServers.value, defaultDnsServer
 const interfaceOptions = computed(() => withCurrent(["eth0", "wlan0", "en0"], defaultInterface.value));
 
 const ruleItems = computed<RouteRuleViewItem[]>(() => {
-  const active = activeRules.value.map((rule, index): RouteRuleViewItem => ({
-    key: `active:${index}`,
+  const active = activeRules.value.map((rule, index): Omit<RouteRuleViewItem, "key"> => ({
     enabled: true,
     sourceIndex: index,
     text: routeRuleText(bufferText(), index) ?? JSON.stringify(rule, null, 2),
@@ -117,14 +118,13 @@ const ruleItems = computed<RouteRuleViewItem[]>(() => {
   const result = [...active];
   for (const item of editorState.value.disabledRules) {
     result.splice(Math.max(0, Math.min(item.position, result.length)), 0, {
-      key: `disabled:${item.id}`,
       enabled: false,
       disabledId: item.id,
       text: item.text,
       rule: parseRouteRuleText(item.text)
     });
   }
-  return result;
+  return resolveRuleKeys(result);
 });
 
 const listItems = computed<RouteListItem[]>(() => {
@@ -231,11 +231,11 @@ function toggleRule(item: RouteRuleViewItem): void {
   if (item.enabled && item.sourceIndex !== undefined) {
     const id = createRouteStateId();
     text = removeRouteRule(text, item.sourceIndex);
-    nextItems[position] = { ...item, key: `disabled:${id}`, enabled: false, sourceIndex: undefined, disabledId: id };
+    nextItems[position] = { ...item, enabled: false, sourceIndex: undefined, disabledId: id };
   } else {
     const sourceIndex = ruleItems.value.slice(0, position).filter((candidate) => candidate.enabled).length;
     text = insertRouteRuleText(text, sourceIndex, item.text);
-    nextItems[position] = { ...item, key: `active:new:${createRouteStateId()}`, enabled: true, sourceIndex, disabledId: undefined };
+    nextItems[position] = { ...item, enabled: true, sourceIndex, disabledId: undefined };
   }
   save(text, stateFrom(nextItems));
   show(item.enabled ? "规则已停用，不会写入 sing-box 配置。" : "规则已启用并恢复到 sing-box 配置。", "success");

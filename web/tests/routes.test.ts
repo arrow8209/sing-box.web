@@ -251,6 +251,49 @@ describe("自定义配置路由", () => {
     expect(result?.editorState.disabledRules[0]?.text).toContain("GeoSite-CN-Bound");
   });
 
+  it.each([false, true])("切换一条规则后相邻规则的开关保持原状态（重复内容：%s）", async (duplicate) => {
+    useRuleResourceStore().resources.value = resources;
+    const rules = [
+      { protocol: "dns", action: "hijack-dns" },
+      duplicate ? { protocol: "dns", action: "hijack-dns" } : { clash_mode: "direct", action: "route", outbound: "direct" },
+      { protocol: "quic", action: "reject" }
+    ];
+    let draft = draftFixture({
+      final: "direct",
+      rules
+    });
+    const wrapper = mount(RouteConfigPanel, { props: { draft } });
+    const checked = () => wrapper.findAll<HTMLInputElement>(".rule-switch input").map((input) => input.element.checked);
+
+    async function toggle(index: number, enabled: boolean): Promise<void> {
+      await wrapper.findAll(".rule-switch input")[index]!.setValue(enabled);
+      const result = wrapper.emitted("save")!.at(-1)![0] as RoutePanelSave;
+      draft = {
+        ...draft,
+        config: { ...draft.config, route: JSON.parse(result.text) },
+        buffers: { ...draft.buffers, route: result.text },
+        editorState: { ...draft.editorState, route: result.editorState }
+      };
+      await wrapper.setProps({ draft });
+    }
+
+    expect(checked()).toEqual([true, true, true]);
+    await toggle(0, false);
+    expect(checked()).toEqual([false, true, true]);
+    expect(draft.config.route).toMatchObject({ rules: rules.slice(1) });
+    await toggle(1, false);
+    expect(checked()).toEqual([false, false, true]);
+    expect(draft.config.route).toMatchObject({ rules: rules.slice(2) });
+    await toggle(0, true);
+    expect(checked()).toEqual([true, false, true]);
+    await wrapper.setProps({ draft: structuredClone(draft) });
+    expect(checked()).toEqual([true, false, true]);
+    await toggle(1, true);
+    expect(checked()).toEqual([true, true, true]);
+    expect(draft.config.route).toMatchObject({ rules });
+    wrapper.unmount();
+  });
+
   it("上下方向键重排规则并保持插入点", async () => {
     const routeValue = {
       final: "direct",

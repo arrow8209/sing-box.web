@@ -254,6 +254,40 @@ describe("自定义配置 DNS", () => {
     expect(isDefaultFakeIpDnsRule(JSON.parse(result?.editorState.disabledRules[0]?.text ?? "{}"))).toBe(true);
   });
 
+  it("切换一条 DNS 规则不会改变相邻开关或内置规则的状态", async () => {
+    useRuleResourceStore().resources.value = [resource];
+    let draft = draftFixture();
+    const wrapper = mount(DnsConfigPanel, { props: { draft } });
+    const checked = () => wrapper.findAll<HTMLInputElement>(".rule-switch input").map((input) => input.element.checked);
+
+    async function toggle(index: number, enabled: boolean): Promise<void> {
+      await wrapper.findAll(".rule-switch input")[index]!.setValue(enabled);
+      const result = wrapper.emitted("save")!.at(-1)![0] as DnsPanelSave;
+      draft = {
+        ...draft,
+        config: { ...draft.config, dns: JSON.parse(result.text) },
+        buffers: { ...draft.buffers, dns: result.text },
+        editorState: { ...draft.editorState, dns: result.editorState }
+      };
+      await wrapper.setProps({ draft });
+    }
+
+    expect(checked()).toEqual([true, true, true, true, true]);
+    await toggle(0, false);
+    expect(checked()).toEqual([false, true, true, true, true]);
+    expect(draft.config.dns).toMatchObject({ rules: dnsFixture.rules.slice(1) });
+    await toggle(3, false);
+    expect(checked()).toEqual([false, true, true, false, true]);
+    await toggle(0, true);
+    expect(checked()).toEqual([true, true, true, false, true]);
+    await wrapper.setProps({ draft: structuredClone(draft) });
+    expect(checked()).toEqual([true, true, true, false, true]);
+    await toggle(3, true);
+    expect(checked()).toEqual([true, true, true, true, true]);
+    expect(draft.config.dns).toMatchObject({ rules: dnsFixture.rules });
+    wrapper.unmount();
+  });
+
   it("编辑服务器标签时同步 DNS 内部引用并报告改名", async () => {
     useRuleResourceStore().resources.value = [resource];
     const wrapper = mount(DnsConfigPanel, { props: { draft: draftFixture() } });

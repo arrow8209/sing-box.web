@@ -97,6 +97,11 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
 
   await fakeIpRule.getByRole("checkbox", { name: "停用内置 Fake-IP 规则" }).locator("..").click();
   await expect(fakeIpRule).toHaveClass(/is-disabled/);
+  await expect(fakeIpRule.getByRole("checkbox")).not.toBeChecked();
+  await expect(fakeIpRule.getByRole("checkbox")).toBeFocused();
+  for (const checkbox of await page.locator(".dns-rule-row:not(.is-disabled) .rule-switch input").all()) {
+    await expect(checkbox).toBeChecked();
+  }
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
   let persisted = await persistedDraft(page);
   const disabledDns = JSON.parse(persisted.buffers.dns) as { rules: Array<Record<string, unknown>> };
@@ -109,6 +114,9 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
   await expect(fakeIpRule).toHaveClass(/is-disabled/);
   await fakeIpRule.getByRole("checkbox", { name: "启用内置 Fake-IP 规则" }).locator("..").click();
   await expect(fakeIpRule).not.toHaveClass(/is-disabled/);
+  for (const checkbox of await page.locator(".dns-rule-row .rule-switch input").all()) {
+    await expect(checkbox).toBeChecked();
+  }
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
   await page.getByRole("button", { name: "新增规则" }).click();
@@ -122,6 +130,9 @@ test("按参考图管理 DNS 通用设置、服务器与规则并持久化", asy
   await expect(customRule).toBeVisible();
   await customRule.getByRole("checkbox", { name: /停用第/ }).locator("..").click();
   await expect(customRule).toHaveClass(/is-disabled/);
+  for (const checkbox of await page.locator(".dns-rule-row:not(.is-disabled) .rule-switch input").all()) {
+    await expect(checkbox).toBeChecked();
+  }
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
   persisted = await persistedDraft(page);

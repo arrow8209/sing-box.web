@@ -101,6 +101,11 @@ test("按原型编辑、停用、排序并持久化路由规则", async ({ page 
   customRule = page.locator(".route-rule-row").filter({ hasText: "blocked.example.test" });
   await customRule.getByRole("checkbox", { name: /停用第/ }).uncheck();
   await expect(customRule).toHaveClass(/is-disabled/);
+  await expect(customRule.getByRole("checkbox")).not.toBeChecked();
+  await expect(customRule.getByRole("checkbox")).toBeFocused();
+  for (const checkbox of await page.locator(".route-rule-row:not(.is-disabled) .rule-switch input").all()) {
+    await expect(checkbox).toBeChecked();
+  }
   await expect(page.locator(".route-rule-row")).toHaveCount(initialCount + 2);
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
@@ -130,6 +135,10 @@ test("按原型编辑、停用、排序并持久化路由规则", async ({ page 
 
   await customRule.getByRole("checkbox", { name: /启用第/ }).click();
   await expect(customRule).not.toHaveClass(/is-disabled/);
+  await expect(customRule.getByRole("checkbox")).toBeFocused();
+  for (const checkbox of await page.locator(".route-rule-row .rule-switch input").all()) {
+    await expect(checkbox).toBeChecked();
+  }
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
   persisted = await persistedDraft(page);
   savedRoute = JSON.parse(persisted.buffers.route) as typeof savedRoute;
