@@ -21,8 +21,8 @@ import {
 } from "./format";
 import type { ConnectionsSnapshot, DisplayConnection, RuntimeConnection } from "./types";
 
-type ConnectionMode = "active" | "closed";
-type ColumnKey = "type" | "host" | "source" | "destination" | "rule" | "chains" | "uploadSpeed" | "downloadSpeed" | "traffic" | "start";
+type ConnectionMode = "all" | "active" | "closed";
+type ColumnKey = "status" | "type" | "host" | "source" | "destination" | "rule" | "chains" | "uploadSpeed" | "downloadSpeed" | "traffic" | "start";
 
 const props = withDefaults(defineProps<{ api?: ConnectionsApi; pollInterval?: number }>(), {
   api: () => connectionsApi,
@@ -30,6 +30,7 @@ const props = withDefaults(defineProps<{ api?: ConnectionsApi; pollInterval?: nu
 });
 
 const columnOptions: Array<{ key: ColumnKey; label: string }> = [
+  { key: "status", label: "状态" },
   { key: "type", label: "类型" },
   { key: "host", label: "主机" },
   { key: "source", label: "源地址" },
@@ -43,11 +44,13 @@ const columnOptions: Array<{ key: ColumnKey; label: string }> = [
 ];
 const defaultColumns = columnOptions.map((column) => column.key);
 const preferenceKey = "singbox-connections-columns";
+const retentionPreferenceKey = "singbox-connections-history-minutes";
+const defaultRetentionMinutes = 3;
 
 const activeConnections = ref<DisplayConnection[]>([]);
 const closedConnections = ref<DisplayConnection[]>([]);
 const snapshot = ref<ConnectionsSnapshot>({ memory: 0, uploadTotal: 0, downloadTotal: 0, connections: [] });
-const mode = ref<ConnectionMode>("active");
+const mode = ref<ConnectionMode>("all");
 const keywords = ref("");
 const paused = ref(false);
 const loading = ref(true);
@@ -62,20 +65,30 @@ const selectedConnection = ref<DisplayConnection | null>(null);
 const detailsOpen = ref(false);
 const settingsOpen = ref(false);
 const visibleColumns = ref<Set<ColumnKey>>(new Set(defaultColumns));
+const draftColumns = ref<Set<ColumnKey>>(new Set(defaultColumns));
+const retentionMinutes = ref(defaultRetentionMinutes);
+const draftRetentionMinutes = ref<number | string>(defaultRetentionMinutes);
+const validRetention = computed(() => isValidRetention(draftRetentionMinutes.value));
 const sort = reactive<{ key: ColumnKey; direction: "asc" | "desc" }>({ key: "start", direction: "desc" });
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 let previousTraffic = new Map<string, { upload: number; download: number; observedAt: number }>();
 const suppressedConnectionIds = new Set<string>();
-let alive = true;
+let alive = false;
+let sessionGeneration = 0;
 
-const currentConnections = computed(() => mode.value === "active" ? activeConnections.value : closedConnections.value);
+const currentConnections = computed(() => {
+  if (mode.value === "active") return activeConnections.value;
+  if (mode.value === "closed") return closedConnections.value;
+  return [...activeConnections.value, ...closedConnections.value];
+});
 const filteredConnections = computed(() => {
   const keyword = keywords.value.trim().toLocaleLowerCase();
   const result = keyword ? currentConnections.value.filter((connection) => connectionSearchText(connection).includes(keyword)) : [...currentConnections.value];
   const direction = sort.direction === "asc" ? 1 : -1;
   return result.sort((left, right) => compare(sortValue(left, sort.key), sortValue(right, sort.key)) * direction);
 });
+const filteredActiveConnections = computed(() => filteredConnections.value.filter((connection) => !connection.closedAt));
 const lastUpdatedLabel = computed(() => {
   if (!lastUpdatedAt.value) return "尚未同步";
   const seconds = Math.max(0, Math.floor((now.value - lastUpdatedAt.value) / 1000));
@@ -93,11 +106,16 @@ function normalizeConnection(connection: RuntimeConnection): RuntimeConnection {
 }
 
 function reconcile(value: ConnectionsSnapshot, observedAt: number): void {
-  const incoming = (Array.isArray(value.connections) ? value.connections : []).filter((connection) => !suppressedConnectionIds.has(connection.id));
-  const incomingIds = new Set(incoming.map((connection) => connection.id));
-  for (const connection of activeConnections.value) {
-    if (!incomingIds.has(connection.id)) archive(connection, new Date(observedAt).toISOString());
+  pruneHistory(observedAt);
+  const connections = Array.isArray(value.connections) ? value.connections : [];
+  const snapshotIds = new Set(connections.map((connection) => connection.id));
+  for (const id of suppressedConnectionIds) {
+    if (!snapshotIds.has(id)) suppressedConnectionIds.delete(id);
   }
+  const incoming = connections.filter((connection) => !suppressedConnectionIds.has(connection.id));
+  const incomingIds = new Set(incoming.map((connection) => connection.id));
+  closedConnections.value = closedConnections.value.filter((connection) => !incomingIds.has(connection.id));
+  archive(activeConnections.value.filter((connection) => !incomingIds.has(connection.id)), new Date(observedAt).toISOString());
   const nextTraffic = new Map<string, { upload: number; download: number; observedAt: number }>();
   const next = incoming.map((item) => {
     const connection = normalizeConnection(item);
@@ -114,26 +132,27 @@ function reconcile(value: ConnectionsSnapshot, observedAt: number): void {
   activeConnections.value = next;
   previousTraffic = nextTraffic;
   snapshot.value = { ...value, connections: incoming };
-  if (selectedConnection.value && !selectedConnection.value.closedAt) {
+  if (selectedConnection.value) {
     selectedConnection.value = next.find((connection) => connection.id === selectedConnection.value?.id) ?? selectedConnection.value;
   }
 }
 
 async function refreshConnections(force = false): Promise<void> {
-  if (refreshing.value || (!force && paused.value) || (!force && document.hidden)) return;
+  if (!alive || refreshing.value || (!force && paused.value) || (!force && document.hidden)) return;
+  const generation = sessionGeneration;
   refreshing.value = true;
   try {
     const value = await props.api.list();
-    if (!alive) return;
+    if (!isCurrentSession(generation)) return;
     const observedAt = Date.now();
     reconcile(value, observedAt);
     lastUpdatedAt.value = observedAt;
     error.value = "";
   } catch (cause) {
-    if (alive) {
+    if (isCurrentSession(generation)) {
       if (cause instanceof ApiError && ["core_not_running", "clash_api_not_configured"].includes(cause.body.code)) {
         const closedAt = new Date().toISOString();
-        for (const connection of activeConnections.value) archive(connection, closedAt);
+        archive(activeConnections.value, closedAt);
         activeConnections.value = [];
         previousTraffic.clear();
         snapshot.value = { ...snapshot.value, connections: [] };
@@ -141,69 +160,84 @@ async function refreshConnections(force = false): Promise<void> {
       error.value = cause instanceof Error ? cause.message : "无法读取活动连接";
     }
   } finally {
-    if (alive) {
+    if (isCurrentSession(generation)) {
       loading.value = false;
       refreshing.value = false;
     }
   }
 }
 
-function archive(connection: DisplayConnection, closedAt: string): DisplayConnection {
-  const archived = { ...connection, closedAt };
-  closedConnections.value = [archived, ...closedConnections.value.filter((item) => item.id !== connection.id)].slice(0, 500);
-  if (selectedConnection.value?.id === connection.id && !selectedConnection.value.closedAt) selectedConnection.value = archived;
-  return archived;
+function archive(connections: DisplayConnection[], closedAt: string): void {
+  if (!alive || !connections.length) return;
+  const archived = connections.map((connection) => ({ ...connection, uploadSpeed: 0, downloadSpeed: 0, closedAt }));
+  const ids = new Set(archived.map((connection) => connection.id));
+  closedConnections.value = [...archived, ...closedConnections.value.filter((connection) => !ids.has(connection.id))];
+  if (selectedConnection.value) {
+    selectedConnection.value = archived.find((connection) => connection.id === selectedConnection.value?.id) ?? selectedConnection.value;
+  }
 }
 
-function removeActive(connection: DisplayConnection, closedAt: string): void {
-  suppressedConnectionIds.add(connection.id);
-  archive(connection, closedAt);
-  activeConnections.value = activeConnections.value.filter((item) => item.id !== connection.id);
-  previousTraffic.delete(connection.id);
+function pruneHistory(observedAt: number): void {
+  const cutoff = observedAt - retentionMinutes.value * 60_000;
+  closedConnections.value = closedConnections.value.filter((connection) => Date.parse(connection.closedAt ?? "") > cutoff);
+  if (selectedConnection.value?.closedAt && Date.parse(selectedConnection.value.closedAt) <= cutoff) closeDetails();
+}
+
+function removeActive(connections: DisplayConnection[], closedAt: string): void {
+  const ids = new Set(connections.map((connection) => connection.id));
+  for (const id of ids) {
+    suppressedConnectionIds.add(id);
+    previousTraffic.delete(id);
+  }
+  archive(activeConnections.value.filter((connection) => ids.has(connection.id)), closedAt);
+  activeConnections.value = activeConnections.value.filter((connection) => !ids.has(connection.id));
 }
 
 async function closeConnection(connection: DisplayConnection): Promise<void> {
-  if (closingIds.value.has(connection.id)) return;
+  if (!alive || connection.closedAt || closingIds.value.has(connection.id)) return;
+  const generation = sessionGeneration;
   closingIds.value = new Set([...closingIds.value, connection.id]);
   try {
     await props.api.close(connection.id);
-    removeActive(connection, new Date().toISOString());
+    if (!isCurrentSession(generation)) return;
+    removeActive([connection], new Date().toISOString());
     showNotice(`已关闭 ${connectionHost(connection)} 的连接。`);
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : "关闭连接失败";
+    if (isCurrentSession(generation)) error.value = cause instanceof Error ? cause.message : "关闭连接失败";
   } finally {
-    const next = new Set(closingIds.value);
-    next.delete(connection.id);
-    closingIds.value = next;
+    if (isCurrentSession(generation)) {
+      const next = new Set(closingIds.value);
+      next.delete(connection.id);
+      closingIds.value = next;
+    }
   }
 }
 
 async function closeFilteredConnections(): Promise<void> {
-  const targets = [...filteredConnections.value];
-  if (!targets.length || closingAll.value) return;
+  const targets = [...filteredActiveConnections.value];
+  if (!alive || !targets.length || closingAll.value) return;
+  const generation = sessionGeneration;
   closingAll.value = true;
-  const closedAt = new Date().toISOString();
   try {
     if (!keywords.value.trim() && targets.length === activeConnections.value.length) {
       await props.api.closeAll();
-      for (const connection of targets) removeActive(connection, closedAt);
+      if (!isCurrentSession(generation)) return;
+      removeActive(targets, new Date().toISOString());
       showNotice(`已关闭 ${targets.length} 条活动连接。`);
       return;
     }
     const results = await Promise.allSettled(targets.map((connection) => props.api.close(connection.id)));
-    let succeeded = 0;
-    results.forEach((result, index) => {
-      if (result.status !== "fulfilled") return;
-      const connection = targets[index];
-      if (connection) { removeActive(connection, closedAt); succeeded += 1; }
-    });
+    if (!isCurrentSession(generation)) return;
+    const closed = targets.filter((_, index) => results[index]?.status === "fulfilled");
+    removeActive(closed, new Date().toISOString());
+    const succeeded = closed.length;
     const failed = targets.length - succeeded;
     if (failed) error.value = `${succeeded} 条连接已关闭，${failed} 条关闭失败`;
     else showNotice(`已关闭 ${succeeded} 条筛选结果。`);
   } catch (cause) {
-    error.value = cause instanceof Error ? cause.message : "关闭连接失败";
+    if (isCurrentSession(generation)) error.value = cause instanceof Error ? cause.message : "关闭连接失败";
   } finally {
-    closingAll.value = false;
+    if (isCurrentSession(generation)) closingAll.value = false;
   }
 }
 
@@ -230,33 +264,53 @@ function closeDetails(): void {
 }
 
 function showNotice(message: string): void {
+  const generation = sessionGeneration;
   notice.value = "";
-  queueMicrotask(() => { notice.value = message; });
+  queueMicrotask(() => { if (isCurrentSession(generation)) notice.value = message; });
 }
+
+function isCurrentSession(generation: number): boolean { return alive && generation === sessionGeneration; }
 
 function isVisible(key: ColumnKey): boolean { return visibleColumns.value.has(key); }
 
+function isValidRetention(value: unknown): value is number {
+  return typeof value === "number" && Number.isInteger(value) && value >= 1 && value <= 60;
+}
+
+function openSettings(): void {
+  draftColumns.value = new Set(visibleColumns.value);
+  draftRetentionMinutes.value = retentionMinutes.value;
+  settingsOpen.value = true;
+}
+
 function toggleColumn(key: ColumnKey): void {
-  const next = new Set(visibleColumns.value);
+  const next = new Set(draftColumns.value);
   if (next.has(key)) {
     if (next.size === 1) return;
     next.delete(key);
   } else next.add(key);
-  visibleColumns.value = next;
+  draftColumns.value = next;
 }
 
-function saveColumnPreferences(): void {
+function savePreferences(): void {
+  if (!isValidRetention(draftRetentionMinutes.value)) return;
+  visibleColumns.value = new Set(draftColumns.value);
+  retentionMinutes.value = draftRetentionMinutes.value;
+  pruneHistory(Date.now());
   localStorage.setItem(preferenceKey, JSON.stringify(columnOptions.filter((column) => visibleColumns.value.has(column.key)).map((column) => column.key)));
+  localStorage.setItem(retentionPreferenceKey, String(retentionMinutes.value));
   settingsOpen.value = false;
-  showNotice("连接列表显示字段已保存。");
+  showNotice("连接列表设置已保存。");
 }
 
-function resetColumnPreferences(): void {
-  visibleColumns.value = new Set(defaultColumns);
-  localStorage.removeItem(preferenceKey);
+function resetPreferences(): void {
+  draftColumns.value = new Set(defaultColumns);
+  draftRetentionMinutes.value = defaultRetentionMinutes;
 }
 
-function loadColumnPreferences(): void {
+function loadPreferences(): void {
+  const savedMinutes = Number(localStorage.getItem(retentionPreferenceKey));
+  if (isValidRetention(savedMinutes)) retentionMinutes.value = savedMinutes;
   try {
     const parsed = JSON.parse(localStorage.getItem(preferenceKey) ?? "[]") as unknown;
     if (!Array.isArray(parsed)) return;
@@ -283,6 +337,7 @@ function ariaSort(key: ColumnKey): "ascending" | "descending" | "none" {
 
 function sortValue(connection: DisplayConnection, key: ColumnKey): string | number {
   switch (key) {
+  case "status": return connection.closedAt ? 1 : 0;
   case "type": return connectionType(connection);
   case "host": return connectionHost(connection);
   case "source": return connectionSource(connection);
@@ -302,29 +357,78 @@ function compare(left: string | number, right: string | number): number {
 }
 
 function onVisibilityChange(): void {
+  now.value = Date.now();
+  pruneHistory(now.value);
   if (!document.hidden && !paused.value) void refreshConnections(true);
 }
 
-onMounted(() => {
-  loadColumnPreferences();
+function clearSession(): void {
+  activeConnections.value = [];
+  closedConnections.value = [];
+  snapshot.value = { memory: 0, uploadTotal: 0, downloadTotal: 0, connections: [] };
+  previousTraffic.clear();
+  suppressedConnectionIds.clear();
+  closingIds.value = new Set();
+  refreshing.value = false;
+  closingAll.value = false;
+  lastUpdatedAt.value = null;
+  error.value = "";
+  notice.value = "";
+  settingsOpen.value = false;
+  closeDetails();
+}
+
+function startSession(): void {
+  alive = true;
+  sessionGeneration += 1;
+  clearSession();
+  mode.value = "all";
+  keywords.value = "";
+  paused.value = false;
+  loading.value = true;
+  now.value = Date.now();
+  loadPreferences();
   void refreshConnections(true);
   pollTimer = setInterval(() => { void refreshConnections(); }, Math.max(500, props.pollInterval));
-  clockTimer = setInterval(() => { now.value = Date.now(); }, 1000);
+  clockTimer = setInterval(() => {
+    now.value = Date.now();
+    pruneHistory(now.value);
+  }, 1000);
+}
+
+function stopSession(): void {
+  alive = false;
+  sessionGeneration += 1;
+  if (pollTimer) clearInterval(pollTimer);
+  if (clockTimer) clearInterval(clockTimer);
+  pollTimer = undefined;
+  clockTimer = undefined;
+  clearSession();
+}
+
+function onPageShow(event: PageTransitionEvent): void {
+  if (event.persisted && !alive) startSession();
+}
+
+onMounted(() => {
+  startSession();
   document.addEventListener("visibilitychange", onVisibilityChange);
+  window.addEventListener("pagehide", stopSession);
+  window.addEventListener("pageshow", onPageShow);
 });
 
 onBeforeUnmount(() => {
-  alive = false;
-  if (pollTimer) clearInterval(pollTimer);
-  if (clockTimer) clearInterval(clockTimer);
+  stopSession();
   document.removeEventListener("visibilitychange", onVisibilityChange);
+  window.removeEventListener("pagehide", stopSession);
+  window.removeEventListener("pageshow", onPageShow);
 });
 </script>
 
 <template>
   <section class="connections-page">
     <header class="page-header connections-header">
-      <div><h1>活动连接</h1><p>实时查看 sing-box 当前连接、路由链路与传输详情。</p></div>
+      <div><h1>活动连接</h1><p>查看当前连接与最近 {{ retentionMinutes }} 分钟内断开的连接。</p></div>
       <div class="header-status" :class="{ paused, error: Boolean(error) }"><i />{{ error ? "连接数据不可用" : paused ? "已暂停刷新" : "实时同步中" }}</div>
     </header>
 
@@ -338,6 +442,7 @@ onBeforeUnmount(() => {
     <article class="connections-panel">
       <div class="connection-toolbar">
         <div class="connection-tabs" role="tablist" aria-label="连接状态">
+          <button type="button" role="tab" :aria-selected="mode === 'all'" :class="{ active: mode === 'all' }" @click="mode = 'all'"><span>全部</span><b>{{ activeConnections.length + closedConnections.length }}</b></button>
           <button type="button" role="tab" :aria-selected="mode === 'active'" :class="{ active: mode === 'active' }" @click="mode = 'active'"><span>活动</span><b>{{ activeConnections.length }}</b></button>
           <button type="button" role="tab" :aria-selected="mode === 'closed'" :class="{ active: mode === 'closed' }" @click="mode = 'closed'"><span>已关闭</span><b>{{ closedConnections.length }}</b></button>
         </div>
@@ -345,9 +450,9 @@ onBeforeUnmount(() => {
         <div class="toolbar-actions">
           <button class="toolbar-button" type="button" :aria-label="paused ? '继续实时刷新' : '暂停实时刷新'" :title="paused ? '继续实时刷新' : '暂停实时刷新'" @click="togglePause"><AppIcon :name="paused ? 'play' : 'pause'" :size="15" /></button>
           <button class="toolbar-button" type="button" aria-label="立即刷新连接" title="立即刷新" :disabled="refreshing" @click="refreshConnections(true)"><AppIcon name="rotate" :size="15" /></button>
-          <button v-if="mode === 'active'" class="toolbar-button danger-action" type="button" aria-label="关闭筛选出的连接" title="关闭筛选出的连接" :disabled="closingAll || !filteredConnections.length" @click="closeFilteredConnections"><AppIcon name="x" :size="15" /></button>
+          <button v-if="mode !== 'closed'" class="toolbar-button danger-action" type="button" aria-label="关闭筛选出的连接" title="关闭筛选出的活动连接" :disabled="closingAll || !filteredActiveConnections.length" @click="closeFilteredConnections"><AppIcon name="x" :size="15" /></button>
           <button v-else class="toolbar-button danger-action" type="button" aria-label="清除已关闭记录" title="清除已关闭记录" :disabled="!closedConnections.length" @click="clearClosedConnections"><AppIcon name="trash" :size="15" /></button>
-          <button class="toolbar-button" type="button" aria-label="设置显示字段" title="设置显示字段" @click="settingsOpen = true"><AppIcon name="sliders" :size="15" /></button>
+          <button class="toolbar-button" type="button" aria-label="连接列表设置" title="设置历史保留时间与显示字段" @click="openSettings"><AppIcon name="sliders" :size="15" /></button>
         </div>
       </div>
 
@@ -356,6 +461,7 @@ onBeforeUnmount(() => {
       <div v-if="filteredConnections.length" class="connections-table-wrap">
         <table class="connections-table">
           <thead><tr>
+            <th v-if="isVisible('status')" :aria-sort="ariaSort('status')"><button type="button" @click="changeSort('status')">状态<i>{{ sort.key === "status" ? (sort.direction === "asc" ? "↑" : "↓") : "" }}</i></button></th>
             <th v-if="isVisible('type')" :aria-sort="ariaSort('type')"><button type="button" @click="changeSort('type')">类型<i>{{ sort.key === "type" ? (sort.direction === "asc" ? "↑" : "↓") : "" }}</i></button></th>
             <th v-if="isVisible('host')" :aria-sort="ariaSort('host')"><button type="button" @click="changeSort('host')">主机<i>{{ sort.key === "host" ? (sort.direction === "asc" ? "↑" : "↓") : "" }}</i></button></th>
             <th v-if="isVisible('source')" :aria-sort="ariaSort('source')"><button type="button" @click="changeSort('source')">源地址<i>{{ sort.key === "source" ? (sort.direction === "asc" ? "↑" : "↓") : "" }}</i></button></th>
@@ -369,7 +475,8 @@ onBeforeUnmount(() => {
             <th class="actions-column"><span>操作</span></th>
           </tr></thead>
           <tbody>
-            <tr v-for="connection in filteredConnections" :key="`${mode}-${connection.id}`">
+            <tr v-for="connection in filteredConnections" :key="connection.id" :class="{ 'is-closed': connection.closedAt }" :data-connection-id="connection.id">
+              <td v-if="isVisible('status')"><span class="connection-state" :class="{ closed: connection.closedAt }">{{ connection.closedAt ? "已关闭" : "活动" }}</span></td>
               <td v-if="isVisible('type')"><span class="connection-type">{{ connectionType(connection) }}</span></td>
               <td v-if="isVisible('host')"><button class="host-button" type="button" :title="connectionHost(connection)" @click="showDetails(connection)">{{ connectionHost(connection) }}</button><small>{{ connection.metadata.process || connection.metadata.processPath || connection.id }}</small></td>
               <td v-if="isVisible('source')"><code>{{ connectionSource(connection) }}</code></td>
@@ -380,7 +487,7 @@ onBeforeUnmount(() => {
               <td v-if="isVisible('downloadSpeed')" class="numeric speed download-speed">{{ formatSpeed(connection.downloadSpeed) }}</td>
               <td v-if="isVisible('traffic')" class="numeric"><strong>{{ formatBytes(connection.upload + connection.download) }}</strong><small>↑ {{ formatBytes(connection.upload) }} · ↓ {{ formatBytes(connection.download) }}</small></td>
               <td v-if="isVisible('start')"><span class="connection-time">{{ formatDuration(connection.start, now, connection.closedAt) }}</span><small>{{ formatStarted(connection.start) }}</small></td>
-              <td class="actions-column"><div class="row-actions"><button type="button" :aria-label="`查看 ${connectionHost(connection)} 的连接详情`" title="查看详情" @click="showDetails(connection)"><AppIcon name="eye" :size="14" /></button><button v-if="mode === 'active'" class="close-row" type="button" :aria-label="`关闭 ${connectionHost(connection)} 的连接`" title="关闭连接" :disabled="closingIds.has(connection.id)" @click="closeConnection(connection)"><AppIcon name="x" :size="14" /></button></div></td>
+              <td class="actions-column"><div class="row-actions"><button type="button" :aria-label="`查看 ${connectionHost(connection)} 的连接详情`" title="查看详情" @click="showDetails(connection)"><AppIcon name="eye" :size="14" /></button><button v-if="!connection.closedAt" class="close-row" type="button" :aria-label="`关闭 ${connectionHost(connection)} 的连接`" title="关闭连接" :disabled="closingAll || closingIds.has(connection.id)" @click="closeConnection(connection)"><AppIcon name="x" :size="14" /></button></div></td>
             </tr>
           </tbody>
         </table>
@@ -388,21 +495,28 @@ onBeforeUnmount(() => {
 
       <div v-else class="connections-empty">
         <span class="empty-icon"><AppIcon :name="keywords ? 'search' : mode === 'active' ? 'link' : 'clock'" :size="27" /></span>
-        <strong>{{ loading ? "正在读取连接" : keywords ? "没有匹配的连接" : mode === "active" ? "当前没有活动连接" : "尚无已关闭记录" }}</strong>
-        <span>{{ loading ? "正在连接 sing-box 控制 API" : keywords ? "请调整搜索关键词后重试" : mode === "active" ? "新连接建立后会自动显示在这里" : "页面打开期间断开的连接会保留在这里" }}</span>
+        <strong>{{ loading ? "正在读取连接" : keywords ? "没有匹配的连接" : mode === "active" ? "当前没有活动连接" : mode === "closed" ? "尚无已关闭记录" : "当前没有连接记录" }}</strong>
+        <span>{{ loading ? "正在连接 sing-box 控制 API" : keywords ? "请调整搜索关键词后重试" : mode === "closed" ? `本次页面打开期间观察到的连接，断开后保留 ${retentionMinutes} 分钟` : "新连接建立后会自动显示在这里" }}</span>
         <button v-if="keywords" type="button" @click="keywords = ''">清除搜索</button>
       </div>
 
-      <footer class="connections-footer"><span>显示 {{ filteredConnections.length }} / {{ currentConnections.length }} 条</span><span><i :class="{ paused }" />{{ paused ? "刷新已暂停" : lastUpdatedLabel }}</span></footer>
+      <footer class="connections-footer"><span>显示 {{ filteredConnections.length }} / {{ currentConnections.length }} 条</span><span class="history-summary">历史保留 {{ retentionMinutes }} 分钟 · 离开页面后清空</span><span><i :class="{ paused }" />{{ paused ? "刷新已暂停" : lastUpdatedLabel }}</span></footer>
     </article>
 
     <ConnectionDetailsDialog :open="detailsOpen" :connection="selectedConnection" :now="now" :closing="Boolean(selectedConnection && closingIds.has(selectedConnection.id))" @close="closeDetails" @terminate="closeConnection" />
 
-    <AppDialog class="connection-settings-dialog" :open="settingsOpen" title="连接列表设置" description="选择表格中需要展示的字段；至少保留一项。" @close="settingsOpen = false">
+    <AppDialog class="connection-settings-dialog" :open="settingsOpen" title="连接列表设置" description="设置历史记录保留时间与列表显示字段。" initial-focus="#connection-history-minutes" @close="settingsOpen = false">
+      <section class="history-settings">
+        <label for="connection-history-minutes"><strong>历史保留时间</strong><small>连接断开后继续显示的时长</small></label>
+        <div class="history-duration-control"><input id="connection-history-minutes" v-model.number="draftRetentionMinutes" type="number" min="1" max="60" step="1" required aria-label="历史保留时间（分钟）" aria-describedby="connection-history-help" :aria-invalid="!validRetention" /><span>分钟</span></div>
+        <p id="connection-history-help">默认 3 分钟，可设为 1–60 分钟。仅记录本次页面打开期间观察到的连接，离开或重新打开页面时清空。</p>
+        <p v-if="!validRetention" class="history-settings-error" role="alert">请输入 1–60 的整数分钟数。</p>
+      </section>
+      <h3 class="column-settings-title">显示字段<span>至少保留一项</span></h3>
       <div class="column-settings">
-        <label v-for="column in columnOptions" :key="column.key"><span><strong>{{ column.label }}</strong><small>{{ column.key }}</small></span><input type="checkbox" :checked="visibleColumns.has(column.key)" :disabled="visibleColumns.size === 1 && visibleColumns.has(column.key)" @change="toggleColumn(column.key)" /></label>
+        <label v-for="column in columnOptions" :key="column.key"><span><strong>{{ column.label }}</strong><small>{{ column.key }}</small></span><input type="checkbox" :aria-label="`显示${column.label}`" :checked="draftColumns.has(column.key)" :disabled="draftColumns.size === 1 && draftColumns.has(column.key)" @change="toggleColumn(column.key)" /></label>
       </div>
-      <template #footer><button class="secondary reset-columns" type="button" @click="resetColumnPreferences">恢复默认</button><button class="secondary" type="button" @click="settingsOpen = false">取消</button><button type="button" @click="saveColumnPreferences">保存设置</button></template>
+      <template #footer><button class="secondary reset-columns" type="button" @click="resetPreferences">恢复默认</button><button class="secondary" type="button" @click="settingsOpen = false">取消</button><button type="button" :disabled="!validRetention" @click="savePreferences">保存设置</button></template>
     </AppDialog>
 
     <AppToast v-if="notice" :message="notice" />
@@ -418,6 +532,30 @@ onBeforeUnmount(() => {
 .connections-empty { display: grid; min-height: var(--empty-state-height); place-items: center; align-content: center; gap: 6px; padding: var(--card-padding); color: var(--text-faint); text-align: center; }.empty-icon { display: grid; width: 54px; height: 54px; place-items: center; margin-bottom: 3px; border-radius: 16px; color: var(--primary); background: var(--primary-soft); }.connections-empty strong { color: var(--text); font-size: var(--font-size-base); }.connections-empty > span:last-of-type { font-size: var(--font-size-xs); }.connections-empty button { min-height: 30px; margin-top: 4px; padding: 5px 9px; color: var(--primary); background: var(--primary-soft); font-size: var(--font-size-sm); }.connections-footer { display: flex; min-height: 35px; align-items: center; justify-content: space-between; gap: 10px; padding: 7px 11px; border-top: 1px solid var(--line); color: var(--text-faint); background: var(--surface-soft); font-size: var(--font-size-sm); }.connections-footer span:last-child { display: inline-flex; align-items: center; gap: 6px; }.connections-footer i { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }.connections-footer i.paused { background: var(--orange); }
 .column-settings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }.column-settings label { display: flex; min-width: 0; min-height: 49px; align-items: center; gap: 9px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface-soft); cursor: pointer; }.column-settings label > span { min-width: 0; flex: 1; }.column-settings strong, .column-settings small { display: block; }.column-settings strong { font-size: var(--font-size-base); }.column-settings small { margin-top: 1px; color: var(--text-faint); font: var(--font-size-xs) ui-monospace, monospace; }.column-settings input { width: 15px; min-height: 15px; accent-color: var(--primary); }.reset-columns { margin-right: auto; }
 :global(.app-dialog.connection-settings-dialog) { width: min(620px, calc(100vw - 32px)); }:global(.connection-settings-dialog .app-dialog__footer button) { min-height: 34px; padding: 6px 10px; font-size: var(--font-size-xs); }
+.connection-tabs button { flex: 0 0 auto; white-space: nowrap; }
+.connection-state { display: inline-flex; padding: 3px 6px; border-radius: var(--radius-sm); color: var(--green); background: var(--green-soft); font-size: var(--font-size-xs); font-weight: 650; white-space: nowrap; }
+.connection-state.closed { color: var(--text-faint); background: var(--surface-tint); }
+.connections-table .is-closed td { background: var(--surface-soft); }
+.connections-footer { flex-wrap: wrap; }
+.history-summary { color: var(--text-faint); font-size: var(--font-size-xs); }
+.history-settings { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: var(--section-gap); padding: var(--card-padding); border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--surface-soft); }
+.history-settings label { min-width: 0; }
+.history-settings strong, .history-settings small { display: block; }
+.history-settings strong { font-size: var(--font-size-base); }
+.history-settings small { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-xs); }
+.history-duration-control { display: flex; align-items: center; gap: 6px; color: var(--text-soft); font-size: var(--font-size-sm); }
+.history-duration-control input { width: 6em; text-align: right; }
+.history-settings p { grid-column: 1 / -1; margin: 0; color: var(--text-faint); font-size: var(--font-size-xs); }
+.history-settings .history-settings-error { color: var(--red); }
+.column-settings-title { display: flex; align-items: center; justify-content: space-between; gap: var(--section-gap); margin: 16px 0 8px; font-size: var(--font-size-base); }
+.column-settings-title span { color: var(--text-faint); font-size: var(--font-size-xs); font-weight: 400; }
 @media (max-width: 900px) { .connection-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }.connection-toolbar { grid-template-columns: auto minmax(0, 1fr); }.connection-search { grid-row: 2; grid-column: 1 / -1; }.toolbar-actions { justify-content: flex-end; } }
 @media (max-width: 680px) { .connections-header { align-items: start; }.header-status { flex: 0 0 auto; }.connection-stats { gap: 7px; }.connection-stats article { gap: 8px; padding: 9px; }.stat-icon { width: 30px; height: 30px; }.connection-stats strong { font-size: var(--font-size-base); }.connection-toolbar { grid-template-columns: minmax(0, 1fr) auto; padding: 8px; }.connection-tabs { overflow-x: auto; }.toolbar-actions .toolbar-button:nth-child(2) { display: none; }.connections-error { margin-inline: 8px; }.connections-empty { min-height: var(--empty-state-height); }.column-settings { grid-template-columns: 1fr; }:global(.app-dialog.connection-settings-dialog) { width: 100%; max-width: 100%; }.connections-footer { position: sticky; bottom: 0; } }
+@media (max-width: 680px) {
+  .connections-header { flex-wrap: wrap; gap: 8px; }
+  .connection-tabs { grid-column: 1 / -1; justify-self: start; max-width: 100%; }
+  .connection-search { min-width: 0; grid-row: 2; grid-column: 1; }
+  .toolbar-actions { grid-row: 2; grid-column: 2; }
+  .history-summary { flex-basis: 100%; order: 1; }
+}
 </style>
