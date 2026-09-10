@@ -73,6 +73,50 @@ func TestGenerateCanonicalizesObjectKeyOrderWithoutLosingNumbers(t *testing.T) {
 	}
 }
 
+func TestGenerateOmitsOutboundGUIIdentifiersWithoutChangingDraft(t *testing.T) {
+	const raw = `[
+		{"type":"selector","tag":"proxy","outbounds":["node"],"__id_in_gui":"group-ui-id"},
+		{"type":"future-protocol","tag":"node","__id_in_gui":"node-ui-id","future":9007199254740993,"options":{"__id_in_gui":"keep-nested-data"}},
+		{"type":"direct","tag":"direct"}
+	]`
+	draft := draftWithModule("outbounds", raw)
+	draft.Buffers = map[string]string{"outbounds": raw}
+	output, err := NewGenerator().Generate(context.Background(), draft, rules.Snapshot{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	assertFileJSON(t, output.Files, "70-outbounds.json", `{"outbounds":[
+		{"type":"selector","tag":"proxy","outbounds":["node"]},
+		{"type":"future-protocol","tag":"node","future":9007199254740993,"options":{"__id_in_gui":"keep-nested-data"}},
+		{"type":"direct","tag":"direct"}
+	]}`)
+	assertFileContains(t, output.Files, "70-outbounds.json", "9007199254740993")
+	if string(draft.Config["outbounds"]) != raw || draft.Buffers["outbounds"] != raw {
+		t.Fatal("generation changed the original draft")
+	}
+}
+
+func TestGenerateOutboundGUIIdentifiersDoNotAffectOutputDigest(t *testing.T) {
+	var baseline Output
+	for index, raw := range []string{
+		`[{"type":"direct","tag":"direct"}]`,
+		`[{"type":"direct","tag":"direct","__id_in_gui":"first-ui-id"}]`,
+		`[{"type":"direct","tag":"direct","__id_in_gui":"replacement-ui-id"}]`,
+	} {
+		output, err := NewGenerator().Generate(context.Background(), draftWithModule("outbounds", raw), rules.Snapshot{})
+		if err != nil {
+			t.Fatal(err)
+		}
+		if index == 0 {
+			baseline = output
+			continue
+		}
+		if output.Digest != baseline.Digest || !equalFiles(output.Files, baseline.Files) {
+			t.Fatal("GUI-only identifiers changed generated configuration or its digest")
+		}
+	}
+}
+
 func TestGenerateRejectsRemoteAndInvalidBindings(t *testing.T) {
 	validSnapshot := rules.Snapshot{Resources: map[string]rules.Resource{resourceA: {ID: resourceA, Format: rules.FormatBinary, LocalPath: "data/rulesets/" + resourceA + ".srs"}}}
 	for _, test := range []struct {

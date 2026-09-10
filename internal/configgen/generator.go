@@ -78,6 +78,17 @@ func stableModuleJSON(key string, raw json.RawMessage) (json.RawMessage, error) 
 	if err != nil {
 		return nil, err
 	}
+	if key == "outbounds" {
+		// Imported GUI identifiers are not sing-box outbound options. Filter
+		// only this known root-level metadata; keep other fields and the draft.
+		if outbounds, ok := value.([]any); ok {
+			for _, item := range outbounds {
+				if outbound, ok := item.(map[string]any); ok {
+					delete(outbound, "__id_in_gui")
+				}
+			}
+		}
+	}
 	encoded, err := json.MarshalIndent(map[string]any{key: value}, "", "  ")
 	if err != nil {
 		return nil, err

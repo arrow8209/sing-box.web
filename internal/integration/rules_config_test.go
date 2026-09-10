@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"singbox-web/internal/application"
 	"singbox-web/internal/configgen"
 	"singbox-web/internal/paths"
 	"singbox-web/internal/profile"
@@ -224,6 +225,63 @@ func TestManualRulePreviewAndValidateFlow(t *testing.T) {
 		t.Fatalf("manual payload=%s err=%v", payload, err)
 	}
 	assertNoTransactionDirs(t, env.workDir)
+}
+
+func TestPreviewValidationAndApplyExcludeImportedOutboundGUIIdentifiers(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	env.InstallFakeCore(t, fakeCoreBehavior{Version: "sing-box version 1.13.19", CheckExit: 0})
+	profileID, _ := createApplicationProfile(t, env)
+	draft, etag, err := env.profiles.GetDraft(context.Background(), profileID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	const imported = `[{"type":"direct","tag":"direct","__id_in_gui":"imported-node-id"}]`
+	draft.Buffers["outbounds"] = imported
+	saved, _, err := env.profiles.SaveDraft(context.Background(), profileID, etag, profile.DraftInput{Buffers: draft.Buffers})
+	if err != nil {
+		t.Fatal(err)
+	}
+	preview, err := env.config.Preview(context.Background(), profileID, saved.Revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	validated, err := env.config.Validate(context.Background(), profileID, saved.Revision)
+	if err != nil || !validated.Valid {
+		t.Fatalf("validate=%+v err=%v", validated, err)
+	}
+	if preview.Digest != validated.Digest {
+		t.Fatal("preview and validation generated different configurations")
+	}
+	stagingFile := filepath.Join(env.workDir, validated.ConfigDirectory, "70-outbounds.json")
+	checked, err := os.ReadFile(stagingFile)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if bytes.Contains(checked, []byte("__id_in_gui")) {
+		t.Fatal("GUI metadata was included in the configuration sent to the core")
+	}
+	var previewOutbounds []byte
+	for _, file := range preview.Files {
+		if file.Name == "70-outbounds.json" {
+			previewOutbounds = file.Content
+		}
+	}
+	if len(previewOutbounds) == 0 || !bytes.Equal(checked, previewOutbounds) {
+		t.Fatal("the checked outbound configuration did not match its preview")
+	}
+	_, coordinator, _, _ := newApplicationCoordinator(t, env, nil)
+	applied, err := coordinator.Apply(context.Background(), application.ApplyRequest{ProfileID: profileID, Revision: saved.Revision})
+	if err != nil || !applied.Applied || applied.Validation.Digest != preview.Digest {
+		t.Fatalf("apply=%+v err=%v", applied, err)
+	}
+	formal, err := os.ReadFile(filepath.Join(env.layout.ConfigDir, "70-outbounds.json"))
+	if err != nil || !bytes.Equal(formal, previewOutbounds) {
+		t.Fatalf("applied outbound configuration did not match its preview: err=%v", err)
+	}
+	stored, _, err := env.profiles.GetDraft(context.Background(), profileID)
+	if err != nil || stored.Buffers["outbounds"] != imported || stored.Revision != saved.Revision {
+		t.Fatalf("preview or validation modified the imported draft: err=%v", err)
+	}
 }
 
 func assertPreviewLocalRule(t *testing.T, preview configgen.PreviewResult, tag, path string) {
