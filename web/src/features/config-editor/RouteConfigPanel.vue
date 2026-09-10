@@ -6,6 +6,7 @@ import type { Draft } from "@/features/profiles/types";
 import { useRuleResourceStore } from "@/features/rule-resources/store";
 import RouteRuleEditorDialog from "./RouteRuleEditorDialog.vue";
 import { createRuleKeyResolver } from "./rule-keys";
+import { useOutboundEditor } from "./use-outbound-editor";
 import {
   buildRouteRuleSetOptions,
   createRouteStateId,
@@ -19,7 +20,6 @@ import {
   routeDefaultDomainResolverTag,
   routeDnsServerTags,
   routeInboundTags,
-  routeOutboundTags,
   routeRuleAction,
   routeRuleActionOptions,
   routeRulePayloadText,
@@ -92,7 +92,7 @@ const routeWithDisabledReferences = computed(() => ({
     return rule ? [rule] : [];
   })]
 }));
-const outbounds = computed(() => routeOutboundTags(props.draft.config));
+const { tags: outbounds } = useOutboundEditor(() => props.draft);
 const inbounds = computed(() => routeInboundTags(props.draft.config));
 const dnsServers = computed(() => routeDnsServerTags(props.draft.config));
 const defaultOutbound = computed(() => typeof route.value.final === "string" ? route.value.final : "");

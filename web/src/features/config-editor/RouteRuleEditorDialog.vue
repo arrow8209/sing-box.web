@@ -63,6 +63,9 @@ const actionOptions = computed<Array<{ value: string; label: string; shortLabel:
   return values;
 });
 const allOutbounds = computed(() => withCurrentOption(props.outbounds, outbound.value));
+const defaultOutboundOption = computed(() => props.defaultOutbound && props.outbounds.includes(props.defaultOutbound)
+  ? props.defaultOutbound
+  : props.outbounds[0] ?? "");
 const allDnsServers = computed(() => withCurrentOption(props.dnsServers, dnsServer.value));
 const allInbounds = computed(() => withCurrentOption(props.inbounds, payload.value));
 const snifferOptions = ["http", "tls", "quic", "stun", "dns", "bittorrent", "dtls", "ssh", "rdp", "ntp"];
@@ -134,7 +137,7 @@ function initialize(): void {
   invert.value = props.rule?.invert === true;
   action.value = routeRuleAction(props.rule);
   const currentOutbound = typeof props.rule?.outbound === "string" ? props.rule.outbound : "";
-  outbound.value = currentOutbound || props.defaultOutbound || props.outbounds[0] || "";
+  outbound.value = currentOutbound || defaultOutboundOption.value;
   routeOptionsText.value = routeOptionsFromRule(props.rule);
   rejectMethod.value = typeof props.rule?.method === "string" ? props.rule.method : "default";
   sniffers.value = Array.isArray(props.rule?.sniffer) ? props.rule.sniffer.filter((item): item is string => typeof item === "string") : [];
@@ -143,6 +146,9 @@ function initialize(): void {
 }
 
 watch(() => props.open, (open, wasOpen) => { if (open && !wasOpen) initialize(); }, { immediate: true });
+watch(() => props.outbounds, () => {
+  if (props.open && !props.rule && !props.outbounds.includes(outbound.value)) outbound.value = defaultOutboundOption.value;
+});
 watch(() => props.options, () => {
   if (!props.open || !props.rule) return;
   const optionIds = new Set(props.options.map((option) => option.id));

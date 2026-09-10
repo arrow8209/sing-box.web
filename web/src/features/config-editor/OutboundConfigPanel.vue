@@ -1,23 +1,20 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, ref } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import type { Draft } from "@/features/profiles/types";
-import { subscriptionApi } from "@/features/subscriptions/api";
-import type { SubscriptionDetail, SubscriptionSummary } from "@/features/subscriptions/types";
 import OutboundEditorDialog from "./OutboundEditorDialog.vue";
+import { useOutboundEditor } from "./use-outbound-editor";
 import {
   applyOutboundEditorState,
   cloneValue,
   isObject,
   isPolicyOutbound,
   outboundDescription,
-  outboundEditorGroups,
   outboundIcon,
   outboundReferenceTags,
   renameOutboundTagInBuffer,
   removeOutboundGroup,
-  restoreOutboundEditorState,
   updateOutboundGroup,
   type OutboundEditorGroup,
   type OutboundEditorResult,
@@ -29,17 +26,9 @@ const emit = defineEmits<{ editJson: []; save: [payload: OutboundPanelSave] }>()
 const editorOpen = ref(false);
 const editingId = ref<string | null>(null);
 const preparing = ref(false);
-const subscriptionSummaries = ref<SubscriptionSummary[]>([]);
-const subscriptionDetails = ref<SubscriptionDetail[]>([]);
-const subscriptionError = ref("");
+const { rawItems, editorState, groups, subscriptionDetails, subscriptionError, loadSubscriptionDetails } = useOutboundEditor(() => props.draft);
 const notice = ref("");
 const noticeTone = ref<"info" | "error" | "success">("info");
-let summaryRequest: Promise<void> | null = null;
-let detailRequest: Promise<void> | null = null;
-
-const rawItems = computed<unknown[]>(() => Array.isArray(props.draft.config.outbounds) ? props.draft.config.outbounds : []);
-const editorState = computed(() => restoreOutboundEditorState(rawItems.value, subscriptionDetails.value, props.draft.editorState?.outbounds));
-const groups = computed(() => outboundEditorGroups(rawItems.value, editorState.value));
 const editing = computed(() => groups.value.find((group) => group.id === editingId.value) ?? null);
 const reservedTags = computed(() => rawItems.value.flatMap((item) => {
   if (!isObject(item) || typeof item.tag !== "string" || !item.tag.trim() || item.tag === editing.value?.tag) return [];
@@ -67,49 +56,10 @@ const topology = computed(() => {
   return result;
 });
 
-onMounted(() => { void loadSubscriptionDetails(); });
-
 function show(message: string, tone: "info" | "error" | "success" = "info"): void {
   notice.value = "";
   noticeTone.value = tone;
   queueMicrotask(() => { notice.value = message; });
-}
-
-function refreshSubscriptions(): Promise<void> {
-  if (summaryRequest) return summaryRequest;
-  summaryRequest = (async () => {
-    try {
-      subscriptionSummaries.value = await subscriptionApi.list();
-      subscriptionError.value = "";
-    } catch (cause) {
-      subscriptionError.value = cause instanceof Error ? cause.message : "无法读取订阅列表";
-    } finally {
-      summaryRequest = null;
-    }
-  })();
-  return summaryRequest;
-}
-
-function loadSubscriptionDetails(): Promise<void> {
-  if (detailRequest) return detailRequest;
-  detailRequest = (async () => {
-    await refreshSubscriptions();
-    const cached = new Map(subscriptionDetails.value.map((detail) => [detail.id, detail]));
-    const missing = subscriptionSummaries.value.filter((summary) => !cached.has(summary.id));
-    if (!missing.length) return;
-    const results = await Promise.allSettled(missing.map((summary) => subscriptionApi.get(summary.id)));
-    let failures = 0;
-    results.forEach((result) => {
-      if (result.status === "fulfilled") cached.set(result.value.id, result.value);
-      else failures++;
-    });
-    subscriptionDetails.value = subscriptionSummaries.value.flatMap((summary) => {
-      const detail = cached.get(summary.id);
-      return detail ? [detail] : [];
-    });
-    if (failures) subscriptionError.value = `有 ${failures} 个订阅暂时无法读取，仍可编辑其他引用。`;
-  })().finally(() => { detailRequest = null; });
-  return detailRequest;
 }
 
 async function openEditor(id: string | null): Promise<void> {

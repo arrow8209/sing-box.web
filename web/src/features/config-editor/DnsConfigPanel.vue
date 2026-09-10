@@ -3,6 +3,7 @@ import { computed, onMounted, ref } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import { createRuleKeyResolver } from "./rule-keys";
+import { useOutboundEditor } from "./use-outbound-editor";
 import type { Draft } from "@/features/profiles/types";
 import { useRuleResourceStore } from "@/features/rule-resources/store";
 import DnsRuleEditorDialog from "./DnsRuleEditorDialog.vue";
@@ -46,7 +47,6 @@ import {
 import {
   buildRouteRuleSetOptions,
   mergeSelectedRuleBindings,
-  routeOutboundTags,
   type RouteRuleSetOption
 } from "./route";
 
@@ -88,7 +88,7 @@ const invalidDnsObject = computed(() => props.draft.config.dns !== undefined && 
 const rawServers = computed(() => dnsServers(dns.value));
 const activeRules = computed(() => dnsRules(dns.value));
 const serverTags = computed(() => dnsServerTags(dns.value));
-const outbounds = computed(() => routeOutboundTags(props.draft.config));
+const { tags: outbounds } = useOutboundEditor(() => props.draft);
 const invalidServers = computed(() => dns.value.servers !== undefined && !Array.isArray(dns.value.servers));
 const invalidRules = computed(() => dns.value.rules !== undefined && !Array.isArray(dns.value.rules));
 const generalInteractionDisabled = computed(() => Boolean(props.error) || invalidDnsObject.value);

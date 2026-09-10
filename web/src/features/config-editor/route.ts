@@ -231,10 +231,6 @@ function taggedItems(value: unknown): string[] {
   return value.flatMap((item) => isRouteObject(item) && typeof item.tag === "string" && item.tag.trim() ? [item.tag.trim()] : []);
 }
 
-export function routeOutboundTags(config: Record<string, unknown>): string[] {
-  return [...new Set(taggedItems(config.outbounds))];
-}
-
 export function routeInboundTags(config: Record<string, unknown>): string[] {
   return [...new Set(taggedItems(config.inbounds))];
 }

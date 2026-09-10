@@ -75,7 +75,29 @@ async function addSelectorWithSubscription(page: Page): Promise<void> {
   await expect(page.locator('[data-outbound-tag="香港 E2E"]')).toHaveCount(0);
 }
 
+async function expectOutboundOptions(page: Page): Promise<void> {
+  const tags = await page.locator(".outbound-card").evaluateAll((cards) => cards.map((card) => card.getAttribute("data-outbound-tag") ?? ""));
+  await page.getByRole("tab", { name: "路由", exact: true }).click();
+  await expect(page.getByLabel("默认出站标签").locator("option")).toHaveText(["未设置", ...tags]);
+  await page.getByRole("button", { name: "新增规则", exact: true }).click();
+  const ruleDialog = page.getByRole("dialog", { name: "新增规则" });
+  await expect(ruleDialog.getByLabel("目标出站").locator("option")).toHaveText(["请选择目标出站", ...tags]);
+  await ruleDialog.getByLabel("目标出站").focus();
+  await expect(ruleDialog.getByLabel("目标出站")).toBeFocused();
+  await page.keyboard.press("Escape");
+  await expect(ruleDialog).toBeHidden();
+  await expect(page.getByRole("button", { name: "新增规则", exact: true })).toBeFocused();
+
+  await page.getByRole("tab", { name: "DNS", exact: true }).click();
+  await page.getByRole("button", { name: "新增服务器" }).click();
+  const dnsDialog = page.getByRole("dialog", { name: "新增 DNS 服务器" });
+  await expect(dnsDialog.locator('select[name="detour"] option')).toHaveText(["默认出站", ...tags]);
+  await dnsDialog.getByRole("button", { name: "取消" }).click();
+  await page.getByRole("tab", { name: "出站", exact: true }).click();
+}
+
 test("按原型创建、引用、编辑和持久化自定义配置出站", async ({ page }) => {
+  test.setTimeout(60_000);
   await login(page);
   await createSubscription(page);
   await createProfile(page);
@@ -86,6 +108,7 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   await addDirect(page);
   await addUrlTest(page);
   await addSelectorWithSubscription(page);
+  await expectOutboundOptions(page);
 
   await expect(page.locator(".outbound-members")).toHaveCount(0);
   await expect(page.getByLabel("测试间隔")).toHaveValue("5m");
@@ -141,6 +164,7 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   const renamedReference = selectorDialog.locator(".reference-tile").filter({ hasText: "E2E 自动选择-已改" });
   await expect(renamedReference.locator('input[type="checkbox"]')).toBeChecked();
   await selectorDialog.getByRole("button", { name: "取消" }).click();
+  await expectOutboundOptions(page);
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
