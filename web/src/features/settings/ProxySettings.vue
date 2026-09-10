@@ -84,16 +84,16 @@ async function submit(): Promise<void> {
 .panel { display: grid; gap: var(--section-gap); padding: var(--card-padding); }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 h2 { margin: 0; font-size: 15px; }
-.panel-heading p { margin: 4px 0 0; color: var(--text-soft); font-size: 11px; }
+.panel-heading p { margin: 4px 0 0; color: var(--text-soft); font-size: var(--font-size-sm); }
 form { display: grid; gap: var(--section-gap); min-width: 0; }
-label { display: grid; gap: 6px; color: var(--text-soft); font-size: 11px; font-weight: 650; }
-input { width: 100%; min-height: 38px; font-size: 11px; }
+label { display: grid; gap: 6px; color: var(--text-soft); font-size: var(--font-size-base); font-weight: 650; }
+input { width: 100%; min-height: 38px; font-size: var(--font-size-base); }
 small { font-weight: 500; }
-.scope-note { margin: 0; padding: 9px 11px; border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); font-size: 11px; }
+.scope-note { margin: 0; padding: 9px 11px; border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-sm); }
 .actions { display: flex; align-items: center; gap: 12px; }
-button { width: fit-content; min-height: 35px; padding: 7px 12px; border-radius: 8px; font-size: 11px; }
-.saved { color: var(--green); font-size: 11px; font-weight: 650; }
-.error { margin: 0; color: var(--red); font-size: 11px; }
+button { width: fit-content; min-height: 35px; padding: 7px 12px; border-radius: 8px; font-size: var(--font-size-sm); }
+.saved { color: var(--green); font-size: var(--font-size-sm); font-weight: 650; }
+.error { margin: 0; color: var(--red); font-size: var(--font-size-sm); }
 @media (max-width: 520px) {
   .panel-heading { align-items: stretch; flex-direction: column; }
   .status-badge { width: fit-content; }

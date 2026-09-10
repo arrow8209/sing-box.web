@@ -164,32 +164,32 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
 .core-settings-card { overflow: hidden; }
 .card-head { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }
 .card-head h2, .card-head p { margin: 0; }
-.card-head h2 { font-size: 14px; letter-spacing: -.15px; }
-.card-head p { margin-top: 2px; color: var(--text-faint); font-size: 10px; }
-.version-badge { display: inline-flex; min-height: 23px; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-soft); font-size: 9px; font-weight: 690; white-space: nowrap; }
+.card-head h2 { font-size: var(--font-size-heading); letter-spacing: -.15px; }
+.card-head p { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-sm); }
+.version-badge { display: inline-flex; min-height: 23px; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-xs); font-weight: 690; white-space: nowrap; }
 .version-badge::before { width: 5px; height: 5px; border-radius: 50%; content: ""; background: currentColor; }
 .version-badge.installed { color: var(--green); background: var(--green-soft); }
-.load-error { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--red); background: var(--red-soft); font-size: 10px; }
-.save-success { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--green); background: var(--green-soft); font-size: 10px; }
+.load-error { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
+.save-success { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--green); background: var(--green-soft); font-size: var(--font-size-sm); }
 .setting-list { padding: 2px var(--card-padding); }
 .setting-row { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px 0; border-bottom: 1px solid var(--line); }
 .setting-row:last-child { border-bottom: 0; }
 .setting-copy { min-width: 0; }
 .setting-copy strong, .setting-copy span { display: block; }
-.setting-copy strong { font-size: 11px; font-weight: 680; }
-.setting-copy span { margin-top: 2px; color: var(--text-faint); font-size: 9px; }
+.setting-copy strong { font-size: var(--font-size-base); font-weight: 680; }
+.setting-copy span { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-xs); }
 .setting-control { min-width: 175px; text-align: right; }
-.setting-control select { width: 175px; min-height: 36px; padding: 7px 9px; font-size: 10px; }
+.setting-control select { width: 175px; min-height: 36px; padding: 7px 9px; font-size: var(--font-size-base); }
 .setting-control select:disabled { cursor: default; opacity: 1; color: var(--text-soft); background: var(--surface-soft); }
 .switch-control { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.switch-control > span { color: var(--text-faint); font-size: 9px; font-weight: 620; }
+.switch-control > span { color: var(--text-faint); font-size: var(--font-size-xs); font-weight: 620; }
 .setting-switch { position: relative; width: 34px; min-height: 20px; flex: 0 0 auto; padding: 0; border-radius: 7px; cursor: pointer; background: var(--line-strong); }
 .setting-switch:disabled { cursor: wait; opacity: .7; }
 .setting-switch:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 65%, transparent); outline-offset: 2px; }
 .setting-switch > span { position: absolute; top: 4px; left: 4px; width: 12px; height: 12px; border-radius: 4px; background: #fff; transition: transform 150ms ease; }
 .setting-switch.on { background: var(--primary); }
 .setting-switch.on > span { transform: translateX(14px); }
-.manage-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 4px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); font-size: 10px; font-weight: 650; text-decoration: none; }
+.manage-button { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 4px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 8px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-sm); font-weight: 650; text-decoration: none; }
 .manage-button:hover { color: var(--primary); border-color: color-mix(in srgb, var(--primary) 24%, var(--line)); background: var(--primary-soft); }
 
 @media (max-width: 560px) {

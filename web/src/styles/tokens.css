@@ -35,8 +35,10 @@
   --card-padding: 12px;
   --control-height: 36px;
   --empty-state-height: 136px;
-  --font-size-xs: 9px;
-  --font-size-sm: 10px;
+  --font-size-xs: 12px;
+  --font-size-sm: 13px;
+  --font-size-base: 14px;
+  --font-size-heading: 16px;
   --font: Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
 }
 

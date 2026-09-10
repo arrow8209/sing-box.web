@@ -143,16 +143,16 @@ onBeforeUnmount(() => {
 <style scoped>
 .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .card-head { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }
-.card-title { margin: 0; color: var(--text); font-size: 14px; font-weight: 710; letter-spacing: -.15px; }
-.card-subtitle { margin: 2px 0 0; color: var(--text-faint); font-size: 10px; }
-.btn { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--text-soft); background: var(--surface); box-shadow: 0 1px 2px rgb(23 32 51 / 3%); font-size: 12px; font-weight: 650; transition: color 150ms ease, border-color 150ms ease, background 150ms ease, transform 150ms ease; }
+.card-title { margin: 0; color: var(--text); font-size: var(--font-size-heading); font-weight: 710; letter-spacing: -.15px; }
+.card-subtitle { margin: 2px 0 0; color: var(--text-faint); font-size: var(--font-size-sm); }
+.btn { display: inline-flex; min-height: 34px; align-items: center; justify-content: center; gap: 7px; padding: 7px 11px; border: 1px solid var(--line); border-radius: 10px; color: var(--text-soft); background: var(--surface); box-shadow: 0 1px 2px rgb(23 32 51 / 3%); font-size: var(--font-size-base); font-weight: 650; transition: color 150ms ease, border-color 150ms ease, background 150ms ease, transform 150ms ease; }
 .btn:hover { color: var(--text); border-color: var(--line-strong); background: var(--surface-soft); transform: translateY(-1px); }
-.btn-sm { min-height: 32px; padding: 6px 10px; border-radius: 8px; font-size: 11px; }
+.btn-sm { min-height: 32px; padding: 6px 10px; border-radius: 8px; font-size: var(--font-size-sm); }
 .proxy-selector-card { grid-column: 1 / -1; overflow: hidden; }
 .proxy-selector-head { min-height: 48px; }
 .proxy-selector-actions, .proxy-online-summary { display: flex; align-items: center; }
 .proxy-selector-actions { gap: 12px; }
-.proxy-online-summary { gap: 6px; color: var(--text-soft); font-size: 9px; font-weight: 640; }
+.proxy-online-summary { gap: 6px; color: var(--text-soft); font-size: var(--font-size-xs); font-weight: 640; }
 .proxy-online-summary i { width: 6px; height: 6px; border-radius: 50%; background: var(--green); box-shadow: 0 0 0 4px color-mix(in srgb, var(--green) 12%, transparent); }
 .proxy-group-list { display: grid; }
 .proxy-group { border-bottom: 1px solid var(--line); transition: background 180ms ease; }
@@ -164,8 +164,8 @@ onBeforeUnmount(() => {
 .proxy-group-avatar { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--line)); border-radius: 10px; background: var(--surface); box-shadow: 0 3px 10px rgb(35 50 85 / 5%); font-size: 16px; }
 .proxy-group-copy { min-width: 0; flex: 1; }
 .proxy-group-copy strong, .proxy-group-copy small { display: flex; align-items: center; }
-.proxy-group-copy strong { overflow: hidden; color: var(--text); font-size: 12px; font-weight: 710; text-overflow: ellipsis; white-space: nowrap; transition: color 150ms ease; }
-.proxy-group-copy small { min-width: 0; gap: 7px; margin-top: 3px; overflow: hidden; color: var(--text-faint); font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+.proxy-group-copy strong { overflow: hidden; color: var(--text); font-size: var(--font-size-base); font-weight: 710; text-overflow: ellipsis; white-space: nowrap; transition: color 150ms ease; }
+.proxy-group-copy small { min-width: 0; gap: 7px; margin-top: 3px; overflow: hidden; color: var(--text-faint); font-size: var(--font-size-xs); text-overflow: ellipsis; white-space: nowrap; }
 .proxy-group-copy small b { color: var(--primary); font-weight: 680; }
 .proxy-group-copy small i { width: 3px; height: 3px; flex: 0 0 auto; border-radius: 50%; background: var(--line-strong); }
 .proxy-group-actions { display: flex; align-items: center; gap: 3px; padding: 0 13px 0 4px; }
@@ -177,12 +177,12 @@ onBeforeUnmount(() => {
 .proxy-node-card { position: relative; display: flex; min-width: 0; min-height: 64px; align-items: center; gap: 10px; padding: 8px 30px 8px 10px; border: 1px solid var(--line); border-radius: 11px; color: var(--text); background: color-mix(in srgb, var(--surface) 94%, transparent); box-shadow: 0 4px 12px rgb(30 43 73 / 4%); text-align: left; transition: border-color 150ms ease, box-shadow 150ms ease, transform 150ms ease; }
 .proxy-node-card:hover { border-color: color-mix(in srgb, var(--primary) 32%, var(--line)); box-shadow: 0 8px 18px rgb(37 55 96 / 8%); transform: translateY(-1px); }
 .proxy-node-card.selected { border-color: color-mix(in srgb, var(--primary) 42%, var(--line)); background: color-mix(in srgb, var(--primary-soft) 44%, var(--surface)); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 7%, transparent); }
-.proxy-node-avatar { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; color: var(--primary); background: var(--primary-soft); font-size: 10px; font-weight: 760; }
+.proxy-node-avatar { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 10px; color: var(--primary); background: var(--primary-soft); font-size: var(--font-size-sm); font-weight: 760; }
 .proxy-node-avatar.emoji { font-size: 15px; }
 .proxy-node-copy { display: grid; min-width: 0; gap: 1px; }
-.proxy-node-copy strong { overflow: hidden; color: var(--text); font-size: 11px; font-weight: 690; text-overflow: ellipsis; white-space: nowrap; }
+.proxy-node-copy strong { overflow: hidden; color: var(--text); font-size: var(--font-size-base); font-weight: 690; text-overflow: ellipsis; white-space: nowrap; }
 .proxy-node-copy small { overflow: hidden; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
-.proxy-latency { display: inline-flex; width: max-content; align-items: center; gap: 4px; font-size: 9px; font-weight: 700; }
+.proxy-latency { display: inline-flex; width: max-content; align-items: center; gap: 4px; font-size: var(--font-size-xs); font-weight: 700; }
 .proxy-latency.fast, .proxy-latency.medium { color: var(--green); }
 .proxy-latency.slow { color: var(--orange); }
 .proxy-latency.timeout { color: var(--red); }
@@ -191,8 +191,8 @@ onBeforeUnmount(() => {
 .proxy-node-check { position: absolute; right: 8px; bottom: 8px; display: grid; width: 20px; height: 20px; place-items: center; border-radius: 50%; color: #fff; background: transparent; }
 .proxy-node-card.selected .proxy-node-check { background: var(--primary); }
 .proxy-empty-state { display: grid; min-height: 150px; place-items: center; align-content: center; gap: 7px; color: var(--primary); }
-.proxy-empty-state strong { color: var(--text); font-size: 12px; }
-.proxy-empty-state span { color: var(--text-faint); font-size: 9px; }
+.proxy-empty-state strong { color: var(--text); font-size: var(--font-size-base); }
+.proxy-empty-state span { color: var(--text-faint); font-size: var(--font-size-xs); }
 @keyframes fade-in { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes proxy-spin { to { transform: rotate(360deg); } }
 @media (max-width: 760px) {

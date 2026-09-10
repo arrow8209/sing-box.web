@@ -13,7 +13,7 @@ const emit = defineEmits<{ duplicate: []; rename: []; remove: [] }>();
 
 <style scoped>
 .profile-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 6px; }
-button { min-height: 34px; padding: 6px 9px; border-radius: 8px; font-size: 10px; }
+button { min-height: 34px; padding: 6px 9px; border-radius: 8px; font-size: var(--font-size-sm); }
 .secondary { color: var(--text); background: var(--surface-soft); }
 .danger { background: var(--red); }
 </style>

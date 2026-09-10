@@ -71,7 +71,7 @@ function formatCommand(command?: string[]): string {
 .check-details small { display: block; margin-top: 3px; color: var(--muted); }
 .detail-warning { font-weight: 700; }
 .process-output { margin-top: 12px; }
-.process-output h3 { margin: 0 0 5px; font-size: 13px; color: var(--text); }
+.process-output h3 { margin: 0 0 5px; font-size: var(--font-size-heading); color: var(--text); }
 .errors pre { overflow: auto; margin: 0; padding: 10px; border: 1px solid color-mix(in srgb, var(--red) 25%, var(--line)); border-radius: 8px; color: var(--text); background: var(--surface); white-space: pre-wrap; }
 @media (max-width: 720px) { .check-details { grid-template-columns: 1fr; gap: 4px; } .check-details dd + dt { margin-top: 6px; } }
 </style>

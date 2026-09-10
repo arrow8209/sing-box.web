@@ -14,6 +14,6 @@ const profiles = useProfileStore();
 </template>
 <style scoped>
 .application-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
-button { min-height: 34px; padding: 6px 10px; font-size: 10px; }
+button { min-height: 34px; padding: 6px 10px; font-size: var(--font-size-sm); }
 .secondary { color: var(--text); background: var(--surface-soft); }
 </style>

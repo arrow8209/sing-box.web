@@ -47,10 +47,10 @@ onBeforeUnmount(() => window.removeEventListener("hashchange", syncActiveSection
 <style scoped>
 .settings-page { display: grid; gap: var(--section-gap); min-width: 0; }
 .page-intro h1 { margin: 0; font-size: 22px; letter-spacing: -.4px; }
-.page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: 12px; }
+.page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: var(--font-size-base); }
 .settings-layout { display: grid; grid-template-columns: 160px minmax(0, 1fr); gap: var(--section-gap); }
 .settings-nav { position: sticky; top: calc(var(--topbar-height) + var(--section-gap)); display: grid; align-content: start; height: fit-content; gap: 3px; padding: 8px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
-.settings-nav a { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; color: var(--text-soft); font-size: 11px; font-weight: 650; text-decoration: none; }
+.settings-nav a { display: flex; align-items: center; gap: 9px; padding: 9px 10px; border-radius: 8px; color: var(--text-soft); font-size: var(--font-size-sm); font-weight: 650; text-decoration: none; }
 .settings-nav a:hover { color: var(--primary-strong); background: var(--primary-soft); }
 .settings-nav a.active { color: var(--primary-strong); background: var(--primary-soft); font-weight: 700; }
 .settings-content { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--section-gap); }

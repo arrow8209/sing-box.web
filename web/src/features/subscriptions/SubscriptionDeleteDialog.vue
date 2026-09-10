@@ -16,6 +16,6 @@ const emit = defineEmits<{ close: []; confirm: [] }>();
 </template>
 
 <style scoped>
-:global(.subscription-delete-dialog) { width: min(460px, calc(100vw - 32px)); }.warning { margin: 0; padding: 12px; border: 1px solid color-mix(in srgb, var(--red) 18%, var(--line)); border-radius: 10px; color: var(--text-soft); background: var(--red-soft); font-size: 10px; }.secondary-button, .danger-button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--line); font-size: 10px; }.secondary-button { color: var(--text-soft); background: var(--surface); }.danger-button { color: #fff; border-color: var(--red); background: var(--red); }
+:global(.subscription-delete-dialog) { width: min(460px, calc(100vw - 32px)); }.warning { margin: 0; padding: 12px; border: 1px solid color-mix(in srgb, var(--red) 18%, var(--line)); border-radius: 10px; color: var(--text-soft); background: var(--red-soft); font-size: var(--font-size-sm); }.secondary-button, .danger-button { min-height: 36px; padding: 7px 11px; border: 1px solid var(--line); font-size: var(--font-size-sm); }.secondary-button { color: var(--text-soft); background: var(--surface); }.danger-button { color: #fff; border-color: var(--red); background: var(--red); }
 @media (max-width: 680px) { :global(.subscription-delete-dialog) { width: 100%; } }
 </style>

@@ -1,6 +1,6 @@
 * { box-sizing: border-box; }
 html { min-width: 320px; min-height: 100%; background: var(--bg); }
-body { min-width: 320px; min-height: 100vh; margin: 0; color: var(--text); background: radial-gradient(circle at 78% -16%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 36rem), var(--bg); font-family: var(--font); font-size: 14px; line-height: 1.5; -webkit-font-smoothing: antialiased; }
+body { min-width: 320px; min-height: 100vh; margin: 0; color: var(--text); background: radial-gradient(circle at 78% -16%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 36rem), var(--bg); font-family: var(--font); font-size: var(--font-size-base); line-height: 1.5; -webkit-font-smoothing: antialiased; }
 button, input, select, textarea { font: inherit; }
 button { min-height: var(--control-height); border: 0; border-radius: var(--radius-sm); background: var(--primary); color: #fff; cursor: pointer; font-weight: 650; }
 button:disabled { cursor: wait; opacity: .65; }

@@ -71,10 +71,10 @@ async function stopDownload(): Promise<void> {
 <style scoped>
 .core-management-page { display: grid; min-width: 0; gap: var(--section-gap); }
 .page-intro h1 { margin: 0; font-size: 22px; letter-spacing: -.4px; }
-.page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: 12px; }
-.core-error, .core-runtime-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 9px; color: var(--red); background: var(--red-soft); font-size: 10px; }
+.page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: var(--font-size-base); }
+.core-error, .core-runtime-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 9px; color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
 .core-runtime-error span, .core-runtime-error strong { display: block; }
-.core-runtime-error strong { margin-bottom: 2px; font-size: 10px; }
-.core-page-note { display: flex; align-items: center; gap: 7px; margin: -2px 3px 0; color: var(--text-faint); font-size: 9px; }
+.core-runtime-error strong { margin-bottom: 2px; font-size: var(--font-size-base); }
+.core-page-note { display: flex; align-items: center; gap: 7px; margin: -2px 3px 0; color: var(--text-faint); font-size: var(--font-size-xs); }
 .core-page-note :deep(.icon) { flex: 0 0 auto; color: var(--primary); }
 </style>

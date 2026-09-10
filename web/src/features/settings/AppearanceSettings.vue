@@ -25,5 +25,5 @@ watch(collapsed, () => localStorage.setItem("singbox-sidebar-collapsed", String(
 </template>
 
 <style scoped>
-.panel { display: grid; gap: var(--section-gap); padding: var(--card-padding); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); } h2 { margin: 0; font-size: 15px; } label { display: grid; gap: 6px; min-width: 0; color: var(--text-soft); font-size: 11px; font-weight: 650; } select { min-height: 38px; font-size: 11px; }.check { display: flex; align-items: center; gap: 7px; padding-top: 4px; }
+.panel { display: grid; gap: var(--section-gap); padding: var(--card-padding); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); } h2 { margin: 0; font-size: 15px; } label { display: grid; gap: 6px; min-width: 0; color: var(--text-soft); font-size: var(--font-size-base); font-weight: 650; } select { min-height: 38px; font-size: var(--font-size-base); }.check { display: flex; align-items: center; gap: 7px; padding-top: 4px; }
 </style>

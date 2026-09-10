@@ -259,12 +259,12 @@ function jumpTo(path: string): void {
 .config-context-copy { min-width: 0; flex: 1; }
 .config-context-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
 .workspace h1 { overflow: hidden; margin: 0; font-size: 17px; letter-spacing: -.25px; text-overflow: ellipsis; white-space: nowrap; }
-.workspace header p, .empty { overflow: hidden; margin: 3px 0 0; color: var(--text-faint); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
-.save-status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 999px; color: var(--orange); background: var(--orange-soft); font-size: 10px; font-weight: 650; white-space: nowrap; }
+.workspace header p, .empty { overflow: hidden; margin: 3px 0 0; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
+.save-status { display: inline-flex; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 999px; color: var(--orange); background: var(--orange-soft); font-size: var(--font-size-sm); font-weight: 650; white-space: nowrap; }
 .save-status.saved { color: var(--green); background: var(--green-soft); }
 .save-status.saving { color: var(--primary); background: var(--primary-soft); }
-.profile-error { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: 11px; }
-.auto-reload-status { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: 11px; }
+.profile-error { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
+.auto-reload-status { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
 .auto-reload-status.success { color: var(--green); background: var(--green-soft); }
 .modules { display: grid; gap: var(--section-gap); }
 .tabs + .panel, .tabs + .outbound-editor { margin-top: 0; }

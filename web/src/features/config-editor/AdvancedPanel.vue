@@ -70,17 +70,17 @@ function summary(section: ConfigSection): string {
 .card { overflow: hidden; }
 .card-head { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }
 .card-title, .card-subtitle { margin: 0; }
-.card-title { font-size: 14px; font-weight: 710; letter-spacing: -.15px; }
-.card-subtitle { margin-top: 2px; color: var(--text-faint); font-size: 10px; }
+.card-title { font-size: var(--font-size-heading); font-weight: 710; letter-spacing: -.15px; }
+.card-subtitle { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-sm); }
 .card-body { padding: var(--card-padding); }
-.type-badge { display: inline-flex; min-height: 22px; align-items: center; padding: 3px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-soft); font-size: 9px; font-weight: 660; white-space: nowrap; }
+.type-badge { display: inline-flex; min-height: 22px; align-items: center; padding: 3px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-xs); font-weight: 660; white-space: nowrap; }
 .advanced-section-list { display: grid; padding: 5px 12px 10px; }
 .advanced-section-row { display: grid; min-width: 0; min-height: 46px; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 8px 3px; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text-soft); background: transparent; text-align: left; }
 .advanced-section-row:last-child { border-bottom: 0; }
 .advanced-section-row:hover { color: var(--primary); }
 .advanced-section-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: var(--primary); background: var(--primary-soft); }
 .advanced-section-copy { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 2px 7px; }
-.advanced-section-copy strong { color: var(--text); font-size: 10px; }
+.advanced-section-copy strong { color: var(--text); font-size: var(--font-size-base); }
 .advanced-section-copy code { overflow: hidden; color: var(--primary); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
 .advanced-section-copy small { grid-column: 1 / -1; overflow: hidden; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
 .advanced-section-status { display: inline-flex; max-width: 120px; align-items: center; gap: 5px; overflow: hidden; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
@@ -94,9 +94,9 @@ function summary(section: ConfigSection): string {
 .compact-guide-list > div { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: center; gap: 8px; }
 .compact-guide-list > div > :deep(.icon) { color: var(--primary); }
 .compact-guide-list strong, .compact-guide-list small { display: block; }
-.compact-guide-list strong { font-size: 9px; }
+.compact-guide-list strong { font-size: var(--font-size-base); }
 .compact-guide-list small { margin-top: 1px; color: var(--text-faint); font-size: var(--font-size-sm); }
-.info-callout { display: flex; gap: 10px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); border-radius: 10px; color: var(--text-soft); background: var(--primary-soft); font-size: 10px; }
+.info-callout { display: flex; gap: 10px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); border-radius: 10px; color: var(--text-soft); background: var(--primary-soft); font-size: var(--font-size-sm); }
 .info-callout :deep(.icon) { flex: 0 0 auto; color: var(--primary); }
 
 @media (max-width: 1080px) {
@@ -111,7 +111,7 @@ function summary(section: ConfigSection): string {
 }
 @media (max-width: 420px) {
   .card-head { align-items: flex-start; }
-  .advanced-section-copy strong { font-size: 11px; }
-  .advanced-section-copy code, .advanced-section-copy small { font-size: 9px; }
+  .advanced-section-copy strong { font-size: var(--font-size-base); }
+  .advanced-section-copy code, .advanced-section-copy small { font-size: var(--font-size-xs); }
 }
 </style>

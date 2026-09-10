@@ -211,8 +211,8 @@ function triggerAction(): void {
 .core-shell-copy { min-width: 0; flex: 1; }
 .core-shell-copy strong, .core-shell-copy span { display: block; }
 .core-shell-copy strong { font-size: 14px; font-weight: 740; }
-.core-shell-copy span { margin-top: 1px; color: var(--text-faint); font-size: 9px; }
-.core-release-state { display: inline-flex; min-height: 25px; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; color: var(--primary); background: var(--primary-soft); font-size: 9px; font-weight: 720; white-space: nowrap; }
+.core-shell-copy span { margin-top: 1px; color: var(--text-faint); font-size: var(--font-size-xs); }
+.core-release-state { display: inline-flex; min-height: 25px; align-items: center; gap: 6px; padding: 4px 9px; border-radius: 999px; color: var(--primary); background: var(--primary-soft); font-size: var(--font-size-xs); font-weight: 720; white-space: nowrap; }
 .core-release-state i { width: 5px; height: 5px; border-radius: 50%; background: currentColor; }
 .core-release-state.downloading { color: var(--orange); background: var(--orange-soft); }
 .core-release-state.downloaded { color: var(--green); background: var(--green-soft); }
@@ -221,11 +221,11 @@ function triggerAction(): void {
 .core-version-grid { display: grid; grid-template-columns: minmax(0, 1fr) 34px minmax(0, 1fr); align-items: center; padding: var(--card-padding); }
 .core-version-tile { min-width: 0; min-height: 112px; padding: var(--card-padding); border: 1px solid var(--line); border-radius: 14px; background: var(--surface-soft); }
 .core-version-tile.latest { border-color: color-mix(in srgb, var(--primary) 30%, var(--line)); background: linear-gradient(145deg, color-mix(in srgb, var(--primary-soft) 75%, var(--surface)), var(--surface)); }
-.core-version-label { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; color: var(--text-soft); font-size: 10px; font-weight: 680; }
+.core-version-label { display: flex; flex-wrap: wrap; align-items: center; gap: 7px; color: var(--text-soft); font-size: var(--font-size-base); font-weight: 680; }
 .core-version-label b { margin-left: auto; padding: 3px 7px; border-radius: 6px; color: var(--primary); background: var(--primary-soft); font-size: var(--font-size-sm); letter-spacing: .25px; }
 .core-version-value { display: block; margin-top: 10px; overflow: hidden; color: var(--text); font-size: clamp(27px, 4vw, 36px); font-weight: 780; letter-spacing: -1.2px; line-height: 1; text-overflow: ellipsis; white-space: nowrap; }
 .core-version-tile.latest .core-version-value { color: var(--primary-strong); }
-.core-version-tile p { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; color: var(--text-faint); font-size: 9px; }
+.core-version-tile p { display: flex; align-items: center; gap: 6px; margin: 10px 0 0; color: var(--text-faint); font-size: var(--font-size-xs); }
 .core-running-dot { width: 6px; height: 6px; flex: 0 0 auto; border-radius: 50%; background: var(--text-faint); box-shadow: 0 0 0 3px color-mix(in srgb, var(--text-faint) 13%, transparent); }
 .core-running-dot.running, .core-running-dot.starting { background: var(--green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--green) 13%, transparent); }
 .core-running-dot.start_failed, .core-running-dot.exited { background: var(--red); box-shadow: 0 0 0 3px color-mix(in srgb, var(--red) 13%, transparent); }
@@ -237,19 +237,19 @@ function triggerAction(): void {
 .core-download-copy > span.failed { color: var(--red); background: var(--red-soft); }
 .core-download-copy > span.cancelled { color: var(--text-soft); background: var(--line); }
 .core-download-copy strong, .core-download-copy small { display: block; }
-.core-download-copy strong { font-size: 11px; }
+.core-download-copy strong { font-size: var(--font-size-base); }
 .core-download-copy small { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-sm); }
 .core-download-actions { display: flex; flex: 0 0 auto; }
-.core-download-button, .core-stop-button { display: inline-flex; min-width: 178px; min-height: 36px; align-items: center; justify-content: center; gap: 7px; padding: 7px 13px; font-size: 10px; }
+.core-download-button, .core-stop-button { display: inline-flex; min-width: 178px; min-height: 36px; align-items: center; justify-content: center; gap: 7px; padding: 7px 13px; font-size: var(--font-size-sm); }
 .core-stop-button { color: var(--red); border: 1px solid color-mix(in srgb, var(--red) 30%, var(--line)); background: var(--red-soft); }
 .core-update-progress { padding: var(--card-padding); border-top: 1px solid var(--line); background: var(--surface); }
-.core-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--text-soft); font-size: 9px; }
-.core-update-progress strong { color: var(--primary); font-size: 9px; }
+.core-progress-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 7px; color: var(--text-soft); font-size: var(--font-size-xs); }
+.core-update-progress strong { color: var(--primary); font-size: var(--font-size-base); }
 .core-download-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-bottom: 10px; }
 .core-download-metrics > span { min-width: 0; padding: 8px 10px; border-radius: 8px; background: var(--surface-soft); }
 .core-download-metrics small, .core-download-metrics strong { display: block; }
 .core-download-metrics small { color: var(--text-faint); font-size: var(--font-size-sm); }
-.core-download-metrics strong { overflow: hidden; margin-top: 2px; color: var(--text); font-size: 10px; text-overflow: ellipsis; white-space: nowrap; }
+.core-download-metrics strong { overflow: hidden; margin-top: 2px; color: var(--text); font-size: var(--font-size-base); text-overflow: ellipsis; white-space: nowrap; }
 .core-progress-track { display: block; height: 6px; overflow: hidden; border-radius: 999px; background: var(--line); }
 .core-progress-track i { display: block; height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--primary), var(--cyan)); transition: width 240ms ease; }
 .core-update-progress.indeterminate .core-progress-track i { width: 35%; animation: core-progress-indeterminate 1.1s ease-in-out infinite; }
