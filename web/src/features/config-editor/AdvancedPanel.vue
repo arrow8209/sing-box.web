@@ -81,9 +81,9 @@ function summary(section: ConfigSection): string {
 .advanced-section-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: var(--primary); background: var(--primary-soft); }
 .advanced-section-copy { display: grid; min-width: 0; grid-template-columns: auto minmax(0, 1fr); align-items: baseline; gap: 2px 7px; }
 .advanced-section-copy strong { color: var(--text); font-size: 10px; }
-.advanced-section-copy code { overflow: hidden; color: var(--primary); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.advanced-section-copy small { grid-column: 1 / -1; overflow: hidden; color: var(--text-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
-.advanced-section-status { display: inline-flex; max-width: 120px; align-items: center; gap: 5px; overflow: hidden; color: var(--text-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.advanced-section-copy code { overflow: hidden; color: var(--primary); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
+.advanced-section-copy small { grid-column: 1 / -1; overflow: hidden; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
+.advanced-section-status { display: inline-flex; max-width: 120px; align-items: center; gap: 5px; overflow: hidden; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
 .advanced-section-status i { width: 5px; height: 5px; flex: 0 0 auto; border-radius: 50%; background: var(--line-strong); }
 .advanced-section-status.is-configured { color: var(--green); }
 .advanced-section-status.is-configured i { background: var(--green); }
@@ -95,7 +95,7 @@ function summary(section: ConfigSection): string {
 .compact-guide-list > div > :deep(.icon) { color: var(--primary); }
 .compact-guide-list strong, .compact-guide-list small { display: block; }
 .compact-guide-list strong { font-size: 9px; }
-.compact-guide-list small { margin-top: 1px; color: var(--text-faint); font-size: 8px; }
+.compact-guide-list small { margin-top: 1px; color: var(--text-faint); font-size: var(--font-size-sm); }
 .info-callout { display: flex; gap: 10px; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); border-radius: 10px; color: var(--text-soft); background: var(--primary-soft); font-size: 10px; }
 .info-callout :deep(.icon) { flex: 0 0 auto; color: var(--primary); }
 

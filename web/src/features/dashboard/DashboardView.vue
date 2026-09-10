@@ -368,7 +368,7 @@ onBeforeUnmount(() => {
 .profile-stats div { padding: 6px; border-radius: 9px; background: var(--surface-soft); text-align: center; }
 .profile-stats strong, .profile-stats span { display: block; }
 .profile-stats strong { color: var(--text); font-size: 12px; }
-.profile-stats span { margin-top: 1px; color: var(--text-faint); font-size: 8px; }
+.profile-stats span { margin-top: 1px; color: var(--text-faint); font-size: var(--font-size-sm); }
 .route-mode-card { padding: var(--card-padding); }
 .mode-title-row { display: flex; align-items: center; justify-content: space-between; }
 .mode-title-row > span { color: var(--text-faint); font-size: 9px; }

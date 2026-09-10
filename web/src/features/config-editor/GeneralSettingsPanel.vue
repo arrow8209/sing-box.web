@@ -224,7 +224,7 @@ function generateApiSecret(): void {
 .card-head h2, .aside-head h2 { font-size: 13px; }
 .card-head p, .aside-head p { margin-top: 2px; color: var(--text-faint); font-size: 9px; }
 .header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 7px; }
-.module-badge { display: inline-flex; min-height: 25px; align-items: center; padding: 4px 8px; border-radius: 999px; color: var(--primary); background: var(--primary-soft); font: 680 8px ui-monospace, SFMono-Regular, Consolas, monospace; }
+.module-badge { display: inline-flex; min-height: 25px; align-items: center; padding: 4px 8px; border-radius: 999px; color: var(--primary); background: var(--primary-soft); font: 680 var(--font-size-sm) ui-monospace, SFMono-Regular, Consolas, monospace; }
 .json-button { display: inline-flex; min-height: 31px; align-items: center; gap: 5px; padding: 5px 8px; color: var(--text-soft); border: 1px solid var(--line); background: var(--surface-soft); font-size: 9px; }
 .runtime-settings-body { display: grid; padding: 2px var(--card-padding); }
 .mode-setting { display: grid; gap: 8px; padding: 10px 0; border-bottom: 1px solid var(--line); }
@@ -235,13 +235,13 @@ function generateApiSecret(): void {
 .mode-option.active { color: var(--primary-strong); border-color: color-mix(in srgb, var(--primary) 35%, var(--line)); background: var(--primary-soft); box-shadow: inset 0 0 0 1px color-mix(in srgb, var(--primary) 8%, transparent); }
 .mode-option strong, .mode-option small { display: block; }
 .mode-option strong { font-size: 10px; }
-.mode-option small { color: var(--text-faint); font-size: 8px; font-weight: 500; }
+.mode-option small { color: var(--text-faint); font-size: var(--font-size-sm); font-weight: 500; }
 .api-setting-row { display: grid; min-width: 0; min-height: 54px; grid-template-columns: auto minmax(0, 1fr) minmax(260px, .72fr); align-items: center; gap: var(--section-gap); padding: 8px 0; border-bottom: 1px solid var(--line); }
 .api-setting-row:last-child { border-bottom: 0; }
 .api-control { width: 100%; min-width: 0; min-height: 36px; font-size: 9px; }
 .secret-control { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 6px; }
 .secret-control input { min-width: 0; font-family: ui-monospace, SFMono-Regular, Consolas, monospace; }
-.generate-button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; padding: 6px 9px; color: var(--primary); border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); background: var(--primary-soft); font-size: 8px; white-space: nowrap; }
+.generate-button { display: inline-flex; min-height: 36px; align-items: center; justify-content: center; gap: 5px; padding: 6px 9px; color: var(--primary); border: 1px solid color-mix(in srgb, var(--primary) 22%, var(--line)); background: var(--primary-soft); font-size: var(--font-size-sm); white-space: nowrap; }
 .settings-list { display: grid; padding: 2px var(--card-padding); }
 .setting-row { display: grid; min-width: 0; min-height: 54px; grid-template-columns: auto minmax(0, 1fr) minmax(170px, .52fr); align-items: center; gap: var(--section-gap); padding: 8px 0; border-bottom: 1px solid var(--line); }
 .setting-row:last-child { border-bottom: 0; }
@@ -252,10 +252,10 @@ function generateApiSecret(): void {
 .setting-copy { min-width: 0; }
 .setting-copy strong, .setting-copy small { display: block; }
 .setting-copy strong { color: var(--text); font-size: 10px; font-weight: 670; }
-.setting-copy small { margin-top: 3px; color: var(--text-faint); font-size: 8px; font-weight: 500; }
+.setting-copy small { margin-top: 3px; color: var(--text-faint); font-size: var(--font-size-sm); font-weight: 500; }
 .setting-row select, .setting-row input { width: 100%; min-width: 0; min-height: 36px; font-size: 9px; }
 .switch-control { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.switch-control > span { color: var(--text-faint); font-size: 8px; font-weight: 620; }
+.switch-control > span { color: var(--text-faint); font-size: var(--font-size-sm); font-weight: 620; }
 .setting-switch { position: relative; width: 34px; min-height: 20px; flex: 0 0 auto; padding: 0; border-radius: 7px; background: var(--line-strong); }
 .setting-switch > span { position: absolute; top: 4px; left: 4px; width: 12px; height: 12px; border-radius: 4px; background: #fff; transition: transform 150ms ease; }
 .setting-switch.on { background: var(--primary); }
@@ -269,8 +269,8 @@ function generateApiSecret(): void {
 .scope-list p { min-width: 0; margin: 0; }
 .scope-list strong, .scope-list small { display: block; }
 .scope-list strong { font-size: 9px; }
-.scope-list small { margin-top: 2px; color: var(--text-faint); font-size: 8px; }
-.scope-list em { padding: 3px 6px; border-radius: 6px; color: var(--green); background: var(--green-soft); font-size: 7px; font-style: normal; font-weight: 680; white-space: nowrap; }
+.scope-list small { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-sm); }
+.scope-list em { padding: 3px 6px; border-radius: 6px; color: var(--green); background: var(--green-soft); font-size: var(--font-size-xs); font-style: normal; font-weight: 680; white-space: nowrap; }
 .info-callout { display: flex; gap: 8px; margin: 0; padding: 11px 12px; border: 1px solid color-mix(in srgb, var(--primary) 14%, var(--line)); border-radius: 10px; color: var(--primary); background: var(--primary-soft); font-size: 9px; }
 .info-callout span { color: var(--text-soft); }
 
@@ -299,7 +299,7 @@ function generateApiSecret(): void {
   .module-badge { display: none; }
   .json-button { width: 100%; justify-content: center; }
   .mode-option { min-height: 48px; padding-inline: 8px; }
-  .mode-option small { font-size: 7px; }
+  .mode-option small { font-size: var(--font-size-xs); }
   .setting-copy strong { font-size: 11px; }
   .setting-copy small { font-size: 9px; }
 }

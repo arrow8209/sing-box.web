@@ -181,7 +181,7 @@ onBeforeUnmount(() => {
 .proxy-node-avatar.emoji { font-size: 15px; }
 .proxy-node-copy { display: grid; min-width: 0; gap: 1px; }
 .proxy-node-copy strong { overflow: hidden; color: var(--text); font-size: 11px; font-weight: 690; text-overflow: ellipsis; white-space: nowrap; }
-.proxy-node-copy small { overflow: hidden; color: var(--text-faint); font-size: 8px; text-overflow: ellipsis; white-space: nowrap; }
+.proxy-node-copy small { overflow: hidden; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
 .proxy-latency { display: inline-flex; width: max-content; align-items: center; gap: 4px; font-size: 9px; font-weight: 700; }
 .proxy-latency.fast, .proxy-latency.medium { color: var(--green); }
 .proxy-latency.slow { color: var(--orange); }
