@@ -69,7 +69,7 @@ async function stopDownload(): Promise<void> {
 </template>
 
 <style scoped>
-.core-management-page { display: grid; max-width: 1040px; gap: 14px; }
+.core-management-page { display: grid; min-width: 0; gap: var(--section-gap); }
 .page-intro h1 { margin: 0; font-size: 22px; letter-spacing: -.4px; }
 .page-intro p { margin: 5px 0 0; color: var(--text-soft); font-size: 12px; }
 .core-error, .core-runtime-error { display: flex; align-items: flex-start; gap: 8px; margin: 0; padding: 10px 12px; border-radius: 9px; color: var(--red); background: var(--red-soft); font-size: 10px; }

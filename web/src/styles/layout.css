@@ -23,27 +23,27 @@
   z-index: 20;
   inset-block-start: 0;
   display: flex;
-  min-height: 64px;
+  min-height: var(--topbar-height);
   align-items: center;
-  gap: 14px;
-  padding: 0 28px;
+  gap: var(--section-gap);
+  padding: 0 var(--page-padding);
   border-bottom: 1px solid var(--line);
   background: color-mix(in srgb, var(--surface) 90%, transparent);
   backdrop-filter: blur(12px);
 }
 
 .app-content {
-  width: min(100%, 1320px);
-  margin: 0 auto;
-  padding: 28px;
+  width: 100%;
+  min-width: 0;
+  padding: var(--page-padding);
 }
 
 .page-header {
   display: flex;
   align-items: start;
   justify-content: space-between;
-  gap: 18px;
-  margin-bottom: 22px;
+  gap: var(--section-gap);
+  margin-bottom: var(--card-padding);
 }
 
 .page-header h1 { margin: 0; font-size: clamp(22px, 2vw, 28px); letter-spacing: -.02em; }
@@ -51,8 +51,10 @@
 
 .app-dialog {
   width: min(560px, calc(100vw - 32px));
+  max-width: 100%;
   max-height: min(88dvh, 820px);
   margin: auto;
+  padding: 0;
   overflow: auto;
   border: 0;
   border-radius: var(--radius-lg);
@@ -62,9 +64,9 @@
 }
 
 .app-dialog::backdrop { background: rgb(10 18 33 / 52%); backdrop-filter: blur(2px); }
-.app-dialog__content { padding: 22px; }
+.app-dialog__content { padding: 16px; }
 .app-dialog__header, .app-dialog__footer { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
-.app-dialog__header { margin-bottom: 16px; }
+.app-dialog__header { margin-bottom: 12px; }
 .app-dialog__header h2 { margin: 0; font-size: 18px; }
 .app-dialog__header p { margin: 3px 0 0; color: var(--text-faint); font-size: 11px; }
-.app-dialog__footer { justify-content: end; margin-top: 22px; }
+.app-dialog__footer { justify-content: end; margin-top: 16px; }

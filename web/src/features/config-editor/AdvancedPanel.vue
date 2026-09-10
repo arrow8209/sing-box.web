@@ -65,17 +65,17 @@ function summary(section: ConfigSection): string {
 </template>
 
 <style scoped>
-.config-layout { display: grid; grid-template-columns: minmax(0, 1.68fr) minmax(250px, .62fr); gap: 12px; align-items: start; }
-.config-main, .config-aside { display: grid; min-width: 0; gap: 12px; }
+.config-layout { display: grid; grid-template-columns: minmax(0, 1.68fr) minmax(220px, .54fr); gap: var(--section-gap); align-items: start; }
+.config-main, .config-aside { display: grid; min-width: 0; gap: var(--section-gap); }
 .card { overflow: hidden; }
-.card-head { display: flex; min-height: 50px; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.card-head { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }
 .card-title, .card-subtitle { margin: 0; }
 .card-title { font-size: 14px; font-weight: 710; letter-spacing: -.15px; }
 .card-subtitle { margin-top: 2px; color: var(--text-faint); font-size: 10px; }
-.card-body { padding: 14px; }
+.card-body { padding: var(--card-padding); }
 .type-badge { display: inline-flex; min-height: 22px; align-items: center; padding: 3px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-soft); font-size: 9px; font-weight: 660; white-space: nowrap; }
 .advanced-section-list { display: grid; padding: 5px 12px 10px; }
-.advanced-section-row { display: grid; min-width: 0; min-height: 57px; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 8px 3px; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text-soft); background: transparent; text-align: left; }
+.advanced-section-row { display: grid; min-width: 0; min-height: 46px; grid-template-columns: auto minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 8px 3px; border-bottom: 1px solid var(--line); border-radius: 0; color: var(--text-soft); background: transparent; text-align: left; }
 .advanced-section-row:last-child { border-bottom: 0; }
 .advanced-section-row:hover { color: var(--primary); }
 .advanced-section-icon { display: grid; width: 30px; height: 30px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: var(--primary); background: var(--primary-soft); }
@@ -106,7 +106,7 @@ function summary(section: ConfigSection): string {
 @media (max-width: 768px) {
   .config-aside { grid-template-columns: 1fr; }
   .advanced-section-list { padding: 4px 9px 8px; }
-  .advanced-section-row { min-height: 54px; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; }
+  .advanced-section-row { min-height: 46px; grid-template-columns: auto minmax(0, 1fr) auto; gap: 7px; }
   .advanced-section-status { display: none; }
 }
 @media (max-width: 420px) {

@@ -28,7 +28,13 @@
   --radius-sm: 8px;
   --radius: 13px;
   --radius-lg: 18px;
-  --sidebar-width: 228px;
+  --sidebar-width: 204px;
+  --topbar-height: 52px;
+  --page-padding: 16px;
+  --section-gap: 10px;
+  --card-padding: 12px;
+  --control-height: 36px;
+  --empty-state-height: 136px;
   --font: Inter, "SF Pro Text", "PingFang SC", "Microsoft YaHei", system-ui, -apple-system, sans-serif;
 }
 

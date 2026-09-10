@@ -162,7 +162,7 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
 
 <style scoped>
 .core-settings-card { overflow: hidden; }
-.card-head { display: flex; min-height: 58px; align-items: center; justify-content: space-between; gap: 16px; padding: 12px 16px; border-bottom: 1px solid var(--line); }
+.card-head { display: flex; min-height: 48px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }
 .card-head h2, .card-head p { margin: 0; }
 .card-head h2 { font-size: 14px; letter-spacing: -.15px; }
 .card-head p { margin-top: 2px; color: var(--text-faint); font-size: 10px; }
@@ -171,8 +171,8 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
 .version-badge.installed { color: var(--green); background: var(--green-soft); }
 .load-error { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--red); background: var(--red-soft); font-size: 10px; }
 .save-success { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--green); background: var(--green-soft); font-size: 10px; }
-.setting-list { padding: 4px 18px; }
-.setting-row { display: flex; min-height: 66px; align-items: center; justify-content: space-between; gap: 20px; padding: 12px 0; border-bottom: 1px solid var(--line); }
+.setting-list { padding: 2px var(--card-padding); }
+.setting-row { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px 0; border-bottom: 1px solid var(--line); }
 .setting-row:last-child { border-bottom: 0; }
 .setting-copy { min-width: 0; }
 .setting-copy strong, .setting-copy span { display: block; }
@@ -194,10 +194,11 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
 
 @media (max-width: 560px) {
   .card-head { align-items: flex-start; }
-  .setting-list { padding-inline: 15px; }
+  .setting-list { padding-inline: var(--card-padding); }
   .setting-row { align-items: flex-start; flex-direction: column; gap: 10px; }
   .setting-control, .setting-control select { width: 100%; min-width: 0; text-align: left; }
-  .switch-control { justify-content: flex-start; }
+  .setting-row:has(.switch-control) { flex-direction: row; align-items: center; }
+  .switch-control { width: auto; flex: 0 0 auto; }
   .manage-button { width: 100%; }
 }
 </style>

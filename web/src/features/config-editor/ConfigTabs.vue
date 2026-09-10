@@ -11,5 +11,5 @@ const icons: Record<ConfigTabId, string> = { general: "config", dns: "dns", inbo
   </nav>
 </template>
 <style scoped>
-.tabs { display: flex; gap: 3px; overflow-x: auto; margin-bottom: 12px; padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); scrollbar-width: thin; }.config-tab { display: inline-flex; min-height: 34px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 7px 10px; border-radius: 8px; color: var(--text-soft); background: transparent; font-size: 11px; font-weight: 650; }.config-tab:hover { color: var(--text); background: var(--surface-soft); }.config-tab.active { color: var(--primary-strong); background: var(--primary-soft); }
+.tabs { display: flex; gap: 3px; overflow-x: auto; margin-bottom: var(--section-gap); padding: 4px; border: 1px solid var(--line); border-radius: 12px; background: var(--surface); scrollbar-width: thin; }.config-tab { display: inline-flex; min-height: 32px; flex: 0 0 auto; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 8px; color: var(--text-soft); background: transparent; font-size: 11px; font-weight: 650; }.config-tab:hover { color: var(--text); background: var(--surface-soft); }.config-tab.active { color: var(--primary-strong); background: var(--primary-soft); }
 </style>

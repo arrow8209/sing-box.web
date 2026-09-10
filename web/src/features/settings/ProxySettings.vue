@@ -81,11 +81,11 @@ async function submit(): Promise<void> {
 </template>
 
 <style scoped>
-.panel { display: grid; gap: 16px; padding: 18px; }
+.panel { display: grid; gap: var(--section-gap); padding: var(--card-padding); }
 .panel-heading { display: flex; align-items: flex-start; justify-content: space-between; gap: 14px; }
 h2 { margin: 0; font-size: 15px; }
 .panel-heading p { margin: 4px 0 0; color: var(--text-soft); font-size: 11px; }
-form { display: grid; gap: 12px; max-width: 620px; }
+form { display: grid; gap: var(--section-gap); min-width: 0; }
 label { display: grid; gap: 6px; color: var(--text-soft); font-size: 11px; font-weight: 650; }
 input { width: 100%; min-height: 38px; font-size: 11px; }
 small { font-weight: 500; }

@@ -26,6 +26,8 @@ async function loginAndOpenProfile(page: Page): Promise<void> {
 
 async function setTheme(page: Page, theme: "light" | "dark"): Promise<void> {
   await page.evaluate((value) => { document.documentElement.dataset.theme = value; }, theme);
+  // Keep clicks in setup dialogs from leaving a card hovered in the snapshot.
+  await page.mouse.move(0, 0);
 }
 
 async function ensureVisualProfile(page: Page): Promise<void> {

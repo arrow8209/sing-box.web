@@ -253,8 +253,8 @@ function jumpTo(path: string): void {
   </section>
 </template>
 <style scoped>
-.workspace { max-width: 1240px; }
-.config-context-bar { display: flex; min-height: 68px; align-items: center; gap: 11px; margin-bottom: 12px; padding: 11px 13px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
+.workspace { min-width: 0; }
+.config-context-bar { display: flex; min-height: 58px; align-items: center; gap: 11px; margin-bottom: var(--section-gap); padding: 8px var(--card-padding); border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .config-context-icon { display: grid; width: 38px; height: 38px; flex: 0 0 auto; place-items: center; border-radius: 11px; color: var(--primary); background: var(--primary-soft); }
 .config-context-copy { min-width: 0; flex: 1; }
 .config-context-controls { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }
@@ -266,7 +266,7 @@ function jumpTo(path: string): void {
 .profile-error { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: 11px; }
 .auto-reload-status { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: 11px; }
 .auto-reload-status.success { color: var(--green); background: var(--green-soft); }
-.modules { display: grid; gap: 14px; }
+.modules { display: grid; gap: var(--section-gap); }
 .tabs + .panel, .tabs + .outbound-editor { margin-top: 0; }
 .empty { padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); }
 

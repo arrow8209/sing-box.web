@@ -2,16 +2,16 @@
   .app-sidebar { transform: translateX(-100%); }
   .app-sidebar[data-open="true"] { transform: translateX(0); }
   .app-main { margin-inline-start: 0; }
-  .app-content { padding: 24px; }
 }
 
 @media (max-width: 680px) {
-  .app-topbar { min-height: 58px; padding: 0 16px; }
-  .app-content { padding: 20px 16px calc(92px + env(safe-area-inset-bottom)); }
+  :root { --page-padding: 12px; }
+  .app-topbar { padding-inline: var(--page-padding); }
+  .app-content { padding-bottom: calc(24px + env(safe-area-inset-bottom)); }
   .page-header { display: block; }
   .config-tabs, .tabs { scroll-snap-type: x proximity; }
   .config-tabs button, .tabs button { scroll-snap-align: start; }
   .app-dialog { width: 100%; max-height: 92dvh; margin: auto 0 0; border-radius: 20px 20px 0 0; }
-  .app-dialog__content { padding: 20px 16px calc(20px + env(safe-area-inset-bottom)); }
+  .app-dialog__content { padding: 16px 12px calc(16px + env(safe-area-inset-bottom)); }
   .app-toast-region { inset: auto 12px 12px; width: auto; }
 }

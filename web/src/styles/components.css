@@ -7,7 +7,7 @@
 
 .button-secondary, button.secondary { color: var(--text); background: var(--surface-soft); }
 .button-danger, button.danger { background: var(--red); }
-.icon-button { display: inline-grid; width: 40px; min-height: 40px; place-items: center; padding: 0; color: var(--text); background: var(--surface-soft); }
+.icon-button { display: inline-grid; width: var(--control-height); min-height: var(--control-height); place-items: center; padding: 0; color: var(--text); background: var(--surface-soft); }
 
 .status-badge { display: inline-flex; align-items: center; gap: 6px; min-height: 24px; padding: 3px 8px; border-radius: 999px; font-size: 12px; font-weight: 700; line-height: 1.2; }
 .status-badge::before { width: 6px; height: 6px; border-radius: 50%; content: ""; background: currentColor; }
