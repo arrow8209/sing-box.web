@@ -62,6 +62,7 @@ describe("仪表盘与设置", () => {
     expect(wrapper.text()).toContain("当前 1.12.2 · 最新 1.12.3");
     const autoStart = wrapper.get('[aria-label="开机自动运行"]');
     const autoReload = wrapper.get('[aria-label="配置变更自动重载"]');
+    const descriptions = wrapper.findAll(".setting-copy > span").map((item) => item.text());
     expect(autoStart.attributes("aria-checked")).toBe("true");
     expect(wrapper.text()).toContain("没有配置则保持停止");
     expect(autoReload.attributes("aria-checked")).toBe("false");
@@ -69,13 +70,17 @@ describe("仪表盘与设置", () => {
     await flushPromises();
     expect(api.update).toHaveBeenLastCalledWith({ autoStart: false, autoReload: false });
     expect(autoStart.attributes("aria-checked")).toBe("false");
-    expect(wrapper.text()).toContain("开机自动运行设置已保存");
+    expect(wrapper.get(".app-toast").text()).toBe("开机自动运行已关闭");
+    expect(wrapper.findAll(".setting-copy > span").map((item) => item.text())).toEqual(descriptions);
     await autoReload.trigger("click");
     await flushPromises();
     expect(api.update).toHaveBeenLastCalledWith({ autoStart: false, autoReload: true });
     expect(autoReload.attributes("aria-checked")).toBe("true");
-    expect(wrapper.text()).toContain("当前已应用档案保存后自动检查并应用");
+    expect(wrapper.get(".app-toast").text()).toBe("配置自动重载已开启");
+    expect(wrapper.text()).toContain("保存当前已应用档案会自动检查并应用");
+    expect(wrapper.findAll(".setting-copy > span").map((item) => item.text())).toEqual(descriptions);
     expect(wrapper.text()).not.toContain("Beta");
+    wrapper.unmount();
   });
   it("核心行为设置保存失败时回滚开关", async () => {
     const api = {
@@ -95,7 +100,43 @@ describe("仪表盘与设置", () => {
     await autoStart.trigger("click");
     await flushPromises();
     expect(autoStart.attributes("aria-checked")).toBe("false");
-    expect(wrapper.text()).toContain("设置写入失败");
+    expect(wrapper.get('.app-toast[role="alert"]').text()).toBe("设置写入失败");
+    wrapper.unmount();
+  });
+  it("核心设置成功提示自动消失，连续保存会重新计时", async () => {
+    vi.useFakeTimers();
+    const api = {
+      status: vi.fn(async () => ({ installedVersion: "1.13.19", installedDigest: "", state: "stopped" as const, pid: 0, currentProfileId: "", appliedRevision: null, expectedRunning: false, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } })),
+      latest: vi.fn(async () => ({ version: "1.13.19", arch: "amd64" })),
+      get: vi.fn(async () => ({ autoStart: true, autoReload: false })),
+      update: vi.fn(async (input: { autoStart: boolean; autoReload: boolean }) => input)
+    };
+    const wrapper = mount(CoreSettings, {
+      props: { api },
+      global: { stubs: { RouterLink: { template: '<a href="/core"><slot /></a>' } } }
+    });
+    try {
+      await flushPromises();
+      await wrapper.get('[aria-label="开机自动运行"]').trigger("click");
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(wrapper.get(".app-toast").text()).toBe("开机自动运行已关闭");
+
+      await wrapper.get('[aria-label="配置变更自动重载"]').trigger("click");
+      await flushPromises();
+      await vi.advanceTimersByTimeAsync(2000);
+      expect(wrapper.get(".app-toast").text()).toBe("配置自动重载已开启");
+      await vi.advanceTimersByTimeAsync(1000);
+      expect(wrapper.find(".app-toast").exists()).toBe(false);
+
+      await wrapper.get('[aria-label="开机自动运行"]').trigger("click");
+      await flushPromises();
+      wrapper.unmount();
+      expect(vi.getTimerCount()).toBe(0);
+    } finally {
+      if (wrapper.exists()) wrapper.unmount();
+      vi.useRealTimers();
+    }
   });
   it("仪表盘按原型渲染完整运行概览并保留服务端状态", async () => {
     const core = { installedVersion: "1.12.2", installedDigest: "", state: "running", pid: 4321, currentProfileId: "profile-a", appliedRevision: 1, expectedRunning: true, configDirectoryDigest: "", startedAt: null, lastError: "", operation: { active: false } };

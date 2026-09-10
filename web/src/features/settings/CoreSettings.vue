@@ -1,6 +1,7 @@
 <script setup lang="ts">
-import { computed, onMounted, ref } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import { RouterLink } from "vue-router";
+import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import { coreApi, type CoreApi } from "@/features/core/api";
 import type { CoreStatus, LatestRelease } from "@/features/core/types";
@@ -20,6 +21,12 @@ const loading = ref(true);
 const saving = ref(false);
 const error = ref("");
 const savedMessage = ref("");
+
+watch(savedMessage, (message, _previous, onCleanup) => {
+  if (!message) return;
+  const timer = setTimeout(() => { savedMessage.value = ""; }, 3000);
+  onCleanup(() => clearTimeout(timer));
+});
 
 const currentVersion = computed(() => status.value?.installedVersion || "未安装");
 const latestVersion = computed(() => latest.value?.version || "暂不可用");
@@ -65,7 +72,8 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
   savedMessage.value = "";
   try {
     behavior.value = await props.api.update(behavior.value);
-    savedMessage.value = key === "autoStart" ? "开机自动运行设置已保存" : "配置自动重载设置已保存";
+    const label = key === "autoStart" ? "开机自动运行" : "配置自动重载";
+    savedMessage.value = `${label}已${behavior.value[key] ? "开启" : "关闭"}`;
   } catch (cause) {
     behavior.value = previous;
     error.value = errorMessage(cause, "保存核心行为设置失败");
@@ -87,14 +95,11 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
       </span>
     </header>
 
-    <p v-if="error" class="load-error" role="alert">{{ error }}</p>
-    <p v-if="savedMessage" class="save-success" role="status">{{ savedMessage }}</p>
-
     <div class="setting-list" :aria-busy="loading">
       <div class="setting-row">
         <div class="setting-copy">
           <strong>开机自动运行</strong>
-          <span>{{ behavior.autoStart ? "存在已应用配置时，控制台启动会自动运行 sing-box；没有配置则保持停止" : "控制台启动时保持 sing-box 停止，仍可从仪表盘手动启动" }}</span>
+          <span>开启后，随控制台启动已应用配置；没有配置则保持停止。</span>
         </div>
         <div class="setting-control switch-control">
           <span>{{ loading ? "读取中" : saving ? "保存中" : behavior.autoStart ? "已启用" : "未启用" }}</span>
@@ -115,7 +120,7 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
       <div class="setting-row">
         <div class="setting-copy">
           <strong>配置变更自动重载</strong>
-          <span>{{ behavior.autoReload ? "当前已应用档案保存后自动检查并应用；核心运行中会自动重启加载" : "草稿保存后不会直接影响运行核心，请在配置工作台手动应用" }}</span>
+          <span>开启后，保存当前已应用档案会自动检查并应用，并重启正在运行的核心。</span>
         </div>
         <div class="setting-control switch-control">
           <span>{{ loading ? "读取中" : saving ? "保存中" : behavior.autoReload ? "自动重载" : "手动应用" }}</span>
@@ -157,6 +162,7 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
         </div>
       </div>
     </div>
+    <AppToast v-if="error || savedMessage" :message="error || savedMessage" :tone="error ? 'error' : 'success'" />
   </section>
 </template>
 
@@ -169,8 +175,6 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
 .version-badge { display: inline-flex; min-height: 23px; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-xs); font-weight: 690; white-space: nowrap; }
 .version-badge::before { width: 5px; height: 5px; border-radius: 50%; content: ""; background: currentColor; }
 .version-badge.installed { color: var(--green); background: var(--green-soft); }
-.load-error { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
-.save-success { margin: 10px 16px 0; padding: 9px 10px; border-radius: 8px; color: var(--green); background: var(--green-soft); font-size: var(--font-size-sm); }
 .setting-list { padding: 2px var(--card-padding); }
 .setting-row { display: flex; min-height: 52px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px 0; border-bottom: 1px solid var(--line); }
 .setting-row:last-child { border-bottom: 0; }
@@ -182,7 +186,7 @@ async function toggle(key: keyof CoreBehaviorSettings): Promise<void> {
 .setting-control select { width: 175px; min-height: 36px; padding: 7px 9px; font-size: var(--font-size-base); }
 .setting-control select:disabled { cursor: default; opacity: 1; color: var(--text-soft); background: var(--surface-soft); }
 .switch-control { display: flex; align-items: center; justify-content: flex-end; gap: 9px; }
-.switch-control > span { color: var(--text-faint); font-size: var(--font-size-xs); font-weight: 620; }
+.switch-control > span { display: inline-block; min-width: 4em; color: var(--text-faint); font-size: var(--font-size-xs); font-weight: 620; }
 .setting-switch { position: relative; width: 34px; min-height: 20px; flex: 0 0 auto; padding: 0; border-radius: 7px; cursor: pointer; background: var(--line-strong); }
 .setting-switch:disabled { cursor: wait; opacity: .7; }
 .setting-switch:focus-visible { outline: 2px solid color-mix(in srgb, var(--primary) 65%, transparent); outline-offset: 2px; }
