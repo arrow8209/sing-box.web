@@ -76,7 +76,7 @@ func NewServiceWithClient(layout paths.Layout, status statusSource, client httpD
 
 func (s *Service) Connections(ctx context.Context) (ConnectionsSnapshot, error) {
 	var snapshot ConnectionsSnapshot
-	response, err := s.request(ctx, http.MethodGet, "/connections")
+	response, err := s.request(ctx, http.MethodGet, "/connections", nil)
 	if err != nil {
 		return snapshot, err
 	}
@@ -120,7 +120,7 @@ func (s *Service) CloseAllConnections(ctx context.Context) error {
 }
 
 func (s *Service) close(ctx context.Context, path string) error {
-	response, err := s.request(ctx, http.MethodDelete, path)
+	response, err := s.request(ctx, http.MethodDelete, path, nil)
 	if err != nil {
 		return err
 	}
@@ -136,7 +136,7 @@ func (s *Service) close(ctx context.Context, path string) error {
 	}
 }
 
-func (s *Service) request(ctx context.Context, method, path string) (*http.Response, error) {
+func (s *Service) request(ctx context.Context, method, escapedPath string, body io.Reader) (*http.Response, error) {
 	if s == nil || s.core == nil || s.http == nil {
 		return nil, ErrControllerUnavailable
 	}
@@ -147,12 +147,15 @@ func (s *Service) request(ctx context.Context, method, path string) (*http.Respo
 	if err != nil {
 		return nil, err
 	}
-	endpoint := url.URL{Scheme: "http", Host: settings.address, Path: path}
-	request, err := http.NewRequestWithContext(ctx, method, endpoint.String(), nil)
+	endpoint := url.URL{Scheme: "http", Host: settings.address}
+	request, err := http.NewRequestWithContext(ctx, method, endpoint.String()+escapedPath, body)
 	if err != nil {
 		return nil, fmt.Errorf("%w: create request", ErrControllerUnavailable)
 	}
 	request.Header.Set("Accept", "application/json")
+	if body != nil {
+		request.Header.Set("Content-Type", "application/json")
+	}
 	if settings.secret != "" {
 		request.Header.Set("Authorization", "Bearer "+settings.secret)
 	}

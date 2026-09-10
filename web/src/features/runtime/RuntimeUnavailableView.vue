@@ -11,7 +11,8 @@ onMounted(() => { void capabilities.refresh(); });
     <h1>运行数据</h1>
     <template v-if="capabilities.capabilities.value?.runtime === false">
       <h2>其余运行数据尚未接入</h2>
-      <p v-if="capabilities.capabilities.value?.connections">实时流量和策略组等运行数据将在后续阶段提供；活动连接现已可在独立页面查看。</p>
+      <p v-if="capabilities.capabilities.value?.proxyGroups">实时流量等运行数据将在后续阶段提供；活动连接可在独立页面查看，策略组可在仪表盘切换节点。</p>
+      <p v-else-if="capabilities.capabilities.value?.connections">实时流量和策略组等运行数据将在后续阶段提供；活动连接现已可在独立页面查看。</p>
       <p v-else>实时流量、活动连接和策略组等运行数据将在后续阶段提供。</p>
       <a v-if="capabilities.capabilities.value?.connections" class="connections-link" href="/connections">查看活动连接</a>
     </template>

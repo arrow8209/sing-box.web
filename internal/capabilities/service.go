@@ -25,5 +25,5 @@ var PhaseOne = Response{
 	Runtime:          false,
 	Traffic:          false,
 	Connections:      true,
-	ProxyGroups:      false,
+	ProxyGroups:      true,
 }

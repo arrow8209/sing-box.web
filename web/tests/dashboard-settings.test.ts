@@ -163,7 +163,9 @@ describe("仪表盘与设置", () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      const data = path.endsWith("/core") && init?.method === "DELETE"
+      const data = path.endsWith("/runtime/proxy-groups")
+        ? outbounds.filter((outbound): outbound is { type: string; tag: string; outbounds: string[] } => "outbounds" in outbound).map((outbound) => ({ tag: outbound.tag, type: outbound.type === "urltest" ? "URLTest" : "Selector", selected: outbound.outbounds[0], members: outbound.outbounds.map((tag) => ({ tag, type: "AnyTLS" })) }))
+        : path.endsWith("/core") && init?.method === "DELETE"
         ? { ...core, state: "stopped", pid: 0, expectedRunning: false }
         : path.endsWith("/core") ? core : path.endsWith("/profiles") ? [{ id: "profile-a", name: "家庭出口", draftRevision: 1, appliedRevision: 1, appliedDigest: "", appliedAt: null, needsApply: false, lastValidation: null }] : [];
       return Promise.resolve(new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }));
@@ -204,7 +206,7 @@ describe("仪表盘与设置", () => {
       const path = String(input);
       if (path.endsWith("/core/restart") && init?.method === "POST") current = { ...current, state: "running", pid: 5102, expectedRunning: true, startedAt: "2026-08-31T00:00:00Z" };
       else if (path.endsWith("/core") && init?.method === "POST") current = { ...current, state: "running", pid: 5101, expectedRunning: true, startedAt: "2026-08-31T00:00:00Z" };
-      const data = path.endsWith("/core") || path.endsWith("/core/restart") ? current : path.endsWith("/profiles") ? [] : { operationId: "", stage: "idle", startedAt: "" };
+      const data = path.endsWith("/core") || path.endsWith("/core/restart") ? current : path.endsWith("/profiles") || path.endsWith("/runtime/proxy-groups") ? [] : { operationId: "", stage: "idle", startedAt: "" };
       return Promise.resolve(new Response(JSON.stringify(data), { headers: { "Content-Type": "application/json" } }));
     });
     vi.stubGlobal("fetch", fetchMock);

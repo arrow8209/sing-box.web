@@ -18,6 +18,8 @@ const error = ref("");
 const refreshing = ref(false);
 const coreAction = ref<"start" | "stop" | "restart" | null>(null);
 const notice = ref("");
+const noticeTone = ref<"info" | "error">("info");
+const proxySelector = ref<InstanceType<typeof DashboardProxySelector> | null>(null);
 const now = ref(Date.now());
 const routeMode = ref<RouteMode>("rule");
 const quickControls = reactive({ systemProxy: false, tunMode: false, allowLan: false });
@@ -56,7 +58,9 @@ const dashboardOutbounds = computed<unknown[]>(() => {
   const outbounds = profileStore.draft.value?.config.outbounds;
   return Array.isArray(outbounds) ? outbounds : [];
 });
-const dashboardOutboundEditorState = computed(() => profileStore.draft.value?.editorState?.outbounds);
+const dashboardOutboundEditorState = computed(() => !running.value || profileStore.draft.value?.profileId === core.status.value?.currentProfileId
+  ? profileStore.draft.value?.editorState?.outbounds : undefined);
+const proxyRuntimeKey = computed(() => [core.status.value?.currentProfileId, core.status.value?.pid, core.status.value?.appliedRevision].join(":"));
 const uptime = computed(() => {
   if (!running.value) return "--";
   const startedAt = core.status.value?.startedAt;
@@ -80,9 +84,9 @@ const appliedLabel = computed(() => {
   return applied.toDateString() === today.toDateString() ? `今天 ${time}` : applied.toLocaleDateString("zh-CN");
 });
 
-function showNotice(message: string): void {
+function showNotice(message: string, tone: "info" | "error" = "info"): void {
   notice.value = "";
-  queueMicrotask(() => { notice.value = message; });
+  queueMicrotask(() => { noticeTone.value = tone; notice.value = message; });
 }
 
 async function refreshProfiles(): Promise<void> {
@@ -98,6 +102,7 @@ async function refresh(): Promise<void> {
   refreshing.value = true;
   try {
     await Promise.all([core.refresh(), refreshProfiles()]);
+    await proxySelector.value?.refresh();
     showNotice("状态已刷新，流量、连接与核心状态均已更新。");
   } finally {
     refreshing.value = false;
@@ -267,11 +272,11 @@ onBeforeUnmount(() => {
           </article>
         </div>
 
-        <DashboardProxySelector :outbounds="dashboardOutbounds" :editor-state="dashboardOutboundEditorState" :loading="!profileStore.draft.value" @notice="showNotice" />
+        <DashboardProxySelector ref="proxySelector" :outbounds="dashboardOutbounds" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
       </div>
     </div>
 
-    <AppToast v-if="notice" :message="notice" />
+    <AppToast v-if="notice" :message="notice" :tone="noticeTone" />
   </section>
 </template>
 

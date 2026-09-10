@@ -1,28 +1,43 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppIcon from "@/layout/AppIcon.vue";
-import { buildDashboardProxyGroups, type DashboardProxyGroup, type DashboardProxyMember } from "./proxy-groups";
+import { proxyGroupsApi, type ProxyGroupsApi, type RuntimeProxyGroup } from "./api";
+import { buildDashboardProxyGroups, buildRuntimeDashboardProxyGroups, type DashboardProxyGroup, type DashboardProxyMember } from "./proxy-groups";
 
-const props = withDefaults(defineProps<{ outbounds?: unknown[]; editorState?: unknown; loading?: boolean }>(), {
+const props = withDefaults(defineProps<{ outbounds?: unknown[]; editorState?: unknown; loading?: boolean; running?: boolean; runtimeKey?: string; api?: ProxyGroupsApi }>(), {
   outbounds: () => [],
-  loading: false
+  loading: false,
+  running: true,
+  runtimeKey: "",
+  api: () => proxyGroupsApi
 });
-const emit = defineEmits<{ notice: [message: string] }>();
+const emit = defineEmits<{ notice: [message: string]; error: [message: string] }>();
 const testingTags = ref(new Set<string>());
 const testing = computed(() => testingTags.value.size > 0);
 let testTimer: ReturnType<typeof setTimeout> | undefined;
 
 const groups = ref<DashboardProxyGroup[]>([]);
+const runtimeGroups = ref<RuntimeProxyGroup[] | null>(null);
+const runtimeError = ref("");
+const loadingRuntime = ref(false);
+const switchingTags = ref(new Set<string>());
+let alive = true;
+let generation = 0;
+let readVersion = 0;
+let reading = false;
+let pollTimer: ReturnType<typeof setInterval> | undefined;
 
-watch([() => props.outbounds, () => props.editorState], () => {
-  cancelTest();
-  const previous = new Map(groups.value.map((group) => [group.id, group]));
-  groups.value = buildDashboardProxyGroups(props.outbounds, props.editorState).map((group) => {
-    const current = previous.get(group.id);
+watch([() => props.outbounds, () => props.editorState], cancelTest);
+watch([() => props.outbounds, () => props.editorState, runtimeGroups], () => {
+  const previous = new Map(groups.value.map((group) => [group.tag, group]));
+  const next = runtimeGroups.value
+    ? buildRuntimeDashboardProxyGroups(runtimeGroups.value, props.outbounds, props.editorState)
+    : buildDashboardProxyGroups(props.outbounds, props.editorState).map((group) => ({ ...group, selected: "" }));
+  groups.value = next.map((group) => {
+    const current = previous.get(group.tag);
     if (!current) return group;
     const latencyByTag = new Map(current.members.map((member) => [member.tag, member.latency]));
     group.expanded = current.expanded;
-    group.selected = group.members.some((member) => member.id === current.selected) ? current.selected : group.selected;
     group.members.forEach((member) => {
       if (latencyByTag.has(member.tag)) member.latency = latencyByTag.get(member.tag);
     });
@@ -61,9 +76,63 @@ function latencyLabel(member: DashboardProxyMember): string {
   return `${member.latency} ms`;
 }
 
-function selectNode(group: DashboardProxyGroup, member: DashboardProxyMember): void {
-  group.selected = member.id;
-  emit("notice", `${group.name} 已切换到 ${member.name}。`);
+async function refreshRuntime(): Promise<void> {
+  if (!alive || !props.running || reading || switchingTags.value.size) return;
+  const currentGeneration = generation;
+  const version = ++readVersion;
+  reading = true;
+  loadingRuntime.value = runtimeGroups.value === null;
+  try {
+    const result = await props.api.list();
+    if (!alive || generation !== currentGeneration || version !== readVersion) return;
+    runtimeGroups.value = result;
+    runtimeError.value = "";
+  } catch (cause) {
+    if (!alive || generation !== currentGeneration || version !== readVersion) return;
+    runtimeGroups.value = null;
+    runtimeError.value = cause instanceof Error ? cause.message : "无法读取核心当前节点";
+  } finally {
+    if (alive && generation === currentGeneration) {
+      reading = false;
+      loadingRuntime.value = false;
+    }
+  }
+}
+
+function canSelect(group: DashboardProxyGroup): boolean {
+  return props.running && runtimeGroups.value !== null && !runtimeError.value && group.type === "Selector" && !switchingTags.value.has(group.tag);
+}
+
+function selectionHint(group: DashboardProxyGroup, member: DashboardProxyMember): string {
+  if (!props.running) return "启动核心后可切换节点";
+  if (runtimeError.value) return runtimeError.value;
+  if (loadingRuntime.value) return "正在读取核心当前节点";
+  if (group.type !== "Selector") return "URLTest 由核心自动选择节点";
+  if (switchingTags.value.has(group.tag)) return "正在切换节点";
+  return member.name;
+}
+
+async function selectNode(group: DashboardProxyGroup, member: DashboardProxyMember): Promise<void> {
+  if (!canSelect(group) || member.id === group.selected) return;
+  const currentGeneration = generation;
+  // A GET started before this mutation must not overwrite the confirmed choice.
+  readVersion++;
+  switchingTags.value = new Set([...switchingTags.value, group.tag]);
+  try {
+    const selected = await props.api.select(group.tag, member.tag);
+    if (!alive || generation !== currentGeneration) return;
+    if (selected.tag !== group.tag || selected.selected !== member.tag) throw new Error("核心未确认节点切换，请刷新后重试");
+    runtimeGroups.value = runtimeGroups.value?.map((item) => item.tag === selected.tag ? { ...item, selected: selected.selected } : item) ?? null;
+    emit("notice", `${group.name} 已切换到 ${member.name}。`);
+  } catch (cause) {
+    if (alive && generation === currentGeneration) emit("error", cause instanceof Error ? cause.message : "切换节点失败");
+  } finally {
+    if (alive && generation === currentGeneration) {
+      const next = new Set(switchingTags.value);
+      next.delete(group.tag);
+      switchingTags.value = next;
+    }
+  }
 }
 
 function toggleGroup(group: DashboardProxyGroup): void {
@@ -94,21 +163,46 @@ function cancelTest(): void {
   testingTags.value = new Set();
 }
 
-onBeforeUnmount(cancelTest);
+watch([() => props.running, () => props.runtimeKey], () => {
+  generation++;
+  readVersion++;
+  reading = false;
+  loadingRuntime.value = false;
+  runtimeGroups.value = null;
+  runtimeError.value = "";
+  switchingTags.value = new Set();
+  cancelTest();
+  void refreshRuntime();
+}, { immediate: true });
+
+onMounted(() => {
+  pollTimer = setInterval(() => { if (!document.hidden) void refreshRuntime(); }, 5000);
+});
+
+onBeforeUnmount(() => {
+  alive = false;
+  generation++;
+  if (pollTimer) clearInterval(pollTimer);
+  cancelTest();
+});
+
+defineExpose({ refresh: refreshRuntime });
 </script>
 
 <template>
   <article class="card proxy-selector-card">
     <header class="card-head proxy-selector-head">
-      <div><h3 class="card-title">节点选择</h3><p class="card-subtitle">选择策略组当前使用的出站节点</p></div>
+      <div><h3 class="card-title">节点选择</h3><p class="card-subtitle">{{ running ? "选择策略组当前使用的出站节点" : "启动核心后可切换节点" }}</p></div>
       <div class="proxy-selector-actions">
         <span class="proxy-online-summary"><i />{{ nodeSummary }}</span>
         <button class="btn btn-sm" type="button" :disabled="testing || !groups.some((group) => group.members.some((member) => member.latency !== null))" @click="startTest(groups.flatMap((group) => group.members), '全部节点延迟已刷新。')"><AppIcon name="gauge" :size="14" />{{ testing ? "测速中" : "全部测速" }}</button>
       </div>
     </header>
 
+    <p v-if="runtimeError" class="proxy-runtime-error" role="alert">{{ runtimeError }}<button type="button" :disabled="loadingRuntime" @click="refreshRuntime">重试</button></p>
+
     <div class="proxy-group-list">
-      <section v-for="group in groups" :key="group.id" class="proxy-group" :class="{ expanded: group.expanded }" :data-proxy-group-tag="group.tag">
+      <section v-for="group in groups" :key="group.id" class="proxy-group" :class="{ expanded: group.expanded }" :data-proxy-group-tag="group.tag" :aria-busy="switchingTags.has(group.tag)">
         <div class="proxy-group-head">
           <button class="proxy-group-main" type="button" :aria-expanded="group.expanded" @click="toggleGroup(group)">
             <span class="proxy-group-avatar">{{ group.icon }}</span>
@@ -122,7 +216,7 @@ onBeforeUnmount(cancelTest);
 
         <div v-if="group.expanded" class="proxy-node-grid">
           <div v-for="member in group.members" :key="member.id" class="proxy-node-card" :class="{ selected: member.id === group.selected }" :data-proxy-member-tag="member.tag">
-            <button class="proxy-node-select" type="button" :aria-label="`选择 ${member.name}`" :aria-pressed="member.id === group.selected" :title="member.name" @click="selectNode(group, member)">
+            <button class="proxy-node-select" type="button" :aria-label="`选择 ${member.name}`" :aria-pressed="member.id === group.selected" :disabled="!canSelect(group)" :title="selectionHint(group, member)" @click="selectNode(group, member)">
               <strong>{{ member.name }}</strong>
               <span class="proxy-node-check" aria-hidden="true"><AppIcon v-if="member.id === group.selected" name="check" :size="12" /></span>
             </button>
@@ -137,8 +231,8 @@ onBeforeUnmount(cancelTest);
       </section>
       <div v-if="!groups.length" class="proxy-empty-state">
         <AppIcon name="outbound" :size="24" />
-        <strong>{{ loading ? "正在读取当前配置" : "没有可选择的策略组" }}</strong>
-        <span>{{ loading ? "节点列表加载后会自动显示" : "请先在当前配置中添加 Selector 或 URLTest 出站" }}</span>
+        <strong>{{ loadingRuntime || loading ? "正在读取当前配置" : "没有可选择的策略组" }}</strong>
+        <span>{{ loadingRuntime || loading ? "节点列表加载后会自动显示" : "请在配置中添加 Selector 或 URLTest 出站并应用" }}</span>
       </div>
     </div>
   </article>
@@ -185,6 +279,10 @@ onBeforeUnmount(cancelTest);
 .proxy-node-select::after { position: absolute; inset: 0; border-radius: inherit; content: ""; }
 .proxy-node-select:focus-visible { outline: none; }
 .proxy-node-select:focus-visible::after { outline: 3px solid color-mix(in srgb, var(--primary) 45%, transparent); outline-offset: 2px; }
+.proxy-node-select:disabled { cursor: default; opacity: 1; }
+.proxy-group[aria-busy="true"] .proxy-node-select { cursor: wait; }
+.proxy-runtime-error { display: flex; align-items: center; justify-content: space-between; gap: var(--section-gap); margin: 0; padding: 8px var(--card-padding); color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
+.proxy-runtime-error button { flex: 0 0 auto; min-height: 30px; padding: 4px 8px; color: var(--red); background: transparent; font-size: inherit; }
 .proxy-node-select strong { display: block; color: var(--text); font-size: var(--font-size-base); font-weight: 690; overflow-wrap: anywhere; }
 .proxy-node-type { max-width: 100%; padding-right: 24px; color: var(--text-faint); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
 .proxy-latency { display: inline-flex; min-height: 24px; width: max-content; align-items: center; gap: 4px; padding: 2px 4px; margin-left: -4px; border-radius: 4px; background: transparent; font-size: var(--font-size-xs); font-weight: 700; }

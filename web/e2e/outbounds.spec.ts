@@ -143,17 +143,16 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   const nodeDelay = dashboardMembers.nth(1).getByRole("button", { name: "测试 新加坡 E2E 延迟", exact: true });
   await nodeDelay.click();
   await expect(nodeDelay).toHaveText(/\d+ ms/);
-  await expect(firstSelection).toHaveAttribute("aria-pressed", "true");
+  await expect(firstSelection).toHaveAttribute("aria-pressed", "false");
   await expect(nodeSelection).toHaveAttribute("aria-pressed", "false");
+  await expect(firstSelection).toBeDisabled();
+  await expect(nodeSelection).toBeDisabled();
   await expect(dashboardMembers.nth(2).locator(".proxy-latency")).toHaveText("未测速");
-  await nodeSelection.focus();
-  await page.keyboard.press("Enter");
-  await expect(nodeSelection).toHaveAttribute("aria-pressed", "true");
-  await page.keyboard.press("Tab");
+  await nodeDelay.focus();
   await expect(nodeDelay).toBeFocused();
   await page.keyboard.press("Space");
   await expect(nodeDelay).toHaveText(/\d+ ms/);
-  await expect(nodeSelection).toHaveAttribute("aria-pressed", "true");
+  await expect(nodeSelection).toHaveAttribute("aria-pressed", "false");
 
   await openOutbounds(page);
   await page.reload();

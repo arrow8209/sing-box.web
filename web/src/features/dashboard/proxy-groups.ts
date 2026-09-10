@@ -6,6 +6,7 @@ import {
   restoreOutboundEditorState,
   type OutboundConfig
 } from "@/features/config-editor/outbound";
+import type { RuntimeProxyGroup } from "./api";
 
 export interface DashboardProxyMember {
   id: string;
@@ -115,4 +116,27 @@ export function buildDashboardProxyGroups(outbounds: unknown[], storedState?: un
       members
     };
   });
+}
+
+/** Runtime membership and selection take precedence over an unapplied draft. */
+export function buildRuntimeDashboardProxyGroups(runtime: RuntimeProxyGroup[], outbounds: unknown[], storedState?: unknown): DashboardProxyGroup[] {
+  const configured = new Map(outbounds.filter(isOutboundConfig).map((config) => [config.tag, config]));
+  const runtimeConfigs = new Map<string, OutboundConfig>();
+  for (const group of runtime) {
+    for (const member of group.members) {
+      const type = member.type === "Reject" ? "block" : member.type.toLowerCase();
+      const config = configured.get(member.tag);
+      runtimeConfigs.set(member.tag, { tag: member.tag, type, ...(config?.type === type ? { network: config.network } : {}) });
+    }
+  }
+  const groupConfigs = runtime.map((group) => ({
+    tag: group.tag,
+    type: group.type.toLowerCase(),
+    outbounds: group.members.map((member) => member.tag),
+    default: group.selected
+  }));
+  const groupTags = new Set(runtime.map((group) => group.tag));
+  const configs = [...groupConfigs, ...[...runtimeConfigs.values()].filter((config) => !groupTags.has(config.tag))];
+  const selectedByTag = new Map(runtime.map((group) => [group.tag, group.selected]));
+  return buildDashboardProxyGroups(configs, storedState).map((group) => ({ ...group, selected: selectedByTag.get(group.tag) ?? "" }));
 }
