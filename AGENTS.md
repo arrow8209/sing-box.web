@@ -12,7 +12,16 @@ The application is a Go local service plus a Vue SPA under `web/`. Go commands l
 - `npm --prefix web run test:e2e` runs Playwright against the isolated harness.
 - `go test -race ./...` and `go vet ./...` validate Go code.
 
-The production service defaults to `0.0.0.0:50016`. Do not change this listener convention without explicit user direction. The SPA has an npm install step and must be built through `scripts/build.sh` before running the compiled service.
+用户指定的端口约定如下，后续开发、配置和发布以此为准：
+
+| 环境 | Web 访问端口 | Mixed 入站端口 |
+| --- | --- | --- |
+| 发布环境 | `50015` | `50016` |
+| 开发环境 | `50018` | `50019` |
+
+Web 服务监听地址保持 `0.0.0.0`。未经用户明确指示，不要更改以上端口约定。
+
+The SPA has an npm install step and must be built through `scripts/build.sh` before running the compiled service.
 
 ## Coding Style & Naming Conventions
 
