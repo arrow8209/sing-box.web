@@ -19,25 +19,37 @@ const (
 	settingsVersion  = 1
 	maxProxyURLBytes = 2048
 	defaultAutoStart = true
+	DefaultWebPort   = 50015
+	DefaultMixedPort = 50016
 )
 
 var ErrInvalidProxyURL = errors.New("代理地址无效")
 
 type document struct {
-	Version    int    `json:"version"`
-	ProxyURL   string `json:"proxyUrl"`
-	AutoStart  bool   `json:"autoStart"`
-	AutoReload bool   `json:"autoReload"`
+	Version          int    `json:"version"`
+	ProxyURL         string `json:"proxyUrl"`
+	AutoStart        bool   `json:"autoStart"`
+	AutoReload       bool   `json:"autoReload"`
+	WebPort          int    `json:"webPort"`
+	DefaultMixedPort int    `json:"defaultMixedPort"`
 }
 
-// diskDocument keeps the two behavior fields optional while reading so
-// settings.json files written before they existed retain the old startup
-// behavior. Every subsequent write stores the complete canonical document.
+// diskDocument keeps behavior and port fields optional so older settings files
+// receive defaults. Subsequent writes store the complete canonical document.
 type diskDocument struct {
-	Version    int    `json:"version"`
-	ProxyURL   string `json:"proxyUrl"`
-	AutoStart  *bool  `json:"autoStart,omitempty"`
-	AutoReload *bool  `json:"autoReload,omitempty"`
+	Version          int    `json:"version"`
+	ProxyURL         string `json:"proxyUrl"`
+	AutoStart        *bool  `json:"autoStart,omitempty"`
+	AutoReload       *bool  `json:"autoReload,omitempty"`
+	WebPort          *int   `json:"webPort,omitempty"`
+	DefaultMixedPort *int   `json:"defaultMixedPort,omitempty"`
+}
+
+// ServerSettings is read at startup. DefaultMixedPort only seeds new profiles
+// and inbound resources; existing sing-box configurations remain independent.
+type ServerSettings struct {
+	WebPort          int `json:"webPort"`
+	DefaultMixedPort int `json:"defaultMixedPort"`
 }
 
 // ProxySettings is the public settings representation returned by the API.
@@ -66,7 +78,7 @@ func OpenStore(file string) (*Store, error) {
 	if file == "" {
 		return nil, fmt.Errorf("设置文件不能为空")
 	}
-	state := document{Version: settingsVersion, AutoStart: defaultAutoStart}
+	state := document{Version: settingsVersion, AutoStart: defaultAutoStart, WebPort: DefaultWebPort, DefaultMixedPort: DefaultMixedPort}
 	if loaded, err := storage.ReadJSON[diskDocument](file); err == nil {
 		state.Version = loaded.Version
 		state.ProxyURL = loaded.ProxyURL
@@ -75,6 +87,12 @@ func OpenStore(file string) (*Store, error) {
 		}
 		if loaded.AutoReload != nil {
 			state.AutoReload = *loaded.AutoReload
+		}
+		if loaded.WebPort != nil {
+			state.WebPort = *loaded.WebPort
+		}
+		if loaded.DefaultMixedPort != nil {
+			state.DefaultMixedPort = *loaded.DefaultMixedPort
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
@@ -89,7 +107,27 @@ func OpenStore(file string) (*Store, error) {
 		}
 		return nil, &storage.CorruptFileError{Path: file, Err: err}
 	}
+	for _, port := range []struct {
+		name  string
+		value int
+	}{{"webPort", state.WebPort}, {"defaultMixedPort", state.DefaultMixedPort}} {
+		if port.value < 1 || port.value > 65535 {
+			return nil, &storage.CorruptFileError{Path: file, Err: fmt.Errorf("%s 必须是 1 到 65535 的整数", port.name)}
+		}
+	}
+	if state.WebPort == state.DefaultMixedPort {
+		return nil, &storage.CorruptFileError{Path: file, Err: fmt.Errorf("webPort 与 defaultMixedPort 不能相同")}
+	}
 	return &Store{file: file, state: state, proxy: proxy}, nil
+}
+
+func (s *Store) GetServer() (ServerSettings, error) {
+	if s == nil {
+		return ServerSettings{}, fmt.Errorf("设置服务不可用")
+	}
+	s.mu.RLock()
+	defer s.mu.RUnlock()
+	return ServerSettings{WebPort: s.state.WebPort, DefaultMixedPort: s.state.DefaultMixedPort}, nil
 }
 
 func (s *Store) Get() (ProxySettings, error) {

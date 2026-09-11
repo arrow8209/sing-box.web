@@ -5,6 +5,11 @@ import vue from "@vitejs/plugin-vue";
 export default defineConfig({
   plugins: [vue()],
   resolve: { alias: { "@": fileURLToPath(new URL("./src", import.meta.url)) } },
+  server: {
+    host: "0.0.0.0",
+    port: 50018,
+    strictPort: true
+  },
   build: {
     outDir: "../internal/webui/assets",
     emptyOutDir: false

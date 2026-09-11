@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"os"
+	"strconv"
 	"sync"
 	"time"
 
@@ -31,8 +32,6 @@ import (
 	"singbox-web/internal/webui"
 )
 
-const defaultListenAddress = "0.0.0.0:50016"
-
 // Dependencies provide deterministic dependencies for server construction.
 type Dependencies struct {
 	Random          io.Reader
@@ -45,7 +44,7 @@ type Dependencies struct {
 	// It is empty in production; integration tests use it for their fake core.
 	CoreEnvironment []string
 	// ListenAddress is reserved for isolated test servers. Production callers
-	// leave it empty and always use the documented default listener.
+	// leave it empty and read the Web port from data/settings.json.
 	ListenAddress string
 	// Listener lets an isolated caller reserve a loopback port before the
 	// server starts. Production callers leave it nil.
@@ -93,14 +92,6 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if clock == nil {
 		clock = time.Now
 	}
-	factory := deps.TemplateFactory
-	if factory == nil {
-		factory, err = templates.NewFactory(randomSource)
-		if err != nil {
-			return nil, err
-		}
-	}
-
 	authStore := auth.NewStore(layout.AuthFile, randomSource)
 	if _, err := authStore.Load(); err != nil {
 		if os.IsNotExist(err) {
@@ -140,6 +131,17 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	coreSettings, err := settingsStore.GetCore()
 	if err != nil {
 		return nil, err
+	}
+	serverSettings, err := settingsStore.GetServer()
+	if err != nil {
+		return nil, err
+	}
+	factory := deps.TemplateFactory
+	if factory == nil {
+		factory, err = templates.NewFactoryWithMixedPort(randomSource, serverSettings.DefaultMixedPort)
+		if err != nil {
+			return nil, err
+		}
 	}
 	if err := profile.RecoverDeletingDrafts(layout); err != nil {
 		return nil, err
@@ -304,7 +306,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		listenAddress = deps.Listener.Addr().String()
 	}
 	if listenAddress == "" {
-		listenAddress = defaultListenAddress
+		listenAddress = net.JoinHostPort("0.0.0.0", strconv.Itoa(serverSettings.WebPort))
 	}
 	return &Server{
 		layout:        layout,

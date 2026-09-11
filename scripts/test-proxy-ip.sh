@@ -7,7 +7,7 @@ usage() {
   scripts/test-proxy-ip.sh [代理 URL] [IP 查询 URL]
 
 默认值：
-  代理 URL     http://127.0.0.1:20122
+  代理 URL     http://127.0.0.1:50016
   IP 查询 URL  https://api.ipify.org
 
 也可以通过 PROXY_URL 和 IP_LOOKUP_URL 环境变量覆盖默认值。
@@ -21,7 +21,7 @@ case "${1:-}" in
     ;;
 esac
 
-proxy_url="${1:-${PROXY_URL:-http://127.0.0.1:20122}}"
+proxy_url="${1:-${PROXY_URL:-http://127.0.0.1:50016}}"
 ip_lookup_url="${2:-${IP_LOOKUP_URL:-https://api.ipify.org}}"
 
 case "$proxy_url" in

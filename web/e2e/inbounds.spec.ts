@@ -36,6 +36,9 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
   await expect(page.getByRole("heading", { name: "入站配置", exact: true })).toBeVisible();
   await page.getByRole("button", { name: "新建入站配置", exact: true }).click();
   const createDialog = page.getByRole("dialog", { name: "新建入站配置" });
+  const serverSettings = await page.evaluate(async () => (await fetch("/api/v1/settings/server")).json() as Promise<{ webPort: number; defaultMixedPort: number }>);
+  expect(serverSettings).toEqual({ webPort: 50015, defaultMixedPort: 50016 });
+  await expect(createDialog.locator('input[type="number"]').first()).toHaveValue("50016");
   await createDialog.locator('input[name="tag"]').fill("mixed-in");
   await createDialog.locator('input[type="number"]').first().fill("19090");
   await expect(createDialog.getByText("协议嗅探", { exact: true })).toHaveCount(0);

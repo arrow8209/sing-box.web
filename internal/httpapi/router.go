@@ -149,7 +149,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			core.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/core/releases/latest" || r.URL.Path == "/api/v1/core/update":
 			updater.ServeHTTP(w, r)
-		case r.URL.Path == "/api/v1/settings/proxy" || r.URL.Path == "/api/v1/settings/core":
+		case r.URL.Path == "/api/v1/settings/proxy" || r.URL.Path == "/api/v1/settings/core" || r.URL.Path == "/api/v1/settings/server":
 			settings.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/runtime/connections" || strings.HasPrefix(r.URL.Path, "/api/v1/runtime/connections/") || r.URL.Path == "/api/v1/runtime/proxy-groups":
 			runtimeData.ServeHTTP(w, r)

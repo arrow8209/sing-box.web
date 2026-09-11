@@ -34,9 +34,6 @@ func TestNewServerRefusesMissingPasswordAndReleasesLock(t *testing.T) {
 }
 
 func TestServerCloseReleasesExclusiveLock(t *testing.T) {
-	if defaultListenAddress != "0.0.0.0:50016" {
-		t.Fatalf("default listen address=%q", defaultListenAddress)
-	}
 	workDir := t.TempDir()
 	layout, err := paths.Resolve(workDir)
 	if err != nil {
@@ -49,7 +46,7 @@ func TestServerCloseReleasesExclusiveLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.http.Addr != defaultListenAddress {
+	if server.http.Addr != "0.0.0.0:50015" {
 		t.Fatalf("addr=%q", server.http.Addr)
 	}
 	if err := server.Close(context.Background()); err != nil {
@@ -112,6 +109,7 @@ func TestNewServerRejectsSemanticManagedJSONWithPath(t *testing.T) {
 		{name: "inbounds null", target: func(layout paths.Layout) string { return layout.InboundResourcesFile }, contents: `{"version":1,"inbounds":null}`},
 		{name: "core syntax", target: func(layout paths.Layout) string { return layout.CoreFile }, contents: `{`},
 		{name: "settings invalid proxy", target: func(layout paths.Layout) string { return layout.SettingsFile }, contents: `{"version":1,"proxyUrl":"socks5://127.0.0.1:1080"}`},
+		{name: "settings invalid web port", target: func(layout paths.Layout) string { return layout.SettingsFile }, contents: `{"version":1,"proxyUrl":"","webPort":0}`},
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {

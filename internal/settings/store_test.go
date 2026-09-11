@@ -2,6 +2,7 @@ package settings
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -71,6 +72,59 @@ func TestOpenStoreKeepsLegacyCoreBehaviorDefaults(t *testing.T) {
 	value, err := store.GetCore()
 	if err != nil || !value.AutoStart || value.AutoReload {
 		t.Fatalf("value=%+v err=%v", value, err)
+	}
+	ports, err := store.GetServer()
+	if err != nil || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 {
+		t.Fatalf("ports=%+v err=%v", ports, err)
+	}
+}
+
+func TestServerPortsSurviveOtherSettingsUpdates(t *testing.T) {
+	path := t.TempDir() + "/settings.json"
+	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":"","webPort":50018,"defaultMixedPort":50019}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	store, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateProxy("http://proxy.example.test:8080"); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := store.UpdateCore(CoreSettings{AutoStart: false, AutoReload: true}); err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := OpenStore(path)
+	if err != nil {
+		t.Fatal(err)
+	}
+	ports, err := reopened.GetServer()
+	if err != nil || ports.WebPort != 50018 || ports.DefaultMixedPort != 50019 {
+		t.Fatalf("ports=%+v err=%v", ports, err)
+	}
+}
+
+func TestOpenStoreRejectsInvalidServerPorts(t *testing.T) {
+	for _, field := range []string{"webPort", "defaultMixedPort"} {
+		for _, value := range []string{"0", "-1", "65536", "50018.5", `"50018"`, "true"} {
+			t.Run(field+"/"+value, func(t *testing.T) {
+				path := t.TempDir() + "/settings.json"
+				body := fmt.Sprintf(`{"version":1,"proxyUrl":"",%q:%s}`, field, value)
+				if err := storage.WriteFile(path, []byte(body), 0o600); err != nil {
+					t.Fatal(err)
+				}
+				if _, err := OpenStore(path); err == nil || !strings.Contains(err.Error(), path) || !strings.Contains(err.Error(), field) {
+					t.Fatalf("body=%s err=%v", body, err)
+				}
+			})
+		}
+	}
+	path := t.TempDir() + "/settings.json"
+	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":"","webPort":50019,"defaultMixedPort":50019}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenStore(path); err == nil || !strings.Contains(err.Error(), "不能相同") {
+		t.Fatalf("same ports err=%v", err)
 	}
 }
 

@@ -12,7 +12,8 @@ const props = withDefaults(defineProps<{
   busy?: boolean;
   kind?: "library" | "profile";
   allowDelete?: boolean;
-}>(), { busy: false, kind: "library", allowDelete: true });
+  defaultMixedPort?: number;
+}>(), { busy: false, kind: "library", allowDelete: true, defaultMixedPort: 50016 });
 const emit = defineEmits<{ close: []; submit: [input: InboundInput]; delete: [] }>();
 
 interface EditorForm {
@@ -38,19 +39,19 @@ interface EditorForm {
   routeExcludeAddress: string[];
 }
 
-const customExample = `{
+const customExample = computed(() => `{
   "type": "mixed",
   "tag": "custom-in",
   "listen": "127.0.0.1",
-  "listen_port": 7891
-}`;
-const defaultPorts: Record<string, number> = { mixed: 7891, http: 8080, socks: 1080, direct: 5353 };
+  "listen_port": ${props.defaultMixedPort}
+}`);
+const defaultPorts = computed<Record<string, number>>(() => ({ mixed: props.defaultMixedPort, http: 8080, socks: 1080, direct: 5353 }));
 const selected = ref<InboundEditorType>("mixed");
-const customSource = ref(customExample);
+const customSource = ref(customExample.value);
 const baseConfig = ref<InboundConfig | null>(null);
 const originalType = ref("");
 const form = reactive<EditorForm>({
-  tag: "", listen: "127.0.0.1", listenPort: "7891", tcpFastOpen: false, tcpMultiPath: false,
+  tag: "", listen: "127.0.0.1", listenPort: String(props.defaultMixedPort), tcpFastOpen: false, tcpMultiPath: false,
   udpFragment: false, users: [], udpTimeout: "5m",
   network: "", overrideAddress: "", overridePort: "", interfaceName: "", mtu: "9000", stack: "mixed",
   autoRoute: true, strictRoute: true, endpointIndependentNat: false,
@@ -121,7 +122,7 @@ function initialize(): void {
   const used = props.existingTags.filter((tag) => tag !== config?.tag);
   form.tag = config?.tag ?? uniqueInboundTag("mixed-in", used);
   form.listen = text(config?.listen, "127.0.0.1");
-  form.listenPort = numberText(config?.listen_port, defaultPorts[selected.value] ?? 7891);
+  form.listenPort = numberText(config?.listen_port, defaultPorts.value[selected.value] ?? props.defaultMixedPort);
   form.tcpFastOpen = bool(config?.tcp_fast_open);
   form.tcpMultiPath = bool(config?.tcp_multi_path);
   form.udpFragment = bool(config?.udp_fragment);
@@ -139,14 +140,14 @@ function initialize(): void {
   form.address = stringList(config?.address, ["172.18.0.1/30", "fdfe:dcba:9876::1/126"]);
   form.routeAddress = stringList(config?.route_address);
   form.routeExcludeAddress = stringList(config?.route_exclude_address);
-  customSource.value = selected.value === "custom" && config ? JSON.stringify(config, null, 2) : customExample;
+  customSource.value = selected.value === "custom" && config ? JSON.stringify(config, null, 2) : customExample.value;
 }
 
 function chooseType(next: InboundEditorType): void {
   if (next === selected.value) return;
   if (next === "custom") {
     const candidate = selected.value === "custom" ? null : buildStructuredConfig();
-    customSource.value = candidate ? JSON.stringify(candidate, null, 2) : customExample;
+    customSource.value = candidate ? JSON.stringify(candidate, null, 2) : customExample.value;
   } else {
     const previous = selected.value;
     if (previous === "custom") {
@@ -158,7 +159,7 @@ function chooseType(next: InboundEditorType): void {
       }
     }
     if (!form.tag.trim() || previous === "custom") form.tag = uniqueInboundTag(`${next}-in`, props.existingTags);
-    form.listenPort = String(defaultPorts[next] ?? 7891);
+    form.listenPort = String(defaultPorts.value[next] ?? props.defaultMixedPort);
   }
   selected.value = next;
 }

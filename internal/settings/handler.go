@@ -25,6 +25,17 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		h.proxy(w, r)
 	case "/api/v1/settings/core":
 		h.core(w, r)
+	case "/api/v1/settings/server":
+		if r.Method != http.MethodGet {
+			httpapi.MethodNotAllowed(w, http.MethodGet)
+			return
+		}
+		value, err := h.store.GetServer()
+		if err != nil {
+			apierror.WriteError(w, err)
+			return
+		}
+		httpapi.WriteJSON(w, http.StatusOK, value)
 	default:
 		apierror.Write(w, http.StatusNotFound, apierror.Error{Code: "not_found", Message: "请求的资源不存在"})
 	}

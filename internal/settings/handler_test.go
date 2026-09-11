@@ -62,6 +62,31 @@ func TestHandlerReadsAndUpdatesCoreSettings(t *testing.T) {
 	}
 }
 
+func TestServerSettingsAreReadOnly(t *testing.T) {
+	store, err := OpenStore(t.TempDir() + "/settings.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	handler := NewHandler(store)
+	for _, method := range []string{http.MethodGet, http.MethodPut, http.MethodPost, http.MethodDelete} {
+		response := httptest.NewRecorder()
+		handler.ServeHTTP(response, httptest.NewRequest(method, "/api/v1/settings/server", nil))
+		if method != http.MethodGet {
+			if response.Code != http.StatusMethodNotAllowed {
+				t.Fatalf("%s status=%d", method, response.Code)
+			}
+			continue
+		}
+		var ports ServerSettings
+		if err := json.Unmarshal(response.Body.Bytes(), &ports); err != nil {
+			t.Fatal(err)
+		}
+		if response.Code != http.StatusOK || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 {
+			t.Fatalf("get=%d ports=%+v", response.Code, ports)
+		}
+	}
+}
+
 func TestHandlerReportsInvalidProxyURLField(t *testing.T) {
 	store, err := OpenStore(t.TempDir() + "/settings.json")
 	if err != nil {

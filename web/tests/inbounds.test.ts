@@ -16,6 +16,22 @@ function draft(inbounds: unknown[]): Draft {
 }
 
 describe("入站配置", () => {
+  it("新建 Mixed 使用服务端默认端口，编辑既有入站保留原端口", async () => {
+    const wrapper = mount(InboundEditorDialog, {
+      props: { open: true, resource: null, existingTags: [], defaultMixedPort: 50019 }
+    });
+    expect((wrapper.get('input[type="number"]').element as HTMLInputElement).value).toBe("50019");
+    await wrapper.get('input[type="radio"][value="http"]').setValue(true);
+    await wrapper.get('input[type="radio"][value="mixed"]').setValue(true);
+    await wrapper.get("form").trigger("submit");
+    expect(wrapper.emitted("submit")?.[0]?.[0]).toMatchObject({ config: { type: "mixed", listen_port: 50019 } });
+    await wrapper.setProps({
+      resource: { id: "existing", mode: "structured", config: { type: "mixed", tag: "existing", listen: "127.0.0.1", listen_port: 19090 }, updatedAt: "2026-09-11T00:00:00Z" }
+    });
+    expect((wrapper.get('input[type="number"]').element as HTMLInputElement).value).toBe("19090");
+    wrapper.unmount();
+  });
+
   it("校验单个完整对象、保留未知字段并生成唯一 tag", () => {
     const result = validateInboundJson(`{"type":" naive ","tag":" custom-in ","future":{"large":900},"token":"keep"}`);
     expect(result.valid).toBe(true);

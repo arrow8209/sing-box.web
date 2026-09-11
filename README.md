@@ -15,7 +15,18 @@ sh scripts/build.sh
 ./dist/singbox-web serve
 ```
 
-服务监听所有 IPv4 网卡的 `0.0.0.0:50016`。Web 服务可以管理 sing-box 核心程序、对各档案候选配置执行真实 `check`，并将通过检查的档案应用到唯一运行目录；核心更新只能经管理员确认后手动触发。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
+Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPort` 配置访问端口，监听地址保持 `0.0.0.0`。缺省使用发布端口 `50015`。`defaultMixedPort` 控制新建档案和新建 Mixed 入站的默认端口，缺省为 `50016`；已有档案、入站资源及已应用配置保留各自的 `listen_port`。
+
+| 环境 | `webPort` | `defaultMixedPort` |
+| --- | --- | --- |
+| 发布环境 | `50015` | `50016` |
+| 开发环境 | `50018` | `50019` |
+
+发布与开发配置示例分别见 [`examples/settings.production.json`](examples/settings.production.json) 和 [`examples/settings.development.json`](examples/settings.development.json)。已有 `data/settings.json` 时，在原文件中添加或修改这两个字段，保留下载代理和核心行为设置；修改前停止 Web 服务，重新启动后生效。端口必须是 `1` 到 `65535` 的整数，Web 与默认 Mixed 端口不能相同；配置错误会阻止启动并提示字段及文件路径。旧设置文件未包含这两个字段时继续兼容，读取后使用发布默认值。
+
+完整开发服务使用开发配置示例中的端口，同样通过 `scripts/build.sh` 构建后执行 `singbox-web serve`，从 `http://localhost:50018` 访问。开发和发布使用各自的工作目录保存 `data/`、`config/`。单独运行 `npm --prefix web run dev` 时，Vite 的前端开发端口也为 `50018`；它仅提供前端开发服务，请勿与完整 Web 服务同时占用该端口。端口被占用时 Vite 会报错，不会自动改用其他端口。
+
+Web 服务可以管理 sing-box 核心程序、对各档案候选配置执行真实 `check`，并将通过检查的档案应用到唯一运行目录；核心更新只能经管理员确认后手动触发。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
 
 配置检查针对草稿生成的完整多文件目录，不是单个 `config.json`。每个自定义配置固定使用自身 ID 对应的目录，服务以工作目录为当前目录执行：
 
@@ -52,7 +63,7 @@ data/bin/sing-box check -C config.staging-<profile-id>
 
 ## 代理出口测试
 
-启动并应用 sing-box 配置后，可以通过测试脚本设置客户端 HTTP/HTTPS 代理并查询出口 IP。脚本默认连接默认档案中的 Mixed 入站 `http://127.0.0.1:20122`：
+启动并应用 sing-box 配置后，可以通过测试脚本设置客户端 HTTP/HTTPS 代理并查询出口 IP。脚本默认连接发布环境的 Mixed 入站 `http://127.0.0.1:50016`；开发环境使用 `scripts/test-proxy-ip.sh http://127.0.0.1:50019`。已有入站使用其他端口时，传入该入站的实际地址：
 
 ```bash
 scripts/test-proxy-ip.sh

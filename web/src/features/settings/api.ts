@@ -1,5 +1,16 @@
 import { request } from "@/api/client";
 
+export interface ServerSettings {
+  webPort: number;
+  defaultMixedPort: number;
+}
+
+export const serverSettingsApi = {
+  async get(): Promise<ServerSettings> {
+    return (await request<ServerSettings>("/settings/server")).data;
+  }
+};
+
 export interface ProxySettings {
   proxyUrl: string;
 }

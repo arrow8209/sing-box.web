@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "proxyUrl": "",
+  "autoStart": true,
+  "autoReload": false,
+  "webPort": 50018,
+  "defaultMixedPort": 50019
+}

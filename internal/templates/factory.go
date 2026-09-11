@@ -51,6 +51,29 @@ func NewFactory(randomSource io.Reader) (*Factory, error) {
 	return &Factory{profile: profile, resources: resources, bindings: bindings, random: randomSource}, nil
 }
 
+// NewFactoryWithMixedPort customizes only the initial Mixed listener. Imported
+// and saved profiles keep their own ports.
+func NewFactoryWithMixedPort(randomSource io.Reader, port int) (*Factory, error) {
+	if port < 1 || port > 65535 {
+		return nil, fmt.Errorf("默认 Mixed 端口必须是 1 到 65535 的整数")
+	}
+	factory, err := NewFactory(randomSource)
+	if err != nil {
+		return nil, err
+	}
+	var inbounds []map[string]json.RawMessage
+	if err := json.Unmarshal(factory.profile["inbounds"], &inbounds); err != nil {
+		return nil, fmt.Errorf("默认入站模板无效: %w", err)
+	}
+	for _, inbound := range inbounds {
+		if string(inbound["type"]) == `"mixed"` {
+			inbound["listen_port"], _ = json.Marshal(port)
+		}
+	}
+	factory.profile["inbounds"], err = json.Marshal(inbounds)
+	return factory, err
+}
+
 func (f *Factory) NewProfileSeed(now time.Time) (ProfileSeed, error) {
 	config := cloneRawMap(f.profile)
 	secret, err := randomHex(f.random, 32)
