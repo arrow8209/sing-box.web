@@ -6,7 +6,7 @@ The application is a Go local service plus a Vue SPA under `web/`. Go commands l
 
 ## Build, Test, and Development Commands
 
-- `sh scripts/build.sh` builds the SPA into embedded assets then compiles `dist/singbox-web`.
+- `sh scripts/build.sh` builds the SPA into embedded assets then compiles `dist/singbox-web-v<version>`, using `web/package.json` by default or the `VERSION` environment variable.
 - `npm --prefix web run typecheck` type-checks the Vue application.
 - `npm --prefix web run test:unit` runs component and store tests.
 - `npm --prefix web run test:e2e` runs Playwright against the isolated harness.
