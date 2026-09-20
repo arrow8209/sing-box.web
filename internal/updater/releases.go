@@ -7,7 +7,9 @@ import (
 	"fmt"
 	"net/http"
 	"runtime"
+	"strconv"
 	"strings"
+	"time"
 )
 
 type releaseDocument struct {
@@ -15,6 +17,19 @@ type releaseDocument struct {
 	Draft      bool    `json:"draft"`
 	Prerelease bool    `json:"prerelease"`
 	Assets     []Asset `json:"assets"`
+}
+
+// ReleaseRateLimitError contains only public retry information, never the
+// upstream response body, which can include the client's egress IP address.
+type ReleaseRateLimitError struct {
+	RetryAt time.Time
+}
+
+func (e *ReleaseRateLimitError) Error() string {
+	if e.RetryAt.IsZero() {
+		return "GitHub API 请求次数已达上限，请稍后重试"
+	}
+	return fmt.Sprintf("GitHub API 请求次数已达上限，请在 %s 后重试", e.RetryAt.Local().Format("2006-01-02 15:04:05 Z07:00"))
 }
 
 // ReleaseClient always requests the official latest-release endpoint.  The
@@ -59,6 +74,14 @@ func (c *ReleaseClient) LatestStable(ctx context.Context) (Release, error) {
 		return Release{}, fmt.Errorf("获取官方核心版本失败: %w", err)
 	}
 	defer response.Body.Close()
+	if response.StatusCode == http.StatusTooManyRequests ||
+		(response.StatusCode == http.StatusForbidden && (response.Header.Get("X-RateLimit-Remaining") == "0" || response.Header.Get("Retry-After") != "")) {
+		limited := &ReleaseRateLimitError{}
+		if reset, err := strconv.ParseInt(response.Header.Get("X-RateLimit-Reset"), 10, 64); err == nil && reset > 0 {
+			limited.RetryAt = time.Unix(reset, 0).UTC()
+		}
+		return Release{}, limited
+	}
 	if response.StatusCode < http.StatusOK || response.StatusCode >= http.StatusMultipleChoices {
 		return Release{}, fmt.Errorf("官方核心版本响应状态异常: %d", response.StatusCode)
 	}

@@ -25,6 +25,14 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 		release, err := h.service.Latest(r.Context())
 		if err != nil {
+			var limited *ReleaseRateLimitError
+			if errors.As(err, &limited) {
+				if !limited.RetryAt.IsZero() {
+					w.Header().Set("Retry-After", limited.RetryAt.UTC().Format(http.TimeFormat))
+				}
+				apierror.Write(w, http.StatusTooManyRequests, apierror.Error{Code: "release_rate_limited", Message: limited.Error()})
+				return
+			}
 			apierror.Write(w, 502, apierror.Error{Code: "release_lookup_failed", Message: "无法获取官方最新版本"})
 			return
 		}

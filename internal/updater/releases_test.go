@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLatestStableSelectsCurrentLinuxAssetAndChecksums(t *testing.T) {
@@ -59,6 +60,49 @@ func TestLatestStableUsesFixedOfficialEndpoint(t *testing.T) {
 	_, err := NewReleaseClient(ReleaseClientPolicyForTest(transport, "mips64")).LatestStable(context.Background())
 	if !errors.Is(err, ErrUnsupportedArchitecture) || called != latestReleaseURL {
 		t.Fatalf("url=%q err=%v", called, err)
+	}
+}
+
+func TestLatestStableDistinguishesRateLimitsFromOtherFailures(t *testing.T) {
+	for _, test := range []struct {
+		name       string
+		status     int
+		remaining  string
+		reset      string
+		retryAfter string
+		limited    bool
+		retryAt    time.Time
+	}{
+		{name: "exhausted quota", status: http.StatusForbidden, remaining: "0", reset: "1893456000", limited: true, retryAt: time.Unix(1893456000, 0)},
+		{name: "malformed reset", status: http.StatusForbidden, remaining: "0", reset: "invalid", limited: true},
+		{name: "secondary limit", status: http.StatusForbidden, retryAfter: "60", limited: true},
+		{name: "too many requests", status: http.StatusTooManyRequests, limited: true},
+		{name: "other forbidden", status: http.StatusForbidden},
+		{name: "server failure", status: http.StatusBadGateway, remaining: "0"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			transport := roundTripperFunc(func(*http.Request) (*http.Response, error) {
+				result := response(test.status, `{"message":"private upstream details"}`)
+				result.Header.Set("X-RateLimit-Remaining", test.remaining)
+				result.Header.Set("X-RateLimit-Reset", test.reset)
+				result.Header.Set("Retry-After", test.retryAfter)
+				return result, nil
+			})
+			_, err := NewReleaseClient(ReleaseClientPolicyForTest(transport, "amd64")).LatestStable(context.Background())
+			if err == nil {
+				t.Fatal("expected release lookup failure")
+			}
+			var limited *ReleaseRateLimitError
+			if errors.As(err, &limited) != test.limited {
+				t.Fatalf("err=%v, want rate limit=%t", err, test.limited)
+			}
+			if limited != nil && !limited.RetryAt.Equal(test.retryAt) {
+				t.Fatalf("retryAt=%v, want %v", limited.RetryAt, test.retryAt)
+			}
+			if strings.Contains(err.Error(), "private upstream details") {
+				t.Fatal("upstream response body leaked into error")
+			}
+		})
 	}
 }
 
