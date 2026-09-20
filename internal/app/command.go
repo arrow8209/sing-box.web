@@ -15,11 +15,30 @@ import (
 type Command string
 
 const (
+	CommandHelp        Command = "help"
 	CommandServe       Command = "serve"
 	CommandSetPassword Command = "admin-set-password"
 )
 
+const commandHelp = `SingBox Control
+
+用法：singbox-web <命令>
+
+命令：
+  serve               启动 Web 管理服务
+  admin set-password  交互式设置管理密码
+
+选项：
+  -h, --help          显示帮助并退出
+
+数据与配置固定保存在启动工作目录下的 data/ 和 config/。
+服务设置位于 data/settings.json，默认 Web 端口为 50015，默认 Mixed 入站端口为 50016。
+`
+
 func ParseCommand(args []string) (Command, error) {
+	if slices.Equal(args, []string{"-h"}) || slices.Equal(args, []string{"--help"}) {
+		return CommandHelp, nil
+	}
 	if slices.Equal(args, []string{"serve"}) {
 		return CommandServe, nil
 	}
@@ -39,6 +58,10 @@ func Run(ctx context.Context, args []string, stdin io.Reader, stdout, stderr io.
 }
 
 func runCommand(ctx context.Context, command Command, stdin io.Reader, stdout, stderr io.Writer) int {
+	if command == CommandHelp {
+		fmt.Fprint(stdout, commandHelp)
+		return 0
+	}
 	if command == CommandSetPassword {
 		input, ok := stdin.(*os.File)
 		if !ok {

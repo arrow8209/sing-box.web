@@ -17,6 +17,8 @@ sh scripts/build.sh
 
 构建文件名固定包含版本号：`dist/singbox-web-v<版本号>`。默认读取 `web/package.json` 的 `version`（当前为 `0.1.0`）；也可以通过 `VERSION=0.2.0 sh scripts/build.sh` 指定本次构建版本，支持带 `v` 前缀。构建完成后会输出实际文件路径，启动时使用对应文件名。
 
+执行 `./dist/singbox-web-v0.1.0 -h` 或 `--help` 可查看命令帮助；显示帮助不需要设置密码，也不会启动服务或创建运行数据。
+
 Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPort` 配置访问端口，监听地址保持 `0.0.0.0`。缺省使用发布端口 `50015`。`defaultMixedPort` 控制新建档案和新建 Mixed 入站的默认端口，缺省为 `50016`；已有档案、入站资源及已应用配置保留各自的 `listen_port`。
 
 | 环境 | `webPort` | `defaultMixedPort` |
