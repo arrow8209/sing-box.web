@@ -11,11 +11,11 @@
 ```bash
 npm --prefix web install
 sh scripts/build.sh
-./dist/singbox-web-v0.1.0 admin set-password
-./dist/singbox-web-v0.1.0 serve
+./dist/singbox-web-v0.1.1 admin set-password
+./dist/singbox-web-v0.1.1 serve
 ```
 
-构建文件名固定包含版本号：`dist/singbox-web-v<版本号>`。默认读取 `web/package.json` 的 `version`（当前为 `0.1.0`）；也可以通过 `VERSION=0.2.0 sh scripts/build.sh` 指定本次构建版本，支持带 `v` 前缀。构建完成后会输出实际文件路径，启动时使用对应文件名。
+构建文件名固定包含版本号：`dist/singbox-web-v<版本号>`。默认读取 `web/package.json` 的 `version`（当前为 `0.1.1`）；也可以通过 `VERSION=0.2.0 sh scripts/build.sh` 指定本次构建版本，支持带 `v` 前缀。构建完成后会输出实际文件路径，启动时使用对应文件名。
 
 每次正式发布前必须递增版本号，默认递增补丁版本。任何代码修改后重新发布（包括小修复）都必须增加版本号，不得覆盖已发布的同版本产物，例如 `0.1.0` 修改后再次发布应使用 `0.1.1`。同步更新 `web/package.json` 和 `web/package-lock.json`，产物文件名使用相同版本。发布时按以下顺序执行：
 
@@ -24,9 +24,9 @@ npm --prefix web version patch --no-git-tag-version
 sh scripts/build.sh
 ```
 
-发布产物始终保存在 `dist/`。`Release/` 是最终运行目录：部署时从 `dist/` 复制对应版本到 `Release/`，并在 `Release/` 中执行该版本的 `admin set-password` 或 `serve` 命令，使正式运行数据保存在 `Release/data/` 和 `Release/config/`。`Release/` 属于本机运行目录，不提交到 Git。正式发布若指定 `VERSION`，也必须与版本文件保持一致。
+发布流程只更新版本并生成、验证 `dist/` 中的产物。`Release/` 是由用户自行维护的最终运行目录，发布时不操作该目录或管理其中的运行服务。用户自行部署并以 `Release/` 为工作目录运行，使正式运行数据保存在 `Release/data/` 和 `Release/config/`。`Release/` 属于本机运行目录，不提交到 Git。正式发布若指定 `VERSION`，也必须与版本文件保持一致。
 
-执行 `./dist/singbox-web-v0.1.0 -h` 或 `--help` 可查看命令帮助；显示帮助不需要设置密码，也不会启动服务或创建运行数据。
+执行 `./dist/singbox-web-v0.1.1 -h` 或 `--help` 可查看命令帮助；显示帮助不需要设置密码，也不会启动服务或创建运行数据。
 
 Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPort` 配置访问端口，监听地址保持 `0.0.0.0`。缺省使用发布端口 `50015`。`defaultMixedPort` 控制新建档案和新建 Mixed 入站的默认端口，缺省为 `50016`；已有档案、入站资源及已应用配置保留各自的 `listen_port`。
 
@@ -37,7 +37,7 @@ Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPo
 
 发布与开发配置示例分别见 [`examples/settings.production.json`](examples/settings.production.json) 和 [`examples/settings.development.json`](examples/settings.development.json)。已有 `data/settings.json` 时，在原文件中添加或修改这两个字段，保留下载代理和核心行为设置；修改前停止 Web 服务，重新启动后生效。端口必须是 `1` 到 `65535` 的整数，Web 与默认 Mixed 端口不能相同；配置错误会阻止启动并提示字段及文件路径。旧设置文件未包含这两个字段时继续兼容，读取后使用发布默认值。
 
-完整开发服务使用开发配置示例中的端口，同样通过 `scripts/build.sh` 构建后执行 `./dist/singbox-web-v0.1.0 serve`（版本号以构建输出为准），从 `http://localhost:50018` 访问。开发和发布使用各自的工作目录保存 `data/`、`config/`。单独运行 `npm --prefix web run dev` 时，Vite 的前端开发端口也为 `50018`；它仅提供前端开发服务，请勿与完整 Web 服务同时占用该端口。端口被占用时 Vite 会报错，不会自动改用其他端口。
+完整开发服务使用开发配置示例中的端口，同样通过 `scripts/build.sh` 构建后执行 `./dist/singbox-web-v0.1.1 serve`（版本号以构建输出为准），从 `http://localhost:50018` 访问。开发和发布使用各自的工作目录保存 `data/`、`config/`。单独运行 `npm --prefix web run dev` 时，Vite 的前端开发端口也为 `50018`；它仅提供前端开发服务，请勿与完整 Web 服务同时占用该端口。端口被占用时 Vite 会报错，不会自动改用其他端口。
 
 Web 服务可以管理 sing-box 核心程序、对各档案候选配置执行真实 `check`，并将通过检查的档案应用到唯一运行目录；核心更新只能经管理员确认后手动触发。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
 
