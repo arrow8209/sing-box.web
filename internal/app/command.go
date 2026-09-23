@@ -94,7 +94,7 @@ func runCommand(ctx context.Context, command Command, stdin io.Reader, stdout, s
 		fmt.Fprintln(stderr, err)
 		return 1
 	}
-	server, err := NewServer(workDir, Dependencies{})
+	server, err := NewServer(workDir, Dependencies{Output: stdout})
 	if err != nil {
 		fmt.Fprintln(stderr, err)
 		return 1

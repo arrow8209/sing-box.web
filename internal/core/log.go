@@ -21,6 +21,7 @@ type BoundedLog struct {
 	maxLine    int
 	mu         sync.Mutex
 	file       *os.File
+	output     io.Writer
 	pending    []byte
 	pendingCut bool
 	closed     bool
@@ -44,6 +45,17 @@ func NewBoundedLog(path string, maxBytes, maxLine int) (*BoundedLog, error) {
 		return nil, err
 	}
 	return &BoundedLog{path: path, maxBytes: maxBytes, maxLine: maxLine, file: file}, nil
+}
+
+// SetOutput mirrors newly completed, size-limited lines to output. Output
+// failures do not interrupt the core's pipes or the durable log.
+func (l *BoundedLog) SetOutput(output io.Writer) {
+	if l == nil {
+		return
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	l.output = output
 }
 
 func (l *BoundedLog) Write(payload []byte) (int, error) {
@@ -72,6 +84,23 @@ func (l *BoundedLog) Write(payload []byte) (int, error) {
 		}
 	}
 	return len(payload), nil
+}
+
+// Flush completes a pending partial line after a core exits. The log stays
+// open so a later core restart can use the same writer.
+func (l *BoundedLog) Flush() error {
+	if l == nil {
+		return nil
+	}
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.closed || l.file == nil {
+		return io.ErrClosedPipe
+	}
+	if len(l.pending) != 0 || l.pendingCut {
+		return l.writePendingLocked()
+	}
+	return nil
 }
 
 func (l *BoundedLog) Close() error {
@@ -128,8 +157,13 @@ func (l *BoundedLog) writePendingLocked() error {
 	if err := l.ensureCapacityLocked(len(line)); err != nil {
 		return err
 	}
-	_, err := l.file.Write(line)
-	return err
+	if _, err := l.file.Write(line); err != nil {
+		return err
+	}
+	if l.output != nil {
+		_, _ = l.output.Write(line)
+	}
+	return nil
 }
 
 func (l *BoundedLog) ensureCapacityLocked(next int) error {

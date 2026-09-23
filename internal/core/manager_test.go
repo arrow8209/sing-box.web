@@ -1,6 +1,7 @@
 package core
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"os"
@@ -123,6 +124,46 @@ func TestUnexpectedExitReportsFailureWithoutRestart(t *testing.T) {
 	status := manager.Status(context.Background())
 	if status.PID != 0 || status.LastError == "" || factory.StartCount() != 1 {
 		t.Fatalf("status=%+v starts=%d", status, factory.StartCount())
+	}
+}
+
+func TestCoreExitFlushesConsoleTailAndKeepsLogOpen(t *testing.T) {
+	manager, factory, clock := newTestManager(t)
+	log, err := NewBoundedLog(manager.layout.CoreLog, 4096, 128)
+	if err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = log.Close() })
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	manager.log = log
+	started := make(chan error, 1)
+	go func() { started <- manager.Start(context.Background(), StartRequest{}) }()
+	await(t, clock.HasWaiter)
+	clock.Advance(2 * time.Second)
+	if err := <-started; err != nil {
+		t.Fatal(err)
+	}
+	manager.mu.Lock()
+	done := manager.done
+	manager.mu.Unlock()
+	if _, err := factory.LastStart().Stderr.Write([]byte("last core error")); err != nil {
+		t.Fatal(err)
+	}
+	factory.LastProcess().Exit(ProcessResult{ExitCode: 1})
+	select {
+	case <-done:
+	case <-time.After(time.Second):
+		t.Fatal("core exit did not finish")
+	}
+	if output.String() != "last core error\n" {
+		t.Fatalf("console tail=%q", output.String())
+	}
+	if _, err := log.Write([]byte("next process\n")); err != nil {
+		t.Fatal(err)
+	}
+	if output.String() != "last core error\nnext process\n" {
+		t.Fatalf("process log boundaries were lost: %q", output.String())
 	}
 }
 

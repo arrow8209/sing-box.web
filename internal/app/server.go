@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"net/http"
 	"os"
@@ -37,6 +38,9 @@ type Dependencies struct {
 	Random          io.Reader
 	Clock           func() time.Time
 	TemplateFactory *templates.Factory
+	// Output receives startup information and live core logs. A nil writer
+	// keeps embedded and test servers quiet; the CLI supplies its stdout.
+	Output io.Writer
 	// RuleHTTPTransport is reserved for isolated tests that must replace both
 	// Ruleset-Hub and rule-file HTTP requests without accessing the network.
 	RuleHTTPTransport http.RoundTripper
@@ -53,17 +57,20 @@ type Dependencies struct {
 
 // Server owns the local HTTP server and the exclusive application lock.
 type Server struct {
-	layout          paths.Layout
-	lock            *storage.InstanceLock
-	http            *http.Server
-	closeMu         sync.Mutex
-	scheduler       *rules.Scheduler
-	schedulerCancel context.CancelFunc
-	schedulerDone   chan struct{}
-	core            *core.Manager
-	operations      *core.OperationLock
-	listener        net.Listener
-	closed          bool
+	layout           paths.Layout
+	lock             *storage.InstanceLock
+	http             *http.Server
+	closeMu          sync.Mutex
+	scheduler        *rules.Scheduler
+	schedulerCancel  context.CancelFunc
+	schedulerDone    chan struct{}
+	core             *core.Manager
+	coreLog          *core.BoundedLog
+	console          *log.Logger
+	defaultMixedPort int
+	operations       *core.OperationLock
+	listener         net.Listener
+	closed           bool
 }
 
 // NewServer builds the complete local service. It acquires the lock before
@@ -197,6 +204,17 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	defer func() {
+		if !keepLock {
+			_ = coreLog.Close()
+		}
+	}()
+	output := deps.Output
+	if output == nil {
+		output = io.Discard
+	}
+	console := log.New(output, "", log.LstdFlags)
+	coreLog.SetOutput(coreConsoleWriter{console: console})
 	coreManager := core.NewManager(layout, coreStore, coreLog, operation)
 	coordinator := application.NewCoordinator(profileService, configHandler, nil, coreManager, operation)
 	// Configuration and program recovery happen only after every managed JSON
@@ -309,14 +327,17 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		listenAddress = net.JoinHostPort("0.0.0.0", strconv.Itoa(serverSettings.WebPort))
 	}
 	return &Server{
-		layout:        layout,
-		lock:          lock,
-		http:          &http.Server{Addr: listenAddress, Handler: handler},
-		scheduler:     rules.NewScheduler(ruleService, nil),
-		schedulerDone: make(chan struct{}),
-		core:          coreManager,
-		operations:    operation,
-		listener:      deps.Listener,
+		layout:           layout,
+		lock:             lock,
+		http:             &http.Server{Addr: listenAddress, Handler: handler},
+		scheduler:        rules.NewScheduler(ruleService, nil),
+		schedulerDone:    make(chan struct{}),
+		core:             coreManager,
+		coreLog:          coreLog,
+		console:          console,
+		defaultMixedPort: serverSettings.DefaultMixedPort,
+		operations:       operation,
+		listener:         deps.Listener,
 	}, nil
 }
 
@@ -341,6 +362,7 @@ func (s *Server) Run(ctx context.Context) error {
 			return errors.Join(err, s.closeWithTimeout())
 		}
 	}
+	s.printStartup(listener.Addr())
 	result := make(chan error, 1)
 	go func() {
 		result <- s.http.Serve(listener)
@@ -370,6 +392,7 @@ func (s *Server) Close(ctx context.Context) error {
 		return nil
 	}
 	s.closed = true
+	s.logInfo("正在关闭服务")
 	var shutdownErr error
 	if s.http != nil {
 		shutdownErr = s.http.Shutdown(ctx)
@@ -395,11 +418,21 @@ func (s *Server) Close(ctx context.Context) error {
 		coreErr = s.core.Stop(coreCtx)
 		cancel()
 	}
+	var logErr error
+	if s.coreLog != nil {
+		logErr = s.coreLog.Close()
+	}
 	var lockErr error
 	if s.lock != nil {
 		lockErr = s.lock.Close()
 	}
-	return errors.Join(shutdownErr, operationErr, coreErr, lockErr)
+	err := errors.Join(shutdownErr, operationErr, coreErr, logErr, lockErr)
+	if err == nil {
+		s.logInfo("服务已停止")
+	} else {
+		s.logInfo("关闭服务失败：%v", err)
+	}
+	return err
 }
 
 func (s *Server) closeWithTimeout() error {

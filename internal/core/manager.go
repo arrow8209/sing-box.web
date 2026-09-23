@@ -344,6 +344,9 @@ func (m *Manager) finishExit(process Process, result ProcessResult) {
 	} else {
 		m.state, m.lastError = ProcessExited, exitError(result)
 	}
+	// Finish the old process's last line before another Start can write to
+	// the shared log, including startup failures without a trailing newline.
+	_ = m.log.Flush()
 	m.mu.Unlock()
 	close(done)
 	if !stopped {
