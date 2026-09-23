@@ -283,12 +283,12 @@ function actionDetail(item: RouteRuleViewItem): string {
   if (!item.rule) return "需使用 JSON 编辑";
   const action = routeRuleAction(item.rule);
   if (action === "route") return typeof item.rule.outbound === "string" && item.rule.outbound ? item.rule.outbound : defaultOutbound.value || "使用默认出站";
-  if (action === "route-options") return "JSON 路由选项";
+  if (action === "route-options") return "";
   if (action === "reject") return ({ default: "默认拒绝", drop: "静默丢弃", reply: "返回响应" } as Record<string, string>)[String(item.rule.method ?? "default")] ?? "拒绝连接";
-  if (action === "hijack-dns") return "劫持至 DNS";
+  if (action === "hijack-dns") return "";
   if (action === "sniff") return Array.isArray(item.rule.sniffer) && item.rule.sniffer.length ? item.rule.sniffer.join(", ") : "全部探测器";
   if (action === "resolve") return typeof item.rule.server === "string" && item.rule.server ? item.rule.server : "由 DNS 规则决定";
-  return action;
+  return "";
 }
 
 function actionIcon(item: RouteRuleViewItem): string {
@@ -478,8 +478,12 @@ function finishDrag(commit: boolean): void {
             <button class="entry-drag" type="button" data-route-rule-drag-handle title="拖动调整顺序" :aria-label="`拖动调整第 ${Number(displayIndex(entry))} 条规则顺序，按上下方向键也可调整`" :disabled="ruleInteractionDisabled" @pointerdown="onPointerDown($event, entry)" @keydown="onHandleKeydown($event, entry)"><span class="grip-dots" /></button>
             <label class="rule-switch" :title="entry.rule ? entry.enabled ? '停用规则' : '启用规则' : '无法停用非对象规则'"><input type="checkbox" :checked="entry.enabled" :disabled="ruleInteractionDisabled || !entry.rule" :aria-label="`${entry.enabled ? '停用' : '启用'}第 ${Number(displayIndex(entry))} 条规则`" @change="toggleRule(entry)" /><span /></label>
             <span class="rule-index">{{ displayIndex(entry) }}</span>
-            <div class="rule-copy"><strong>{{ ruleTypeLabel(entry) }}<span>,</span>{{ rulePayloadLabel(entry) }}<em v-if="entry.rule?.invert === true">反向</em></strong><small>{{ actionLabel(entry) }} · {{ actionDetail(entry) }}</small></div>
-            <span class="action-badge" :class="`action-${routeRuleAction(entry.rule)}`"><AppIcon :name="actionIcon(entry)" :size="12" />{{ actionLabel(entry) }}</span>
+            <div class="rule-copy">
+              <strong :title="`${ruleTypeLabel(entry)},${rulePayloadLabel(entry)}`">{{ ruleTypeLabel(entry) }}<span>,</span>{{ rulePayloadLabel(entry) }}</strong>
+              <em v-if="entry.rule?.invert === true">反向</em>
+              <small v-if="actionDetail(entry)" :title="actionDetail(entry)">{{ actionDetail(entry) }}</small>
+            </div>
+            <span class="action-badge" :class="`action-${routeRuleAction(entry.rule)}`" :title="actionLabel(entry)"><AppIcon :name="actionIcon(entry)" :size="14" /><span>{{ actionLabel(entry) }}</span></span>
             <div class="rule-actions"><button type="button" :aria-label="`编辑规则 ${Number(displayIndex(entry))}`" title="编辑规则" :disabled="ruleInteractionDisabled || !entry.rule" @click="openEditor(entry.key)"><AppIcon name="edit" :size="14" /></button><button class="danger" type="button" :aria-label="`删除规则 ${Number(displayIndex(entry))}`" title="删除规则" :disabled="ruleInteractionDisabled" @click="remove(entry)"><AppIcon name="trash" :size="14" /></button></div>
           </article>
         </template>
@@ -496,9 +500,82 @@ function finishDrag(commit: boolean): void {
 </template>
 
 <style scoped>
-.route-panel { display: grid; gap: 10px; }.route-section { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.card-head { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }.card-head h2, .card-head p { margin: 0; }.card-head h2 { font-size: var(--font-size-heading); }.card-head p { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-xs); }.header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }.section-badge { display: inline-flex; min-height: 25px; align-items: center; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--primary) 13%, var(--line)); border-radius: 999px; color: var(--primary); background: var(--primary-soft); font-size: var(--font-size-sm); font-weight: 680; white-space: nowrap; }.json-button, .add-button { display: inline-flex; min-height: 31px; align-items: center; gap: 5px; padding: 5px 8px; font-size: var(--font-size-sm); }.json-button { color: var(--text-soft); border: 1px solid var(--line); background: var(--surface-soft); }.add-button { color: #fff; background: var(--primary); }.route-common-body { display: grid; gap: var(--section-gap); padding: 10px; }.route-common-toggles, .route-common-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }.route-common-toggle { display: flex; min-width: 0; min-height: 54px; align-items: center; gap: 11px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }.route-common-toggle > div { min-width: 0; flex: 1; }.route-common-toggle strong, .route-common-toggle small, .route-common-field strong, .route-common-field small { display: block; }.route-common-toggle strong, .route-common-field strong { color: var(--text); font-size: var(--font-size-base); font-weight: 660; }.route-common-toggle small, .route-common-field small { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-sm); font-weight: 500; }.route-common-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.setting-switch { position: relative; width: 34px; min-height: 20px; flex: 0 0 auto; padding: 0; border-radius: 7px; background: var(--line-strong); }.setting-switch span { position: absolute; top: 4px; left: 4px; width: 12px; height: 12px; border-radius: 4px; background: #fff; transition: transform 150ms ease; }.setting-switch.on { background: var(--primary); }.setting-switch.on span { transform: translateX(14px); }.route-common-field { display: grid; min-width: 0; grid-template-columns: minmax(150px, .85fr) minmax(180px, 1.15fr); align-items: center; gap: var(--section-gap); padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }.route-common-field:last-child:nth-child(odd) { grid-column: 1 / -1; }.route-common-field select { width: 100%; min-width: 0; font-size: var(--font-size-base); }.route-rule-list { display: grid; padding: 4px var(--card-padding) 8px; }.route-rule-row { display: grid; min-width: 0; min-height: 46px; grid-template-columns: auto auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 8px 5px; border-bottom: 1px solid var(--line); transition: opacity 150ms ease, background 150ms ease; }.route-rule-row:hover { background: var(--surface-soft); }.route-rule-row.is-disabled { opacity: .48; }.entry-drag { display: grid; width: 27px; min-height: 34px; place-items: center; padding: 0; color: var(--text-faint); border-radius: 7px; background: transparent; cursor: grab; touch-action: none; }.entry-drag:hover, .entry-drag:focus-visible { color: var(--primary); background: var(--primary-soft); }.entry-drag:active, :global(body.is-route-rule-dragging) .entry-drag { cursor: grabbing; }.grip-dots { width: 12px; height: 18px; background: radial-gradient(circle, currentColor 1.1px, transparent 1.3px) 0 0 / 6px 6px; }.rule-switch { position: relative; display: block; width: 31px; height: 20px; }.rule-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }.rule-switch span { position: relative; display: block; width: 31px; height: 20px; border-radius: 6px; background: var(--line-strong); cursor: pointer; transition: background 150ms ease; }.rule-switch span::after { position: absolute; top: 4px; left: 4px; width: 4px; height: 12px; border-radius: 3px; content: ""; background: #fff; transition: left 150ms ease; }.rule-switch input:checked + span { background: var(--primary); }.rule-switch input:checked + span::after { left: 23px; }.rule-switch input:focus-visible + span { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: 2px; }.rule-index { color: var(--text-faint); font: var(--font-size-sm) ui-monospace, Consolas, monospace; }.rule-copy { min-width: 0; }.rule-copy strong, .rule-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }.rule-copy strong { color: var(--text); font: 650 var(--font-size-base) ui-monospace, Consolas, monospace; }.rule-copy strong > span { color: var(--text-faint); }.rule-copy em { display: inline-flex; margin-left: 7px; padding: 2px 5px; border-radius: 5px; color: var(--orange); background: var(--orange-soft); font: var(--font-size-xs) var(--font); font-style: normal; }.rule-copy small { margin-top: 3px; color: var(--text-faint); font-size: var(--font-size-sm); }.action-badge { display: inline-flex; min-height: 25px; align-items: center; gap: 5px; padding: 4px 7px; border-radius: 7px; color: var(--primary); background: var(--primary-soft); font-size: var(--font-size-sm); font-weight: 650; white-space: nowrap; }.action-badge.action-reject { color: var(--red); background: var(--red-soft); }.action-badge.action-hijack-dns, .action-badge.action-resolve { color: var(--cyan); background: var(--cyan-soft); }.action-badge.action-sniff { color: var(--violet); background: color-mix(in srgb, var(--violet) 11%, var(--surface)); }.rule-actions { display: flex; gap: 2px; }.rule-actions button { display: grid; width: 30px; min-height: 30px; place-items: center; padding: 0; color: var(--text-faint); background: transparent; }.rule-actions button:hover { color: var(--primary); background: var(--primary-soft); }.rule-actions button.danger:hover { color: var(--red); background: var(--red-soft); }.route-insertion-point { display: flex; min-height: 36px; align-items: center; gap: 10px; }.route-insertion-point > span { height: 1px; flex: 1; background: var(--line); }.route-insertion-point button { display: inline-flex; min-height: 29px; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 7px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-sm); }.route-insertion-point button:hover { color: var(--primary); background: var(--primary-soft); }.route-rule-row.is-drag-placeholder { border: 1px dashed color-mix(in srgb, var(--primary) 45%, var(--line)); border-radius: 10px; opacity: 1; background: var(--primary-soft); }.route-rule-row.is-drag-placeholder > * { visibility: hidden; }:global(.route-rule-drag-ghost) { position: fixed; z-index: 120; overflow: hidden; margin: 0; border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--line)); border-radius: 10px; opacity: .96; background: var(--surface); box-shadow: var(--shadow-lg); pointer-events: none; transition: none; }:global(.route-rule-drag-ghost.is-disabled) { opacity: .82; }:global(body.is-route-rule-dragging) { cursor: grabbing; user-select: none; }.disabled-note { display: flex; align-items: flex-start; gap: 6px; margin: -5px 14px 13px; padding: 8px 9px; border-radius: 8px; color: var(--text-faint); background: var(--surface-soft); font-size: var(--font-size-sm); }.disabled-note .icon { color: var(--primary); }.panel-warning, .panel-error { margin: 0; padding: 9px 10px; border-radius: 9px; font-size: var(--font-size-xs); }.panel-warning { color: var(--orange); background: var(--orange-soft); }.panel-error { color: var(--red); background: var(--red-soft); }
+.route-panel { display: grid; gap: 10px; }.route-section { min-width: 0; border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }.card-head { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }.card-head h2, .card-head p { margin: 0; }.card-head h2 { font-size: var(--font-size-heading); }.card-head p { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-xs); }.header-actions { display: flex; flex: 0 0 auto; align-items: center; gap: 8px; }.section-badge { display: inline-flex; min-height: 25px; align-items: center; padding: 4px 8px; border: 1px solid color-mix(in srgb, var(--primary) 13%, var(--line)); border-radius: 999px; color: var(--primary); background: var(--primary-soft); font-size: var(--font-size-sm); font-weight: 680; white-space: nowrap; }.json-button, .add-button { display: inline-flex; min-height: 31px; align-items: center; gap: 5px; padding: 5px 8px; font-size: var(--font-size-sm); }.json-button { color: var(--text-soft); border: 1px solid var(--line); background: var(--surface-soft); }.add-button { color: #fff; background: var(--primary); }.route-common-body { display: grid; gap: var(--section-gap); padding: 10px; }.route-common-toggles, .route-common-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }.route-common-toggle { display: flex; min-width: 0; min-height: 54px; align-items: center; gap: 11px; padding: 8px 10px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface-soft); }.route-common-toggle > div { min-width: 0; flex: 1; }.route-common-toggle strong, .route-common-toggle small, .route-common-field strong, .route-common-field small { display: block; }.route-common-toggle strong, .route-common-field strong { color: var(--text); font-size: var(--font-size-base); font-weight: 660; }.route-common-toggle small, .route-common-field small { margin-top: 2px; color: var(--text-faint); font-size: var(--font-size-sm); font-weight: 500; }.route-common-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }.setting-switch { position: relative; width: 34px; min-height: 20px; flex: 0 0 auto; padding: 0; border-radius: 7px; background: var(--line-strong); }.setting-switch span { position: absolute; top: 4px; left: 4px; width: 12px; height: 12px; border-radius: 4px; background: #fff; transition: transform 150ms ease; }.setting-switch.on { background: var(--primary); }.setting-switch.on span { transform: translateX(14px); }.route-common-field { display: grid; min-width: 0; grid-template-columns: minmax(150px, .85fr) minmax(180px, 1.15fr); align-items: center; gap: var(--section-gap); padding: 10px 12px; border: 1px solid var(--line); border-radius: 11px; background: var(--surface); }.route-common-field:last-child:nth-child(odd) { grid-column: 1 / -1; }.route-common-field select { width: 100%; min-width: 0; font-size: var(--font-size-base); }.route-rule-list { display: grid; padding: 4px var(--card-padding) 8px; }.route-rule-row { display: grid; min-width: 0; min-height: 46px; grid-template-columns: auto auto auto minmax(0, 1fr) auto auto; align-items: center; gap: 9px; padding: 8px 5px; border-bottom: 1px solid var(--line); transition: opacity 150ms ease, background 150ms ease; }.route-rule-row:hover { background: var(--surface-soft); }.route-rule-row.is-disabled { opacity: .48; }.entry-drag { display: grid; width: 27px; min-height: 34px; place-items: center; padding: 0; color: var(--text-faint); border-radius: 7px; background: transparent; cursor: grab; touch-action: none; }.entry-drag:hover, .entry-drag:focus-visible { color: var(--primary); background: var(--primary-soft); }.entry-drag:active, :global(body.is-route-rule-dragging) .entry-drag { cursor: grabbing; }.grip-dots { width: 12px; height: 18px; background: radial-gradient(circle, currentColor 1.1px, transparent 1.3px) 0 0 / 6px 6px; }.rule-switch { position: relative; display: block; width: 31px; height: 20px; }.rule-switch input { position: absolute; width: 1px; height: 1px; opacity: 0; }.rule-switch span { position: relative; display: block; width: 31px; height: 20px; border-radius: 6px; background: var(--line-strong); cursor: pointer; transition: background 150ms ease; }.rule-switch span::after { position: absolute; top: 4px; left: 4px; width: 4px; height: 12px; border-radius: 3px; content: ""; background: #fff; transition: left 150ms ease; }.rule-switch input:checked + span { background: var(--primary); }.rule-switch input:checked + span::after { left: 23px; }.rule-switch input:focus-visible + span { outline: 3px solid color-mix(in srgb, var(--primary) 22%, transparent); outline-offset: 2px; }.rule-index { color: var(--text-faint); font: var(--font-size-base) ui-monospace, Consolas, monospace; }
+.rule-copy {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 12px;
+}
+.rule-copy strong, .rule-copy small {
+  display: block;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.rule-copy strong {
+  flex: 0 1 auto;
+  color: var(--text);
+  font: 650 var(--font-size-heading) ui-monospace, Consolas, monospace;
+}.rule-copy strong > span { color: var(--text-faint); }
+.rule-copy em {
+  display: inline-flex;
+  flex: 0 0 auto;
+  padding: 2px 5px;
+  border-radius: 5px;
+  color: var(--orange);
+  background: var(--orange-soft);
+  font: var(--font-size-xs) var(--font);
+  font-style: normal;
+}
+.rule-copy small {
+  flex: 0 1 auto;
+  max-width: 45%;
+  color: var(--text-soft);
+  font-size: var(--font-size-base);
+}
+.action-badge {
+  display: inline-flex;
+  min-width: 0;
+  min-height: 25px;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 7px;
+  border-radius: 7px;
+  color: var(--primary);
+  background: var(--primary-soft);
+  font-size: var(--font-size-base);
+  font-weight: 650;
+  white-space: nowrap;
+}
+.action-badge > span {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}.action-badge.action-reject { color: var(--red); background: var(--red-soft); }.action-badge.action-hijack-dns, .action-badge.action-resolve { color: var(--cyan); background: var(--cyan-soft); }.action-badge.action-sniff { color: var(--violet); background: color-mix(in srgb, var(--violet) 11%, var(--surface)); }.rule-actions { display: flex; gap: 2px; }.rule-actions button { display: grid; width: 30px; min-height: 30px; place-items: center; padding: 0; color: var(--text-faint); background: transparent; }.rule-actions button:hover { color: var(--primary); background: var(--primary-soft); }.rule-actions button.danger:hover { color: var(--red); background: var(--red-soft); }.route-insertion-point { display: flex; min-height: 36px; align-items: center; gap: 10px; }.route-insertion-point > span { height: 1px; flex: 1; background: var(--line); }.route-insertion-point button { display: inline-flex; min-height: 29px; align-items: center; gap: 5px; padding: 5px 8px; border-radius: 7px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-sm); }.route-insertion-point button:hover { color: var(--primary); background: var(--primary-soft); }.route-rule-row.is-drag-placeholder { border: 1px dashed color-mix(in srgb, var(--primary) 45%, var(--line)); border-radius: 10px; opacity: 1; background: var(--primary-soft); }.route-rule-row.is-drag-placeholder > * { visibility: hidden; }:global(.route-rule-drag-ghost) { position: fixed; z-index: 120; overflow: hidden; margin: 0; border: 1px solid color-mix(in srgb, var(--primary) 38%, var(--line)); border-radius: 10px; opacity: .96; background: var(--surface); box-shadow: var(--shadow-lg); pointer-events: none; transition: none; }:global(.route-rule-drag-ghost.is-disabled) { opacity: .82; }:global(body.is-route-rule-dragging) { cursor: grabbing; user-select: none; }.disabled-note { display: flex; align-items: flex-start; gap: 6px; margin: -5px 14px 13px; padding: 8px 9px; border-radius: 8px; color: var(--text-faint); background: var(--surface-soft); font-size: var(--font-size-sm); }.disabled-note .icon { color: var(--primary); }.panel-warning, .panel-error { margin: 0; padding: 9px 10px; border-radius: 9px; font-size: var(--font-size-xs); }.panel-warning { color: var(--orange); background: var(--orange-soft); }.panel-error { color: var(--red); background: var(--red-soft); }
 @media (max-width: 920px) { .route-common-toggles, .route-common-fields { grid-template-columns: 1fr; }.route-common-field:last-child:nth-child(odd) { grid-column: auto; } }
-@media (max-width: 760px) { .card-head { align-items: flex-start; }.route-rule-row { grid-template-columns: auto auto minmax(0, 1fr) auto; gap: 8px; }.rule-index, .action-badge { display: none; } }
-@media (max-width: 560px) { .card-head { flex-direction: column; gap: 9px; }.header-actions { width: 100%; justify-content: flex-end; }.route-list-card .header-actions .section-badge { margin-right: auto; }.route-common-field { grid-template-columns: 1fr; gap: 7px; }.route-rule-list { padding-inline: 8px; }.route-rule-row { grid-template-columns: auto auto minmax(0, 1fr); }.rule-actions { grid-column: 2 / -1; justify-content: flex-end; padding-top: 4px; border-top: 1px solid var(--line); }.rule-actions button { flex: 1; }.route-insertion-point { gap: 6px; }.route-insertion-point button { white-space: nowrap; } }
-@media (max-width: 560px) { .route-rule-row { grid-template-columns: auto auto minmax(0, 1fr) auto; }.rule-actions { grid-column: auto; justify-content: initial; padding-top: 0; border-top: 0; }.rule-actions button { flex: 0 0 auto; } }
+@media (max-width: 760px) {
+  .card-head { align-items: flex-start; }
+  .route-rule-row { grid-template-columns: auto auto minmax(0, 1fr) auto auto; gap: 6px; }
+  .rule-index { display: none; }
+  .rule-copy { gap: 8px; }
+  .entry-drag { width: 22px; }
+  .action-badge { max-width: 100px; padding-inline: 6px; }
+}
+@media (max-width: 560px) {
+  .card-head { flex-direction: column; gap: 9px; }
+  .header-actions { width: 100%; justify-content: flex-end; }
+  .route-list-card .header-actions .section-badge { margin-right: auto; }
+  .route-common-field { grid-template-columns: 1fr; gap: 7px; }
+  .route-rule-list { padding-inline: 8px; }
+  .route-rule-row { gap: 5px; padding-inline: 0; }
+  .rule-copy { gap: 6px; }
+  .entry-drag { width: 18px; }
+  .action-badge { max-width: 80px; gap: 4px; padding-inline: 5px; }
+  .rule-actions { gap: 0; }
+  .rule-actions button { width: 26px; }
+  .route-insertion-point { gap: 6px; }
+  .route-insertion-point button { white-space: nowrap; }
+}
 </style>
