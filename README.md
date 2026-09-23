@@ -17,7 +17,7 @@ sh scripts/build.sh
 
 构建文件名固定包含版本号：`dist/singbox-web-v<版本号>`。默认读取 `web/package.json` 的 `version`（当前为 `0.1.0`）；也可以通过 `VERSION=0.2.0 sh scripts/build.sh` 指定本次构建版本，支持带 `v` 前缀。构建完成后会输出实际文件路径，启动时使用对应文件名。
 
-每次正式发布前必须递增版本号，默认递增补丁版本；同步更新 `web/package.json` 和 `web/package-lock.json`，产物文件名使用相同版本。发布时按以下顺序执行：
+每次正式发布前必须递增版本号，默认递增补丁版本。任何代码修改后重新发布（包括小修复）都必须增加版本号，不得覆盖已发布的同版本产物，例如 `0.1.0` 修改后再次发布应使用 `0.1.1`。同步更新 `web/package.json` 和 `web/package-lock.json`，产物文件名使用相同版本。发布时按以下顺序执行：
 
 ```bash
 npm --prefix web version patch --no-git-tag-version

@@ -27,7 +27,7 @@ The SPA has an npm install step and must be built through `scripts/build.sh` bef
 
 - 发布产物固定输出并保留在 `dist/`，文件名包含版本号：`dist/singbox-web-v<version>`。
 - `Release/` 是最终运行目录。部署时从 `dist/` 复制对应版本到 `Release/`，以 `Release/` 为工作目录启动服务；正式运行的 `data/` 和 `config/` 位于该目录下。
-- 每次发布前必须更新并递增版本号，不得复用上一发布版本号。用户未指定目标版本时，默认递增补丁版本号。
+- 每次发布前必须更新并递增版本号，不得复用上一发布版本号。任何代码修改后重新发布（包括小修复）都必须增加版本号，不得用修改后的代码覆盖已发布的同版本产物。用户未指定目标版本时，默认递增补丁版本号。
 - 本项目同步更新 `web/package.json` 和 `web/package-lock.json` 中的版本，并保持产物文件名一致。可用 `npm --prefix web version patch --no-git-tag-version` 更新版本后再构建；正式发布使用 `VERSION` 时也必须与版本文件保持一致。
 
 ## Coding Style & Naming Conventions
