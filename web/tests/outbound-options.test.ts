@@ -2,6 +2,7 @@ import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import DnsConfigPanel from "@/features/config-editor/DnsConfigPanel.vue";
 import OutboundConfigPanel from "@/features/config-editor/OutboundConfigPanel.vue";
+import OutboundEditorDialog from "@/features/config-editor/OutboundEditorDialog.vue";
 import RouteConfigPanel from "@/features/config-editor/RouteConfigPanel.vue";
 import RouteRuleEditorDialog from "@/features/config-editor/RouteRuleEditorDialog.vue";
 import { restoreOutboundEditorState } from "@/features/config-editor/outbound";
@@ -44,6 +45,28 @@ beforeEach(() => {
 afterEach(() => { vi.restoreAllMocks(); });
 
 describe("出站选项与出站设置对应", () => {
+  it("重新打开编辑器时刷新已修改订阅，并移除已删除订阅的缓存", async () => {
+    const draft: Draft = { profileId: "b".repeat(32), revision: 1, config: { outbounds }, buffers: {}, bindings: [], savedAt: "2026-09-10T00:00:00Z", editorState: { outbounds: restoreOutboundEditorState(outbounds, [subscription]) } };
+    const wrapper = mount(OutboundConfigPanel, { props: { draft } });
+    await flushPromises();
+    expect(subscriptionApi.get).toHaveBeenCalledOnce();
+    const updated = { ...subscription, updatedAt: "2026-09-23T00:00:00Z", outbounds: [{ type: "trojan", tag: "订阅代理节点", server: "updated.example.test" }] };
+    vi.mocked(subscriptionApi.list).mockResolvedValue([{ id: updated.id, name: updated.name, nodeCount: 1, protocols: ["trojan"], updatedAt: updated.updatedAt }]);
+    vi.mocked(subscriptionApi.get).mockResolvedValue(updated);
+    await wrapper.get('[aria-label="编辑出站 自动选择"]').trigger("click");
+    await flushPromises();
+    const editor = wrapper.findComponent(OutboundEditorDialog);
+    expect(subscriptionApi.get).toHaveBeenCalledTimes(2);
+    expect(editor.props("subscriptions")).toEqual([updated]);
+    editor.vm.$emit("close");
+    vi.mocked(subscriptionApi.list).mockResolvedValue([]);
+    await wrapper.get('[aria-label="编辑出站 自动选择"]').trigger("click");
+    await flushPromises();
+    expect(editor.props("subscriptions")).toEqual([]);
+    expect(subscriptionApi.get).toHaveBeenCalledTimes(2);
+    wrapper.unmount();
+  });
+
   it.each(["导入配置", "已保存配置", "订阅读取失败"])("%s 的路由和 DNS 选项与出站卡片同名同序", async (scenario) => {
     const draft: Draft = {
       profileId: "b".repeat(32), revision: 1,

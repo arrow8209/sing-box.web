@@ -108,6 +108,7 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   await addDirect(page);
   await addUrlTest(page);
   await addSelectorWithSubscription(page);
+  await expect(page.locator(".save-status")).toContainText("草稿已保存");
   await expectOutboundOptions(page);
 
   await expect(page.locator(".outbound-members")).toHaveCount(0);

@@ -582,6 +582,20 @@ function validArrayBuffer(source: string): boolean {
 }
 
 function editJson(source: string, path: (string | number)[], value: unknown, isArrayInsertion = false): string {
+  if (value === undefined && path.length === 1 && typeof path[0] === "number") {
+    const tree = parseTree(source);
+    const elements = tree?.type === "array" ? tree.children ?? [] : [];
+    const index = path[0];
+    const element = elements[index];
+    if (!tree || !element) throw new Error("出站索引超出范围");
+    // Token boundaries also work for compact arrays: jsonc-parser's final
+    // element removal otherwise leaves a closing brace when no newline exists.
+    const start = elements.length === 1 ? tree.offset + 1
+      : index === elements.length - 1 ? elements[index - 1]!.offset + elements[index - 1]!.length : element.offset;
+    const end = elements.length === 1 ? tree.offset + tree.length - 1
+      : index === elements.length - 1 ? element.offset + element.length : elements[index + 1]!.offset;
+    return source.slice(0, start) + source.slice(end);
+  }
   return applyEdits(source, modify(source, path, value, { formattingOptions, isArrayInsertion }));
 }
 

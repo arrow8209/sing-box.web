@@ -138,7 +138,7 @@ describe("入站配置", () => {
     });
   });
 
-  it("从资源库导入深拷贝，重复 tag 自动改名且草稿不保存来源 ID", async () => {
+  it("导入入站保留来源关联，重复 tag 自动改名且来源 ID 不进入运行 JSON", async () => {
     const id = "b".repeat(32);
     const source = {
       type: "mixed", tag: "mixed-in", listen: "0.0.0.0", listen_port: 19090,
@@ -174,10 +174,42 @@ describe("入站配置", () => {
     expect((JSON.parse(payload.routeText!) as { rules: unknown[] }).rules[0]).toEqual({
       inbound: "mixed-in-2", action: "sniff", timeout: "750ms"
     });
-    expect(payload.editorState).toMatchObject({ version: 1, managedSniffRules: [{ tag: "mixed-in-2" }] });
+    expect(payload.editorState).toMatchObject({ version: 1, managedSniffRules: [{ tag: "mixed-in-2" }], resourceBindings: [{ tag: "mixed-in-2", resourceId: id, sourceTag: "mixed-in" }] });
     expect(JSON.stringify(saved)).not.toContain(id);
     expect(JSON.stringify(saved)).not.toContain("sourceId");
     source.listen_port = 19091;
     expect(saved[1]?.listen_port).toBe(19090);
+  });
+
+  it("旧入站可明确关联源资源并保留本地名称，解除关联保留已同步内容", async () => {
+    const id = "e".repeat(32);
+    const source = { type: "http", tag: "shared-http", listen: "127.0.0.1", listen_port: 19100 };
+    const summary = { id, mode: "structured", type: "http", tag: source.tag, endpoint: "127.0.0.1:19100", fieldCount: 4, updatedAt: "2026-09-23T00:00:00Z" };
+    vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith(`/inbound-resources/${id}`)
+      ? { ...summary, config: source } : [summary]), { headers: { "Content-Type": "application/json" } })));
+    const original = draft([{ type: "mixed", tag: "local-in", listen_port: 19090 }]);
+    const wrapper = mount(InboundConfigPanel, { props: { draft: original, profileName: "测试配置" } });
+    await wrapper.get('[aria-label="关联源资源 local-in"]').trigger("click");
+    await flushPromises();
+    const dialog = wrapper.findComponent(InboundImportDialog);
+    expect(dialog.props("targetTag")).toBe("local-in");
+    expect(dialog.find('input[type="radio"]').exists()).toBe(true);
+    dialog.vm.$emit("import", [id]);
+    await flushPromises();
+    const linked = wrapper.emitted("save")![0]![0] as { text: string; editorState: Record<string, unknown> };
+    expect(JSON.parse(linked.text)).toEqual([{ ...source, tag: "local-in" }]);
+    expect(linked.editorState).toMatchObject({ resourceBindings: [{ tag: "local-in", resourceId: id, sourceTag: "shared-http" }] });
+    await wrapper.setProps({ draft: { ...original, config: { inbounds: JSON.parse(linked.text) }, buffers: { inbounds: linked.text }, editorState: { inbounds: linked.editorState } } });
+    expect(wrapper.find(".entry-copy em").text()).toBe("已关联源资源");
+    await wrapper.get('[aria-label="编辑 local-in"]').trigger("click");
+    const editor = wrapper.findComponent(InboundEditorDialog);
+    expect(editor.props("linkedSource")).toBe("shared-http");
+    expect(editor.text()).toContain("保存为独立入站");
+    editor.vm.$emit("close");
+    await wrapper.get('[aria-label="解除关联 local-in"]').trigger("click");
+    const detached = wrapper.emitted("save")!.at(-1)![0] as typeof linked;
+    expect(detached.editorState).not.toHaveProperty("resourceBindings");
+    expect(detached.text).toBe(linked.text);
+    wrapper.unmount();
   });
 });

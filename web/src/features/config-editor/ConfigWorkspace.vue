@@ -33,7 +33,7 @@ import ReferenceErrors from "./ReferenceErrors.vue";
 import RouteConfigPanel from "./RouteConfigPanel.vue";
 import type { RoutePanelSave } from "./route";
 import StructuredModulePanel from "./StructuredModulePanel.vue";
-import type { InboundPanelSave } from "./inbound";
+import { detachEditedInboundResources, type InboundPanelSave } from "./inbound";
 import { validateModuleShape } from "./json";
 import { configSectionFor, configTabs, type ConfigModule, type ConfigTabId } from "./module-map";
 import { saveModuleBuffer } from "./paths";
@@ -55,6 +55,7 @@ const profile = computed(() => store.profiles.value.find((item) => item.id === s
 const deleting = computed(() => store.profiles.value.find((item) => item.id === deletingId.value) ?? null);
 const activeModules = computed(() => configTabs.find((tab) => tab.id === active.value)?.modules ?? []);
 const applyDisabledReason = computed(() => {
+  if (application.preparing.value) return "正在同步配置引用";
   if (profileBusy.value || application.applying.value) return "正在处理档案操作";
   if (store.saveState.value !== "saved") return "请先等待草稿保存完成";
   if (Object.keys(errors.value).length > 0) return "请先修正当前编辑错误";
@@ -95,6 +96,9 @@ function persist(module: ConfigModule, text: string): boolean {
   if (module === "dns" && !error) {
     const dns = parseDnsObjectText(prepared);
     if (dns) result.draft.editorState = { ...(result.draft.editorState ?? {}), dns: reconcileDnsEditorState(result.draft.editorState?.dns, dns) };
+  }
+  if (module === "inbounds" && !error && draft.value.editorState?.inbounds) {
+    result.draft.editorState = { ...(result.draft.editorState ?? {}), inbounds: detachEditedInboundResources(draft.value, result.draft) };
   }
   applyResult(result.draft, module, error?.message);
   return !error;
@@ -223,7 +227,7 @@ function jumpTo(path: string): void {
         <div class="config-context-controls">
           <span class="save-status" :class="store.saveState.value"><AppIcon :name="store.saveState.value === 'saved' ? 'check' : 'rotate'" :size="14" />{{ store.saveState.value === "saving" ? "正在保存" : store.saveState.value === "saved" ? "草稿已保存" : "存在未保存更改" }}</span>
           <ProfileActions :busy="profileBusy" @duplicate="duplicateProfile" @rename="openRename" @remove="openDelete" />
-          <ApplicationBar :busy="profileBusy || application.applying.value" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后复制配置文件'" @preview="preview" @validate="validate" @apply="applyProfile" />
+          <ApplicationBar :busy="profileBusy || application.applying.value || application.preparing.value" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后复制配置文件'" @preview="preview" @validate="validate" @apply="applyProfile" />
         </div>
       </header>
       <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>

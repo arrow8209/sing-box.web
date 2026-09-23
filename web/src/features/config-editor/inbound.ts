@@ -1,5 +1,6 @@
 import { parse, type ParseError } from "jsonc-parser";
 import type { Draft } from "@/features/profiles/types";
+import { isInboundConfig } from "@/features/inbounds/model";
 import {
   insertRouteRuleText,
   isRouteObject,
@@ -16,11 +17,18 @@ export interface ManagedInboundSniffRule {
   rule: RouteRule;
 }
 
+export interface InboundResourceBinding {
+  tag: string;
+  resourceId: string;
+  sourceTag: string;
+}
+
 // Keep the exact generated rule outside sing-box JSON. A later disable or
 // rename only removes this snapshot, never a similar user-authored rule.
 export interface InboundEditorState {
   version: 1;
   managedSniffRules: ManagedInboundSniffRule[];
+  resourceBindings?: InboundResourceBinding[];
 }
 
 export interface InboundRouteIntent {
@@ -70,12 +78,36 @@ export function restoreInboundEditorState(value: unknown): InboundEditorState {
     seen.add(tag);
     return [{ tag, rule: { ...item.rule } }];
   });
-  return { version: 1, managedSniffRules };
+  const linked = new Set<string>();
+  const resourceBindings = (Array.isArray(value.resourceBindings) ? value.resourceBindings : []).flatMap((item): InboundResourceBinding[] => {
+    if (!isRouteObject(item) || typeof item.tag !== "string" || !item.tag.trim()
+      || typeof item.resourceId !== "string" || !/^[a-f0-9]{32}$/.test(item.resourceId)
+      || typeof item.sourceTag !== "string" || linked.has(item.tag)) return [];
+    linked.add(item.tag);
+    return [{ tag: item.tag, resourceId: item.resourceId, sourceTag: item.sourceTag }];
+  });
+  return { version: 1, managedSniffRules, ...(resourceBindings.length ? { resourceBindings } : {}) };
+}
+
+// A direct JSON edit is an explicit local override. Keep links for untouched
+// entries, and detach changed/deleted ones so synchronization cannot erase it.
+export function detachEditedInboundResources(previous: Draft, next: Draft): InboundEditorState {
+  const state = restoreInboundEditorState(previous.editorState?.inbounds);
+  const oldItems = Array.isArray(previous.config.inbounds) ? previous.config.inbounds.filter(isInboundConfig) : [];
+  const nextItems = Array.isArray(next.config.inbounds) ? next.config.inbounds.filter(isInboundConfig) : [];
+  const bindings = (state.resourceBindings ?? []).filter((binding) => {
+    const before = oldItems.find((item) => item.tag === binding.tag);
+    const after = nextItems.find((item) => item.tag === binding.tag);
+    return before && after && deepEqual(before, after);
+  });
+  if (bindings.length) state.resourceBindings = bindings;
+  else delete state.resourceBindings;
+  return state;
 }
 
 function reconcileManagedRules(state: InboundEditorState, rules: unknown[]): InboundEditorState {
   return {
-    version: 1,
+    ...state,
     managedSniffRules: state.managedSniffRules.filter((managed) => rules.some((rule) => deepEqual(rule, managed.rule)))
   };
 }

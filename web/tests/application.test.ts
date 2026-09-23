@@ -1,4 +1,4 @@
-import { mount } from "@vue/test-utils";
+import { flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import ApplicationBar from "@/features/application/ApplicationBar.vue";
@@ -8,6 +8,8 @@ import type { ApplicationApi } from "@/features/application/api";
 import { createProfileStore } from "@/features/profiles/store";
 import type { ProfileApi } from "@/features/profiles/api";
 import type { Draft, ProfileSummary } from "@/features/profiles/types";
+import type { ReferenceSources } from "@/features/application/references";
+import type { SubscriptionDetail } from "@/features/subscriptions/types";
 
 const profileId = "0123456789abcdef0123456789abcdef";
 const draft = (): Draft => ({ profileId, revision: 4, config: {}, buffers: { log: "{}" }, bindings: [], savedAt: "2026-08-21T00:00:00Z" });
@@ -17,9 +19,102 @@ function profiles(): ReturnType<typeof createProfileStore> {
   return createProfileStore(api);
 }
 
+function linkedProfiles() {
+  const outbounds = [{ type: "selector", tag: "选择", interrupt_exist_connections: true, outbounds: ["test-node"] }, { type: "ssh", tag: "test-node", detour: "removed-group" }];
+  let saved: Draft = {
+    ...draft(), config: { outbounds }, buffers: { outbounds: JSON.stringify(outbounds) },
+    editorState: { outbounds: { version: 1, generatedTags: ["test-node"], groups: [{
+      id: "group-a", tag: "选择", type: "selector", hidden: false, include: "", exclude: "", icon: "",
+      references: [{ kind: "subscription", subscriptionId: "a".repeat(32), tag: "测试订阅", resolvedTags: ["test-node"] }], runtimeTags: ["test-node"]
+    }] } }
+  };
+  const api: ProfileApi = {
+    list: vi.fn(async () => [{ ...profile, draftRevision: saved.revision }]), create: vi.fn(), duplicate: vi.fn(), rename: vi.fn(), remove: vi.fn(),
+    getDraft: vi.fn(async () => ({ data: structuredClone(saved), etag: `"rev-${saved.revision}"` })),
+    saveDraft: vi.fn(async (_id, _etag, input) => {
+      saved = { ...structuredClone(input), revision: saved.revision + 1 };
+      return { data: structuredClone(saved), etag: `"rev-${saved.revision}"` };
+    })
+  };
+  const latest: SubscriptionDetail = { id: "a".repeat(32), name: "测试订阅", outbounds: [{ type: "ssh", tag: "test-node", server: "updated.example.test" }], updatedAt: "2026-09-23T00:00:00Z" };
+  const sources: ReferenceSources = { subscription: vi.fn(async () => latest), inbound: vi.fn() };
+  return { profiles: createProfileStore(api), profileApi: api, sources, latest };
+}
+
 describe("配置应用", () => {
   const stores: ReturnType<typeof createProfileStore>[] = [];
   afterEach(() => stores.splice(0).forEach((store) => store.dispose()));
+  it.each(["preview", "validate", "apply"] as const)("%s 前读取最新订阅并保存草稿，随后使用新修订执行", async (action) => {
+    const env = linkedProfiles(); stores.push(env.profiles);
+    await env.profiles.refresh(); await env.profiles.open(profileId);
+    const success = { revision: 5, files: [], digest: "a".repeat(64), valid: true, stage: "core_check", exitCode: 0 };
+    const api: ApplicationApi = {
+      preview: vi.fn(async () => success), validate: vi.fn(async () => success),
+      apply: vi.fn(async () => ({ applied: true, profileId, revision: 5, digest: success.digest, validation: success }))
+    };
+    const store = createApplicationStore(env.profiles, api, env.sources);
+    await store[action]();
+    expect(env.profileApi.saveDraft).toHaveBeenCalledOnce();
+    expect(env.sources.subscription).toHaveBeenCalledWith("a".repeat(32));
+    expect(env.profiles.draft.value?.buffers.outbounds).not.toContain("removed-group");
+    expect(env.profiles.draft.value?.buffers.outbounds).toContain("updated.example.test");
+    expect(api[action]).toHaveBeenCalledWith(profileId, action === "apply" ? { revision: 5 } : 5);
+    expect(store.preparing.value).toBe(false);
+    expect(store.error.value).toBeNull();
+    await store[action]();
+    expect(env.profileApi.saveDraft).toHaveBeenCalledOnce();
+    expect(env.sources.subscription).toHaveBeenCalledTimes(2);
+  });
+
+  it("引用读取失败时不保存部分同步结果，也不继续检测", async () => {
+    const env = linkedProfiles(); stores.push(env.profiles);
+    await env.profiles.refresh(); await env.profiles.open(profileId);
+    vi.mocked(env.sources.subscription).mockRejectedValue(new Error("订阅已删除"));
+    const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(), apply: vi.fn() };
+    const store = createApplicationStore(env.profiles, api, env.sources);
+    await store.validate();
+    expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
+    expect(api.validate).not.toHaveBeenCalled();
+    expect(store.error.value).toMatchObject({ stage: "sync_references", fieldPath: "outbounds" });
+    expect(store.error.value?.message).toContain("订阅已删除");
+    expect(env.profiles.draft.value?.buffers.outbounds).toContain("removed-group");
+    store.previewResult.value = { revision: 4, files: [], digest: "old-preview" };
+    await store.preview();
+    expect(store.previewResult.value).toBeNull();
+    expect(api.preview).not.toHaveBeenCalled();
+  });
+
+  it("同步期间的本地编辑不会被覆盖", async () => {
+    const env = linkedProfiles(); stores.push(env.profiles);
+    await env.profiles.refresh(); await env.profiles.open(profileId);
+    let finish: (value: SubscriptionDetail) => void = () => undefined;
+    vi.mocked(env.sources.subscription).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
+    const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(), apply: vi.fn() };
+    const store = createApplicationStore(env.profiles, api, env.sources);
+    const pending = store.validate();
+    await flushPromises();
+    expect(store.preparing.value).toBe(true);
+    env.profiles.mutate((current) => { current.buffers.log = '{"level":"debug"}'; });
+    finish(env.latest);
+    await pending;
+    expect(store.error.value?.message).toContain("同步期间草稿已变更");
+    expect(env.profiles.draft.value?.buffers.log).toBe('{"level":"debug"}');
+    expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
+    expect(api.validate).not.toHaveBeenCalled();
+  });
+
+  it("同步草稿保存冲突时不会检测旧修订", async () => {
+    const env = linkedProfiles(); stores.push(env.profiles);
+    await env.profiles.refresh(); await env.profiles.open(profileId);
+    vi.mocked(env.profileApi.saveDraft).mockRejectedValue(new ApiError(409, { code: "draft_revision_conflict", message: "版本冲突", latestRevision: 6 }));
+    const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(), apply: vi.fn() };
+    const store = createApplicationStore(env.profiles, api, env.sources);
+    await store.validate();
+    expect(env.profiles.saveState.value).toBe("conflict");
+    expect(api.validate).not.toHaveBeenCalled();
+    expect(store.error.value?.stage).toBe("sync_references");
+  });
+
   it("配置操作组依次提供预览、检测和应用", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
     const wrapper = mount(ApplicationBar);

@@ -11,11 +11,11 @@
 ```bash
 npm --prefix web install
 sh scripts/build.sh
-./dist/singbox-web-v0.1.3 admin set-password
-./dist/singbox-web-v0.1.3 serve
+./dist/singbox-web-v0.1.4 admin set-password
+./dist/singbox-web-v0.1.4 serve
 ```
 
-构建文件名固定包含版本号：`dist/singbox-web-v<版本号>`。默认读取 `web/package.json` 的 `version`（当前为 `0.1.3`）；也可以通过 `VERSION=0.2.0 sh scripts/build.sh` 指定本次构建版本，支持带 `v` 前缀。构建完成后会输出实际文件路径，启动时使用对应文件名。
+构建文件名固定包含版本号：`dist/singbox-web-v<版本号>`。默认读取 `web/package.json` 的 `version`（当前为 `0.1.4`）；也可以通过 `VERSION=0.2.0 sh scripts/build.sh` 指定本次构建版本，支持带 `v` 前缀。构建完成后会输出实际文件路径，启动时使用对应文件名。
 
 每次正式发布前必须递增版本号，默认递增补丁版本。任何代码修改后重新发布（包括小修复）都必须增加版本号，不得覆盖已发布的同版本产物，例如 `0.1.0` 修改后再次发布应使用 `0.1.1`。同步更新 `web/package.json` 和 `web/package-lock.json`，产物文件名使用相同版本。发布时按以下顺序执行：
 
@@ -26,7 +26,7 @@ sh scripts/build.sh
 
 发布流程只更新版本并生成、验证 `dist/` 中的产物。`Release/` 是由用户自行维护的最终运行目录，发布时不操作该目录或管理其中的运行服务。用户自行部署并以 `Release/` 为工作目录运行，使正式运行数据保存在 `Release/data/` 和 `Release/config/`。`Release/` 属于本机运行目录，不提交到 Git。正式发布若指定 `VERSION`，也必须与版本文件保持一致。
 
-执行 `./dist/singbox-web-v0.1.3 -h` 或 `--help` 可查看命令帮助；显示帮助不需要设置密码，也不会启动服务或创建运行数据。
+执行 `./dist/singbox-web-v0.1.4 -h` 或 `--help` 可查看命令帮助；显示帮助不需要设置密码，也不会启动服务或创建运行数据。
 
 Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPort` 配置访问端口，监听地址保持 `0.0.0.0`。缺省使用发布端口 `50015`。`defaultMixedPort` 控制新建档案和新建 Mixed 入站的默认端口，缺省为 `50016`；已有档案、入站资源及已应用配置保留各自的 `listen_port`。
 
@@ -41,7 +41,7 @@ Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPo
 
 发布与开发配置示例分别见 [`examples/settings.production.json`](examples/settings.production.json) 和 [`examples/settings.development.json`](examples/settings.development.json)。已有 `data/settings.json` 时，在原文件中添加或修改这两个字段，保留下载代理和核心行为设置；修改前停止 Web 服务，重新启动后生效。端口必须是 `1` 到 `65535` 的整数，Web 与默认 Mixed 端口不能相同；配置错误会阻止启动并提示字段及文件路径。旧设置文件未包含这两个字段时继续兼容，读取后使用发布默认值。
 
-完整开发服务使用开发配置示例中的端口，同样通过 `scripts/build.sh` 构建后执行 `./dist/singbox-web-v0.1.3 serve`（版本号以构建输出为准），从 `http://localhost:50018` 访问。开发和发布使用各自的工作目录保存 `data/`、`config/`。单独运行 `npm --prefix web run dev` 时，Vite 的前端开发端口也为 `50018`；它仅提供前端开发服务，请勿与完整 Web 服务同时占用该端口。端口被占用时 Vite 会报错，不会自动改用其他端口。
+完整开发服务使用开发配置示例中的端口，同样通过 `scripts/build.sh` 构建后执行 `./dist/singbox-web-v0.1.4 serve`（版本号以构建输出为准），从 `http://localhost:50018` 访问。开发和发布使用各自的工作目录保存 `data/`、`config/`。单独运行 `npm --prefix web run dev` 时，Vite 的前端开发端口也为 `50018`；它仅提供前端开发服务，请勿与完整 Web 服务同时占用该端口。端口被占用时 Vite 会报错，不会自动改用其他端口。
 
 Web 服务可以管理 sing-box 核心程序、对各档案候选配置执行真实 `check`，并将通过检查的档案应用到唯一运行目录；核心更新只能经管理员确认后手动触发。当前阶段不提供 systemd、自启动、反向代理、TLS 或高级运行控制；请仅允许可信网络访问。
 
@@ -96,15 +96,19 @@ PROXY_URL=http://127.0.0.1:7890 scripts/test-proxy-ip.sh
 
 “订阅配置”用于将一组完整的 sing-box `outbounds` 作为本地 JSON 节点集合导入、查看和整体编辑。编辑器接受包含 `outbounds`（或 `nodes`）数组的对象，也接受直接的节点数组；每个节点必须包含唯一的非空 `type` 和 `tag`。节点中的其他字段会由服务端完整保存到权限为 `0600` 的 `data/subscriptions.json`。
 
-当前订阅功能不接受 URL，不执行网络拉取、解析、同步或定时刷新。订阅列表接口只返回数量和协议摘要，管理员打开查看、编辑或配置出站引用时才读取完整节点内容。
+当前订阅功能接收本地 JSON，不接受远程订阅 URL，也不会定时从网络获取订阅节点。订阅列表接口只返回数量和协议摘要，管理员打开查看、编辑或同步配置引用时才读取完整节点内容。
 
 自定义配置的“出站”页按 GUI.for.SingBox 的策略组模型支持 Direct、Block、Selector、URLTest 四种结构化类型；其他协议节点仍可通过“编辑全部 JSON”维护。Selector 和 URLTest 可以引用当前档案中的其他策略出站、整个 JSON 订阅或单个订阅节点；整个订阅会按 `include` / `exclude` 展开，编辑时仍保留为一个订阅选择项。展开节点和 `direct` / `block` 仅写入最终 sing-box `outbounds`，不会重复显示成策略卡片；`hidden`、筛选条件和图标保存在独立编辑器状态中，不会作为无效字段传给 sing-box。重命名策略出站时会同步更新已知配置引用，重复节点 `tag` 会生成不冲突的名称。
+
+在配置工作台点击“预览”“检测”或“应用”前，会重新读取当前引用的订阅和已关联入站，更新并保存草稿，再使用新的草稿修订执行操作。订阅字段的修改、删除及整个订阅的节点增删都会进入重建结果。源资源读取失败、指定订阅节点已删除、草稿同步期间被修改或保存发生冲突时，停止操作并显示“同步引用”错误。未建立引用的原始 JSON 出站保持独立；同步后的草稿保存仍遵循“配置变更自动重载”设置。
 
 ## 入站配置
 
 一级“入站配置”用于集中维护可复用的 sing-box 入站对象，支持 Mixed、HTTP、SOCKS、TUN、Direct 的结构化编辑，也可使用完整 JSON 保存其他类型和未知字段。资源保存在权限为 `0600` 的 `data/inbound-resources.json`；列表接口只返回 `tag`、类型和监听摘要，包含认证用户等完整内容仅在查看、编辑或导入时读取。
 
-自定义配置的“入站”页可以一次选择多个资源导入。导入只把当时的完整对象复制进档案的 `inbounds`，不保存资源 ID 或来源关系；之后修改或删除任一侧都不会联动另一侧。若导入对象的 `tag` 已被当前档案使用，页面会自动生成不冲突的新名称。
+自定义配置的“入站”页可以一次选择多个资源导入，并默认保留来源关联。预览、检测和应用前同步源资源的最新内容，同时保留档案内的 `tag`；同名导入会自动生成本地别名。来源 ID 仅保存在档案编辑状态中，不进入 sing-box 配置文件。
+
+旧档案中没有来源记录的入站继续作为独立配置维护，可点击入站行的链接按钮选择源资源，确认后替换内容并建立关联。解除关联会保留现有内容；保存本地编辑或修改完整 JSON 时，被修改的入站解除关联并独立维护。复制入站会创建独立副本，删除档案内入站不删除源资源。关联源被删除时，检测会提示重新关联或解除关联。
 
 结构化入站不会写入 sing-box 1.13 已移除的旧嗅探字段。导入包含历史 `sniff` 字段的结构化资源时，会按[官方迁移方式](https://sing-box.sagernet.org/migration/#migrate-legacy-inbound-fields-to-rule-actions)生成按 inbound tag 限定的 `route.rules` `sniff` 动作；新配置应在“路由”页维护协议嗅探。入站编辑器不提供旧版“协议嗅探”和“使用嗅探结果覆盖目标地址”参数，用户通过“完整 JSON”维护的入站对象也不会被自动迁移这些字段。
 

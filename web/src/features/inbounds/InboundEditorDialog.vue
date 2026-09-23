@@ -13,6 +13,7 @@ const props = withDefaults(defineProps<{
   kind?: "library" | "profile";
   allowDelete?: boolean;
   defaultMixedPort?: number;
+  linkedSource?: string;
 }>(), { busy: false, kind: "library", allowDelete: true, defaultMixedPort: 50016 });
 const emit = defineEmits<{ close: []; submit: [input: InboundInput]; delete: [] }>();
 
@@ -63,7 +64,7 @@ const title = computed(() => props.kind === "library"
   : "编辑独立入站副本");
 const description = computed(() => props.kind === "library"
   ? "维护可在多个自定义配置中重复导入的源配置"
-  : "此处内容只属于当前自定义配置，不与资源库联动");
+  : props.linkedSource ? `当前关联“${props.linkedSource}”。保存本地修改后将解除关联，改为独立维护；如需保留关联，请到入站配置中编辑源资源。` : "此处内容只属于当前自定义配置，不与资源库联动");
 const originalTag = computed(() => props.resource?.config.tag ?? "");
 const customValidation = computed(() => validateInboundJson(customSource.value, props.existingTags, originalTag.value));
 const structuredError = computed(() => {
@@ -314,7 +315,7 @@ function insertIndent(event: KeyboardEvent): void {
     <template #footer>
       <button v-if="resource && allowDelete" class="delete-button" type="button" :disabled="busy" @click="emit('delete')"><AppIcon name="trash" :size="14" />删除入站配置</button>
       <button class="secondary-button" type="button" :disabled="busy" @click="emit('close')">取消</button>
-      <button class="primary-button" type="submit" form="inbound-editor-form" :disabled="!valid || busy"><AppIcon :name="resource ? 'save' : 'plus'" :size="14" />{{ busy ? "正在保存" : resource ? "保存入站配置" : "新建入站配置" }}</button>
+      <button class="primary-button" type="submit" form="inbound-editor-form" :disabled="!valid || busy"><AppIcon :name="resource ? 'save' : 'plus'" :size="14" />{{ busy ? "正在保存" : linkedSource ? "保存为独立入站" : resource ? "保存入站配置" : "新建入站配置" }}</button>
     </template>
   </AppDialog>
 </template>

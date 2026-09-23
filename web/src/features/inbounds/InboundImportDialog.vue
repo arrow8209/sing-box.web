@@ -6,7 +6,7 @@ import AppIcon from "@/layout/AppIcon.vue";
 import { inboundTypes, uniqueInboundTag } from "./model";
 import { useInboundStore } from "./store";
 
-const props = withDefaults(defineProps<{ open: boolean; profileName: string; currentTags: string[]; busy?: boolean }>(), { busy: false });
+const props = withDefaults(defineProps<{ open: boolean; profileName: string; currentTags: string[]; targetTag?: string; busy?: boolean }>(), { busy: false });
 const emit = defineEmits<{ close: []; import: [ids: string[]] }>();
 const store = useInboundStore();
 const selected = ref<string[]>([]);
@@ -14,7 +14,7 @@ const error = ref("");
 const rows = computed(() => store.resources.value.map((item) => ({
   ...item,
   icon: item.mode === "custom" ? "code" : inboundTypes.find((candidate) => candidate.type === item.type)?.icon ?? "inbound",
-  nextTag: uniqueInboundTag(item.tag, props.currentTags)
+  nextTag: props.targetTag ?? uniqueInboundTag(item.tag, props.currentTags)
 })));
 
 watch(() => props.open, (open) => {
@@ -28,22 +28,22 @@ async function refresh(): Promise<void> {
   try { await store.refresh(); } catch (cause) { error.value = cause instanceof Error ? cause.message : "无法加载入站配置"; }
 }
 function toggle(id: string, checked: boolean): void {
-  selected.value = checked ? [...selected.value, id] : selected.value.filter((item) => item !== id);
+  selected.value = props.targetTag ? checked ? [id] : [] : checked ? [...selected.value, id] : selected.value.filter((item) => item !== id);
 }
 function submit(): void { if (selected.value.length && !props.busy) emit("import", [...selected.value]); }
 </script>
 
 <template>
-  <AppDialog class="inbound-import-dialog" :open="open" title="导入入站配置" :description="`复制到“${profileName}”`" :close-disabled="busy" @close="emit('close')">
+  <AppDialog class="inbound-import-dialog" :open="open" :title="targetTag ? '关联入站资源' : '导入入站配置'" :description="targetTag ? `为“${targetTag}”选择源资源` : `导入并关联到“${profileName}”`" :close-disabled="busy" @close="emit('close')">
     <form v-if="rows.length" id="inbound-import-form" class="import-form" @submit.prevent="submit">
-      <div class="import-banner"><AppIcon name="copy" :size="20" /><div><strong>导入会创建独立副本</strong><span>只复制当前配置内容，不保存来源 ID；导入后两边的编辑和删除均不联动。</span></div></div>
+      <div class="import-banner"><AppIcon name="link" :size="20" /><div><strong>{{ targetTag ? "关联后使用源资源的配置" : "导入后保持与源资源关联" }}</strong><span>{{ targetTag ? "确认关联会替换此入站的内容，保留当前 tag。" : "同名入站会自动生成本地别名。" }}预览、检测和应用前自动同步最新内容；源资源删除后会提示重新关联。</span></div></div>
       <p v-if="error" class="load-error" role="alert">{{ error }} <button type="button" @click="refresh">重试</button></p>
       <div class="import-list">
-        <label v-for="item in rows" :key="item.id" class="import-option"><input type="checkbox" :value="item.id" :checked="selected.includes(item.id)" @change="toggle(item.id, ($event.target as HTMLInputElement).checked)" /><span class="import-tile"><span class="entry-icon" :class="{ custom: item.mode === 'custom', tun: item.type === 'tun' }"><AppIcon :name="item.icon" :size="18" /></span><span class="import-copy"><strong>{{ item.tag }}</strong><small>{{ item.endpoint }}</small><span><b>{{ item.type }}</b><em v-if="item.nextTag !== item.tag">将改名为 {{ item.nextTag }}</em></span></span><AppIcon class="check" name="check" :size="17" /></span></label>
+        <label v-for="item in rows" :key="item.id" class="import-option"><input :type="targetTag ? 'radio' : 'checkbox'" :name="targetTag ? 'inbound-source' : undefined" :value="item.id" :checked="selected.includes(item.id)" :aria-label="`${targetTag ? '关联' : '导入'} ${item.tag}`" @change="toggle(item.id, ($event.target as HTMLInputElement).checked)" /><span class="import-tile"><span class="entry-icon" :class="{ custom: item.mode === 'custom', tun: item.type === 'tun' }"><AppIcon :name="item.icon" :size="18" /></span><span class="import-copy"><strong>{{ item.tag }}</strong><small>{{ item.endpoint }}</small><span><b>{{ item.type }}</b><em v-if="item.nextTag !== item.tag">{{ targetTag ? '保留本地名称' : '将改名为' }} {{ item.nextTag }}</em></span></span><AppIcon class="check" name="check" :size="17" /></span></label>
       </div>
     </form>
     <div v-else class="import-empty" :aria-busy="store.loading.value"><AppIcon name="inbound" :size="34" /><strong>{{ store.loading.value ? "正在加载入站配置" : "还没有可导入的入站配置" }}</strong><span v-if="!store.loading.value">请先到一级“入站配置”中新建项目。</span><RouterLink v-if="!store.loading.value" to="/inbounds" @click="emit('close')"><AppIcon name="plus" :size="14" />前往新建</RouterLink><p v-if="error" role="alert">{{ error }}</p></div>
-    <template #footer><span v-if="rows.length" class="footer-note">可同时选择多个项目</span><button class="secondary-button" type="button" :disabled="busy" @click="emit('close')">取消</button><button v-if="rows.length" class="primary-button" type="submit" form="inbound-import-form" :disabled="!selected.length || busy"><AppIcon name="download" :size="14" />{{ busy ? "正在导入" : `导入所选 ${selected.length} 项` }}</button></template>
+    <template #footer><span v-if="rows.length" class="footer-note">{{ targetTag ? "请选择一个源资源" : "可同时选择多个项目" }}</span><button class="secondary-button" type="button" :disabled="busy" @click="emit('close')">取消</button><button v-if="rows.length" class="primary-button" type="submit" form="inbound-import-form" :disabled="!selected.length || busy"><AppIcon :name="targetTag ? 'link' : 'download'" :size="14" />{{ busy ? "正在读取" : targetTag ? "确认关联" : `导入所选 ${selected.length} 项` }}</button></template>
   </AppDialog>
 </template>
 

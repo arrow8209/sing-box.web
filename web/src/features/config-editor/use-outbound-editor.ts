@@ -40,13 +40,12 @@ export function useOutboundEditor(draft: () => Draft) {
     detailRequest = (async () => {
       await refreshSubscriptions();
       const cached = new Map(subscriptionDetails.value.map((detail) => [detail.id, detail]));
-      const missing = subscriptionSummaries.value.filter((summary) => !cached.has(summary.id));
-      if (!missing.length) return;
+      const missing = subscriptionSummaries.value.filter((summary) => cached.get(summary.id)?.updatedAt !== summary.updatedAt);
       const results = await Promise.allSettled(missing.map((summary) => subscriptionApi.get(summary.id)));
       let failures = 0;
-      results.forEach((result) => {
+      results.forEach((result, index) => {
         if (result.status === "fulfilled") cached.set(result.value.id, result.value);
-        else failures++;
+        else { cached.delete(missing[index]!.id); failures++; }
       });
       subscriptionDetails.value = subscriptionSummaries.value.flatMap((summary) => {
         const detail = cached.get(summary.id);

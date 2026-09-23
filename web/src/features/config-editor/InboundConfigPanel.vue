@@ -8,12 +8,13 @@ import InboundImportDialog from "@/features/inbounds/InboundImportDialog.vue";
 import { editorType, inboundEndpoint, inboundTypes, isInboundConfig, resourceMode, uniqueInboundTag, withoutLegacyInboundFields } from "@/features/inbounds/model";
 import { useInboundStore } from "@/features/inbounds/store";
 import type { InboundConfig, InboundDetail, InboundInput } from "@/features/inbounds/types";
-import { applyInboundRouteIntents, managedInboundSniff, type InboundPanelSave, type InboundRouteIntent } from "./inbound";
+import { applyInboundRouteIntents, managedInboundSniff, restoreInboundEditorState, type InboundPanelSave, type InboundResourceBinding, type InboundRouteIntent } from "./inbound";
 
 const props = defineProps<{ draft: Draft; profileName: string; error?: string }>();
 const emit = defineEmits<{ editJson: []; save: [payload: InboundPanelSave] }>();
 const resources = useInboundStore();
 const importOpen = ref(false);
+const association = ref<{ index: number; tag: string } | null>(null);
 const editorOpen = ref(false);
 const importing = ref(false);
 const editingIndex = ref<number | null>(null);
@@ -25,6 +26,14 @@ const rawItems = computed<unknown[]>(() => Array.isArray(props.draft.config.inbo
 const entries = computed(() => rawItems.value.flatMap((value, index) => isInboundConfig(value) ? [{ index, config: value }] : []));
 const invalidCount = computed(() => rawItems.value.length - entries.value.length);
 const tags = computed(() => entries.value.map((item) => item.config.tag));
+const sourceBindings = computed(() => restoreInboundEditorState(props.draft.editorState?.inbounds).resourceBindings ?? []);
+
+function bindingFor(tag: string): InboundResourceBinding | undefined { return sourceBindings.value.find((item) => item.tag === tag); }
+function openImport(index?: number, tag?: string): void {
+  association.value = index !== undefined && tag ? { index, tag } : null;
+  importOpen.value = true;
+}
+function closeImport(): void { importOpen.value = false; association.value = null; }
 
 function show(message: string, tone: "info" | "error" | "success" = "info"): void {
   notice.value = "";
@@ -36,9 +45,13 @@ function iconFor(config: InboundConfig): string {
 }
 function cloneItems(): unknown[] { return structuredClone(toRaw(rawItems.value)); }
 function cloneConfig(config: InboundConfig): InboundConfig { return structuredClone(toRaw(config)); }
-function saveItems(items: unknown[], intents: InboundRouteIntent[] = []): boolean {
+function saveItems(items: unknown[], intents: InboundRouteIntent[] = [], bindings = sourceBindings.value): boolean {
   try {
     const route = applyInboundRouteIntents(props.draft, intents);
+    const nextTags = new Set(items.filter(isInboundConfig).map((item) => item.tag));
+    const linked = bindings.filter((item) => nextTags.has(item.tag)).map((item) => ({ ...item }));
+    if (linked.length) route.editorState.resourceBindings = linked;
+    else delete route.editorState.resourceBindings;
     emit("save", { text: JSON.stringify(items, null, 2), ...route });
     return true;
   } catch (cause) {
@@ -68,7 +81,7 @@ function submitEdit(input: InboundInput): void {
   const intents = managed.enabled
     ? [{ previousTag, tag: input.config.tag, sniff: true, sniffTimeout: managed.timeout }]
     : legacySniff ? [{ previousTag, tag: input.config.tag, sniff: true, sniffTimeout: legacyTimeout }] : [];
-  if (!saveItems(next, intents)) return;
+  if (!saveItems(next, intents, sourceBindings.value.filter((item) => item.tag !== previousTag))) return;
   const tag = input.config.tag;
   closeEditor();
   show(`${tag} 已更新为当前自定义配置的独立副本。`, "success");
@@ -81,7 +94,7 @@ function duplicate(index: number, config: InboundConfig): void {
   const managed = managedInboundSniff(props.draft, config.tag);
   const intents = managed.enabled ? [{ tag: copy.tag, sniff: true, sniffTimeout: managed.timeout }] : [];
   if (!saveItems(next, intents)) return;
-  show(`${copy.tag} 已复制到当前配置。`, "success");
+  show(`${copy.tag} 已复制为独立入站。`, "success");
 }
 function remove(index: number, config: InboundConfig): void {
   const next = cloneItems();
@@ -92,46 +105,72 @@ function remove(index: number, config: InboundConfig): void {
 async function importSelected(ids: string[]): Promise<void> {
   importing.value = true;
   try {
+    const profileId = props.draft.profileId;
+    const target = association.value ? { ...association.value } : null;
+    if (target && ids.length !== 1) throw new Error("请选择一个源资源。");
     const details = await Promise.all(ids.map((id) => resources.get(id)));
+    if (props.draft.profileId !== profileId) throw new Error("档案已切换，请重新选择入站资源。");
     const next = cloneItems();
+    const currentTarget = target ? next[target.index] : null;
+    if (target && (!isInboundConfig(currentTarget) || currentTarget.tag !== target.tag)) throw new Error("入站已变更，请重新选择关联。");
     const used = new Set(tags.value);
     const intents: InboundRouteIntent[] = [];
+    const bindings = sourceBindings.value.map((item) => ({ ...item }));
     let renamed = 0;
     for (const detail of details) {
       const source = structuredClone(detail.config);
       const legacySniff = detail.mode === "structured" && source.sniff === true;
       const legacyTimeout = typeof source.sniff_timeout === "string" && source.sniff_timeout.trim() ? source.sniff_timeout : "300ms";
       const config = detail.mode === "structured" ? withoutLegacyInboundFields(source) : source;
-      const tag = uniqueInboundTag(config.tag, used);
+      const tag = target?.tag ?? uniqueInboundTag(config.tag, used);
       if (tag !== config.tag) renamed++;
       config.tag = tag;
       used.add(tag);
-      // Only the complete config object enters the draft. No library ID or
-      // source metadata is retained, so future edits and deletes are isolated.
-      next.push(config);
-      if (legacySniff) intents.push({ tag, sniff: true, sniffTimeout: legacyTimeout });
+      if (target) next[target.index] = config;
+      else next.push(config);
+      const previousBinding = bindings.findIndex((item) => item.tag === tag);
+      const binding = { tag, resourceId: detail.id, sourceTag: detail.config.tag };
+      if (previousBinding >= 0) bindings[previousBinding] = binding;
+      else bindings.push(binding);
+      intents.push({ tag, sniff: legacySniff, sniffTimeout: legacyTimeout });
     }
-    if (!saveItems(next, intents)) return;
-    importOpen.value = false;
-    show(`已创建 ${details.length} 个独立副本${renamed ? `，其中 ${renamed} 个 tag 已自动改名` : ""}。`, "success");
+    if (!saveItems(next, intents, bindings)) return;
+    closeImport();
+    show(target ? `${target.tag} 已关联源资源，检测前会自动同步。` : `已导入并关联 ${details.length} 个入站${renamed ? `，其中 ${renamed} 个 tag 已自动改名` : ""}。`, "success");
   } catch (cause) { show(cause instanceof Error ? cause.message : "导入入站配置失败", "error"); }
   finally { importing.value = false; }
+}
+
+function unlink(config: InboundConfig): void {
+  if (saveItems(cloneItems(), [], sourceBindings.value.filter((item) => item.tag !== config.tag))) {
+    show(`${config.tag} 已解除关联，保留当前内容作为独立入站。`, "success");
+  }
 }
 </script>
 
 <template>
   <section class="inbound-panel">
     <div class="inbound-layout">
-      <article class="inbound-card"><header><div><h2>当前自定义配置的入站</h2><p>从一级“入站配置”导入后，作为独立副本维护</p></div><div><button class="json-button" type="button" @click="emit('editJson')"><AppIcon name="code" :size="14" />编辑全部 JSON</button><button class="import-button" type="button" @click="importOpen = true"><AppIcon name="download" :size="14" />导入入站配置</button></div></header><div class="entry-list">
-        <article v-for="entry in entries" :key="entry.index" class="entry-row"><span class="entry-icon" :class="{ custom: editorType(entry.config) === 'custom', tun: entry.config.type === 'tun' }"><AppIcon :name="iconFor(entry.config)" :size="18" /></span><div class="entry-copy"><div><strong>{{ entry.config.tag }}</strong><b>{{ entry.config.type }}</b><em>独立配置</em></div><p><span>{{ inboundEndpoint(entry.config) }}</span><i />{{ editorType(entry.config) === "custom" ? `完整配置 · ${Object.keys(entry.config).length} 个字段` : inboundTypes.find((item) => item.type === entry.config.type)?.description }}</p></div><div class="entry-actions"><button type="button" :aria-label="`编辑 ${entry.config.tag}`" title="编辑独立入站副本" @click="openEditor(entry.index, entry.config)"><AppIcon name="edit" :size="15" /></button><button type="button" :aria-label="`复制 ${entry.config.tag}`" title="复制入站" @click="duplicate(entry.index, entry.config)"><AppIcon name="copy" :size="15" /></button><button class="danger" type="button" :aria-label="`删除 ${entry.config.tag}`" title="删除入站" @click="remove(entry.index, entry.config)"><AppIcon name="trash" :size="15" /></button></div></article>
-        <button v-if="!rawItems.length" class="empty-state" type="button" @click="importOpen = true"><AppIcon name="inbound" :size="31" /><strong>尚未导入入站</strong><span>从入站配置资源库选择一个或多个项目</span></button>
+      <article class="inbound-card"><header><div><h2>当前自定义配置的入站</h2><p>关联入站在预览、检测和应用前同步源资源；独立入站自行维护</p></div><div><button class="json-button" type="button" @click="emit('editJson')"><AppIcon name="code" :size="14" />编辑全部 JSON</button><button class="import-button" type="button" @click="openImport()"><AppIcon name="download" :size="14" />导入入站配置</button></div></header><div class="entry-list">
+        <article v-for="entry in entries" :key="entry.index" class="entry-row">
+          <span class="entry-icon" :class="{ custom: editorType(entry.config) === 'custom', tun: entry.config.type === 'tun' }"><AppIcon :name="iconFor(entry.config)" :size="18" /></span>
+          <div class="entry-copy"><div><strong>{{ entry.config.tag }}</strong><b>{{ entry.config.type }}</b><em :title="bindingFor(entry.config.tag)?.sourceTag">{{ bindingFor(entry.config.tag) ? '已关联源资源' : '独立配置' }}</em></div><p><span>{{ inboundEndpoint(entry.config) }}</span><i />{{ bindingFor(entry.config.tag) ? `来源：${bindingFor(entry.config.tag)?.sourceTag}` : editorType(entry.config) === "custom" ? `完整配置 · ${Object.keys(entry.config).length} 个字段` : inboundTypes.find((item) => item.type === entry.config.type)?.description }}</p></div>
+          <div class="entry-actions">
+            <button type="button" :aria-label="`关联源资源 ${entry.config.tag}`" title="选择关联的源资源" @click="openImport(entry.index, entry.config.tag)"><AppIcon name="link" :size="15" /></button>
+            <button v-if="bindingFor(entry.config.tag)" type="button" :aria-label="`解除关联 ${entry.config.tag}`" title="解除关联并保留为独立入站" @click="unlink(entry.config)"><AppIcon name="x" :size="15" /></button>
+            <button type="button" :aria-label="`编辑 ${entry.config.tag}`" title="编辑为独立入站" @click="openEditor(entry.index, entry.config)"><AppIcon name="edit" :size="15" /></button>
+            <button type="button" :aria-label="`复制 ${entry.config.tag}`" title="复制为独立入站" @click="duplicate(entry.index, entry.config)"><AppIcon name="copy" :size="15" /></button>
+            <button class="danger" type="button" :aria-label="`删除 ${entry.config.tag}`" title="删除入站" @click="remove(entry.index, entry.config)"><AppIcon name="trash" :size="15" /></button>
+          </div>
+        </article>
+        <button v-if="!rawItems.length" class="empty-state" type="button" @click="openImport()"><AppIcon name="inbound" :size="31" /><strong>尚未导入入站</strong><span>从入站配置资源库选择一个或多个项目</span></button>
         <p v-if="invalidCount" class="invalid-items" role="alert"><AppIcon name="info" :size="14" />还有 {{ invalidCount }} 个无法结构化显示的数组项，请使用“编辑全部 JSON”处理。</p>
       </div></article>
-      <aside><article class="options-card"><header><div><h2>副本边界</h2><p>当前档案独立维护</p></div></header><div><p><AppIcon name="copy" :size="16" /><span><strong>一次性复制</strong><small>导入时读取源配置的完整当前内容</small></span></p><p><AppIcon name="edit" :size="16" /><span><strong>独立编辑</strong><small>保存后只改变当前自定义配置草稿</small></span></p><p><AppIcon name="trash" :size="16" /><span><strong>独立删除</strong><small>删除任一侧都不会联动另一侧</small></span></p></div></article><p class="info-callout"><AppIcon name="info" :size="15" /><span>导入不记录资源库 ID。源配置后续修改或删除，不会影响这里已有的副本。</span></p><p class="info-callout"><AppIcon name="shield" :size="15" /><span>TUN 模式需要系统网络管理权限；应用前仍会由 sing-box 核心执行真实配置检查。</span></p></aside>
+      <aside><article class="options-card"><header><div><h2>来源与同步</h2><p>关联资源或独立维护</p></div></header><div><p><AppIcon name="link" :size="16" /><span><strong>关联源资源</strong><small>新导入的入站自动关联；旧副本可点击链接按钮选择来源</small></span></p><p><AppIcon name="rotate" :size="16" /><span><strong>检测前同步</strong><small>预览、检测和应用前读取最新配置，并保留本地 tag</small></span></p><p><AppIcon name="edit" :size="16" /><span><strong>独立维护</strong><small>解除关联或保存本地修改后，只维护当前档案</small></span></p></div></article><p class="info-callout"><AppIcon name="info" :size="15" /><span>源资源已删除或读取失败时会停止同步并提示。可重新关联或解除关联，保留当前入站内容。</span></p><p class="info-callout"><AppIcon name="shield" :size="15" /><span>TUN 模式需要系统网络管理权限；应用前仍会由 sing-box 核心执行真实配置检查。</span></p></aside>
     </div>
     <p v-if="error" class="panel-error" role="alert">{{ error }}</p>
-    <InboundImportDialog :open="importOpen" :profile-name="profileName" :current-tags="tags" :busy="importing" @close="importOpen = false" @import="importSelected" />
-    <InboundEditorDialog :open="editorOpen" :resource="editing" :existing-tags="tags" kind="profile" :allow-delete="false" @close="closeEditor" @submit="submitEdit" />
+    <InboundImportDialog :open="importOpen" :profile-name="profileName" :current-tags="tags" :target-tag="association?.tag" :busy="importing" @close="closeImport" @import="importSelected" />
+    <InboundEditorDialog :open="editorOpen" :resource="editing" :existing-tags="tags" :linked-source="bindingFor(editing?.config.tag ?? '')?.sourceTag" kind="profile" :allow-delete="false" @close="closeEditor" @submit="submitEdit" />
     <AppToast v-if="notice" :message="notice" :tone="noticeTone" />
   </section>
 </template>

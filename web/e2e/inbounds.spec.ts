@@ -28,9 +28,25 @@ async function openInboundTab(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "当前自定义配置的入站" })).toBeVisible();
 }
 
-test("入站资源导入后成为与源配置无关的深拷贝", async ({ page }) => {
+test("入站引用在检测前同步，旧副本可关联且失效来源会阻止检测", async ({ page }) => {
+  test.setTimeout(90_000);
   await login(page);
   await createProfile(page);
+  // This test concerns inbound dependencies, without downloading rule fixtures.
+  await page.evaluate(async () => {
+    const session = await (await fetch("/api/v1/auth/session")).json();
+    const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
+    const profile = profiles.find((item) => item.name === "入站 E2E 配置")!;
+    const response = await fetch(`/api/v1/profiles/${profile.id}/draft`);
+    const draft = await response.json();
+    const dns = JSON.parse(draft.buffers.dns);
+    dns.rules = [];
+    const saved = await fetch(`/api/v1/profiles/${profile.id}/draft`, {
+      method: "PUT", headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken, "If-Match": response.headers.get("ETag")! },
+      body: JSON.stringify({ buffers: { ...draft.buffers, dns: JSON.stringify(dns), route: '{"final":"direct"}' }, bindings: [], editorState: draft.editorState })
+    });
+    if (!saved.ok) throw new Error(`fixture save failed: ${saved.status}`);
+  });
 
   await page.goto("/inbounds");
   await expect(page.getByRole("heading", { name: "入站配置", exact: true })).toBeVisible();
@@ -59,20 +75,21 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
   const profileEditor = page.getByRole("dialog", { name: "编辑独立入站副本" });
   await expect(profileEditor.getByText("协议嗅探", { exact: true })).toHaveCount(0);
   await expect(profileEditor.getByText("覆盖目标地址", { exact: true })).toHaveCount(0);
-  await profileEditor.getByRole("button", { name: "保存入站配置" }).click();
-  await expect(page.locator(".save-status")).toContainText("草稿已保存");
+  await expect(profileEditor.getByRole("button", { name: "保存为独立入站" })).toBeVisible();
+  await profileEditor.getByRole("button", { name: "关闭对话框" }).click();
 
   const persisted = await page.evaluate(async () => {
     const resources = await (await fetch("/api/v1/inbound-resources")).json() as Array<{ id: string }>;
     const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
     const profile = profiles.find((item) => item.name === "入站 E2E 配置");
-    const draft = await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { buffers: Record<string, string> };
-    return { resourceId: resources[0]?.id ?? "", inbounds: draft.buffers.inbounds, route: draft.buffers.route };
+    const draft = await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { buffers: Record<string, string>; editorState: { inbounds: { resourceBindings: unknown[] } } };
+    return { resourceId: resources[0]?.id ?? "", inbounds: draft.buffers.inbounds, route: draft.buffers.route, bindings: draft.editorState.inbounds.resourceBindings };
   });
   expect(persisted.inbounds).not.toContain(persisted.resourceId);
   expect(persisted.inbounds).not.toContain("sourceId");
   expect(persisted.inbounds).not.toContain('"sniff"');
-  expect((JSON.parse(persisted.route) as { rules: Array<Record<string, unknown>> }).rules.some((rule) => (
+  expect(persisted.bindings).toEqual([{ tag: "mixed-in-2", resourceId: persisted.resourceId, sourceTag: "mixed-in" }]);
+  expect(((JSON.parse(persisted.route) as { rules?: Array<Record<string, unknown>> }).rules ?? []).some((rule) => (
     rule.inbound === "mixed-in-2" && rule.action === "sniff"
   ))).toBe(false);
 
@@ -85,6 +102,9 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
 
   await openInboundTab(page);
   await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19090");
+  await page.locator("[data-validate]").click();
+  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19091");
+  await expect(page.locator(".errors")).toContainText("配置检查通过");
 
   await page.goto("/inbounds");
   await page.getByRole("button", { name: "删除 mixed-in" }).click();
@@ -94,7 +114,33 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
   await openInboundTab(page);
   await page.reload();
   await page.getByRole("tab", { name: "入站", exact: true }).click();
-  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19090");
+  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19091");
+  await page.locator("[data-validate]").click();
+  await expect(page.locator(".errors")).toContainText("同步引用");
+  await expect(page.locator(".errors")).toContainText("请重新关联或解除关联");
+  await page.getByRole("button", { name: "解除关联 mixed-in-2", exact: true }).click();
+  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" }).locator("em")).toHaveText("独立配置");
+  await expect(page.locator(".save-status")).toContainText("草稿已保存");
+  await page.locator("[data-validate]").click();
+  await expect(page.locator(".errors")).toContainText("配置检查通过");
+
+  await page.goto("/inbounds");
+  await page.getByRole("button", { name: "新建入站配置", exact: true }).click();
+  const replacement = page.getByRole("dialog", { name: "新建入站配置" });
+  await replacement.locator('input[name="tag"]').fill("shared-source");
+  await replacement.locator('input[type="number"]').first().fill("19100");
+  await replacement.getByRole("button", { name: "新建入站配置", exact: true }).click();
+  await expect(page.locator(".resource-row")).toContainText("shared-source");
+  await openInboundTab(page);
+  await page.getByRole("button", { name: "关联源资源 mixed-in", exact: true }).click();
+  const association = page.getByRole("dialog", { name: "关联入站资源", exact: true });
+  await association.getByRole("radio", { name: "关联 shared-source" }).check();
+  await association.getByRole("button", { name: "确认关联", exact: true }).click();
+  const linked = page.locator(".entry-row").filter({ has: page.getByRole("button", { name: "编辑 mixed-in", exact: true }) });
+  await expect(linked).toContainText("127.0.0.1:19100");
+  await expect(linked.locator("strong")).toHaveText("mixed-in");
+  await expect(linked.locator("em")).toHaveText("已关联源资源");
+  await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
   await page.setViewportSize({ width: 390, height: 844 });
   await page.evaluate(() => { document.documentElement.dataset.theme = "dark"; });
@@ -106,4 +152,8 @@ test("入站资源导入后成为与源配置无关的深拷贝", async ({ page 
   await page.getByLabel("确认名称").fill("入站 E2E 配置");
   await page.getByRole("dialog", { name: "删除档案" }).getByRole("button", { name: "删除" }).click();
   await expect(page.getByRole("button", { name: /入站 E2E 配置/ })).toHaveCount(0);
+  await page.goto("/inbounds");
+  await page.getByRole("button", { name: "删除 shared-source" }).click();
+  await page.getByRole("dialog", { name: "删除入站配置" }).getByRole("button", { name: "确认删除" }).click();
+  await expect(page.locator(".resource-row")).toHaveCount(0);
 });
