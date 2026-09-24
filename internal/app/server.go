@@ -53,6 +53,8 @@ type Dependencies struct {
 	// Listener lets an isolated caller reserve a loopback port before the
 	// server starts. Production callers leave it nil.
 	Listener net.Listener
+	// EnableServerReferenceResolution is an internal rollout/test option.
+	EnableServerReferenceResolution bool
 }
 
 // Server owns the local HTTP server and the exclusive application lock.
@@ -198,7 +200,11 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	}
 	checker := configgen.NewChecker(layout.WorkDir, configgen.ExecRunner{Environment: append([]string(nil), deps.CoreEnvironment...)}, 30*time.Second, 64<<10)
 	operation := core.NewOperationLock()
-	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, operation, clock)
+	var configOptions []configgen.HandlerOption
+	if deps.EnableServerReferenceResolution {
+		configOptions = append(configOptions, configgen.WithReferenceSources(inboundService, subscriptionService))
+	}
+	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, operation, clock, configOptions...)
 	coreStore := core.NewStore(layout.CoreFile)
 	coreLog, err := core.NewBoundedLog(layout.CoreLog, 1<<20, 16<<10)
 	if err != nil {
@@ -274,6 +280,8 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	runtimeService := runtimeapi.NewService(layout, coreManager)
 	profileService.SetDeleteGuard(coordinator)
 	authHandler := auth.NewHandler(authStore)
+	capabilityResponse := capabilities.PhaseOne
+	capabilityResponse.ServerReferenceResolution = configHandler.ServerReferenceResolution()
 	handler := httpapi.NewRouter(httpapi.Dependencies{
 		ProfileHandler: profile.NewHandler(profileService, func(ctx context.Context, profileID string, revision uint64) *profile.DraftSaveOutcome {
 			behavior, err := settingsStore.GetCore()
@@ -315,7 +323,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		Authenticate:        authHandler.Middleware,
 		RequireCSRF:         auth.RequireCSRF,
 		AuthHandler:         authHandler,
-		CapabilityHandler:   capabilities.NewHandler(capabilities.PhaseOne),
+		CapabilityHandler:   capabilities.NewHandler(capabilityResponse),
 		WebUI:               webui.Handler(),
 	})
 	keepLock = true

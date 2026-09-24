@@ -52,16 +52,19 @@ type ValidateResult struct {
 // candidate remains in config.staging-<profileID>. It has no core lifecycle
 // dependency and never writes layout.ConfigDir.
 type Handler struct {
-	layout    paths.Layout
-	profiles  *profile.Service
-	rules     *rules.Service
-	generator *Generator
-	checker   *Checker
-	gate      OperationGate
-	clock     func() time.Time
+	layout             paths.Layout
+	profiles           *profile.Service
+	rules              *rules.Service
+	generator          *Generator
+	checker            *Checker
+	gate               OperationGate
+	clock              func() time.Time
+	inboundSource      InboundSource
+	subscriptionSource SubscriptionSource
+	resolveReferences  bool
 }
 
-func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules.Service, generator *Generator, checker *Checker, gate OperationGate, clock func() time.Time) *Handler {
+func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules.Service, generator *Generator, checker *Checker, gate OperationGate, clock func() time.Time, options ...HandlerOption) *Handler {
 	if generator == nil {
 		generator = NewGenerator()
 	}
@@ -74,7 +77,11 @@ func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules
 	if clock == nil {
 		clock = time.Now
 	}
-	return &Handler{layout: layout, profiles: profiles, rules: resources, generator: generator, checker: checker, gate: gate, clock: clock}
+	h := &Handler{layout: layout, profiles: profiles, rules: resources, generator: generator, checker: checker, gate: gate, clock: clock}
+	for _, option := range options {
+		option(h)
+	}
+	return h
 }
 
 // Layout exposes the fixed managed paths to the application copy coordinator.
@@ -87,7 +94,7 @@ func (h *Handler) Layout() paths.Layout {
 }
 
 func (h *Handler) Preview(ctx context.Context, profileID string, revision uint64) (PreviewResult, error) {
-	draft, snapshot, release, err := h.loadSnapshot(ctx, profileID, revision)
+	draft, snapshot, digests, release, err := h.loadSnapshot(ctx, profileID, revision)
 	if err != nil {
 		return PreviewResult{}, err
 	}
@@ -100,6 +107,7 @@ func (h *Handler) Preview(ctx context.Context, profileID string, revision uint64
 	if err != nil {
 		return PreviewResult{}, err
 	}
+	h.includeReferenceDigests(&output, digests)
 	return previewResult(revision, output), nil
 }
 
@@ -132,8 +140,12 @@ func (h *Handler) validateInOperation(ctx context.Context, profileID string, rev
 		})
 	}()
 
-	draft, snapshot, release, err := h.loadSnapshot(ctx, profileID, revision)
+	draft, snapshot, digests, release, err := h.loadSnapshot(ctx, profileID, revision)
 	if err != nil {
+		var field *apierror.HTTPError
+		if errors.As(err, &field) && field.Public.Stage == "resolve_references" {
+			return ValidateResult{PreviewResult: PreviewResult{Revision: revision, Errors: []apierror.Error{field.Public}}, Stage: field.Public.Stage, Code: field.Public.Code, Message: field.Public.Message}, nil
+		}
 		return ValidateResult{}, err
 	}
 	defer release()
@@ -145,6 +157,7 @@ func (h *Handler) validateInOperation(ctx context.Context, profileID string, rev
 	if err != nil {
 		return ValidateResult{}, err
 	}
+	h.includeReferenceDigests(&output, digests)
 	result = ValidateResult{PreviewResult: previewResult(revision, output), Stage: "core_check"}
 	staging, err := h.layout.StagingConfigDir(profileID)
 	if err != nil {
@@ -175,22 +188,45 @@ func (h *Handler) validateInOperation(ctx context.Context, profileID string, rev
 	return result, nil
 }
 
-func (h *Handler) loadSnapshot(ctx context.Context, profileID string, revision uint64) (profile.Draft, rules.Snapshot, func(), error) {
+func (h *Handler) loadSnapshot(ctx context.Context, profileID string, revision uint64) (profile.Draft, rules.Snapshot, map[string]string, func(), error) {
 	if h == nil || h.profiles == nil || h.rules == nil {
-		return profile.Draft{}, rules.Snapshot{}, func() {}, errors.New("配置服务不可用")
+		return profile.Draft{}, rules.Snapshot{}, nil, func() {}, errors.New("配置服务不可用")
 	}
 	draft, _, err := h.profiles.GetDraft(ctx, profileID)
 	if err != nil {
-		return profile.Draft{}, rules.Snapshot{}, func() {}, err
+		return profile.Draft{}, rules.Snapshot{}, nil, func() {}, err
 	}
 	if draft.Revision != revision {
-		return profile.Draft{}, rules.Snapshot{}, func() {}, profile.RevisionConflict{LatestRevision: draft.Revision}
+		return profile.Draft{}, rules.Snapshot{}, nil, func() {}, profile.RevisionConflict{LatestRevision: draft.Revision}
+	}
+	var digests map[string]string
+	if h.resolveReferences {
+		resolved, err := h.resolveSnapshot(ctx, draft)
+		if err != nil {
+			return profile.Draft{}, rules.Snapshot{}, nil, func() {}, err
+		}
+		draft, digests = resolved.Draft, resolved.ResourceDigests
 	}
 	snapshot, release, err := h.rules.SnapshotForBindings(ctx, draft.Bindings)
 	if err != nil {
-		return profile.Draft{}, rules.Snapshot{}, func() {}, err
+		return profile.Draft{}, rules.Snapshot{}, nil, func() {}, err
 	}
-	return draft, snapshot, release, nil
+	return draft, snapshot, digests, release, nil
+}
+
+func (h *Handler) includeReferenceDigests(output *Output, digests map[string]string) {
+	if !h.resolveReferences {
+		return
+	}
+	merged := make(map[string]string, len(output.ResourceDigests)+len(digests))
+	for key, value := range output.ResourceDigests {
+		merged["rule:"+key] = value
+	}
+	output.ResourceDigests = merged
+	for key, value := range digests {
+		output.ResourceDigests[key] = value
+	}
+	output.Digest = digestOutput(output.Files, output.ResourceDigests)
 }
 
 func previewResult(revision uint64, output Output) PreviewResult {

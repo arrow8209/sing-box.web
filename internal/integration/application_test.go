@@ -320,7 +320,7 @@ func newApplicationCoordinator(t *testing.T, env *integrationEnvironment, checkE
 	return newApplicationCoordinatorWithFactory(t, env, checkErr, &testProcessFactory{})
 }
 
-func newApplicationCoordinatorWithFactory(t *testing.T, env *integrationEnvironment, checkErr error, factory core.ProcessFactory) (*core.Manager, *application.Coordinator, *applicationCheckRunner, *core.Store) {
+func newApplicationCoordinatorWithFactory(t *testing.T, env *integrationEnvironment, checkErr error, factory core.ProcessFactory, options ...configgen.HandlerOption) (*core.Manager, *application.Coordinator, *applicationCheckRunner, *core.Store) {
 	t.Helper()
 	writeCoreScript(t, env.layout.CoreBinary, "1.13.0", 0, false)
 	operation := core.NewOperationLock()
@@ -328,7 +328,8 @@ func newApplicationCoordinatorWithFactory(t *testing.T, env *integrationEnvironm
 	manager := core.NewManagerWithFactory(env.layout, store, nil, operation, factory)
 	runner := &applicationCheckRunner{manager: manager, err: checkErr}
 	checker := configgen.NewChecker(env.workDir, runner, time.Second, 64<<10)
-	configuration := configgen.NewHandler(env.layout, env.profiles, env.rules, nil, checker, operation, time.Now)
+	configuration := configgen.NewHandler(env.layout, env.profiles, env.rules, nil, checker, operation, time.Now, options...)
+	env.config = configuration
 	coordinator := application.NewCoordinator(env.profiles, configuration, nil, manager, operation)
 	return manager, coordinator, runner, store
 }
