@@ -24,8 +24,8 @@ The Playwright harness serves assets embedded by Go. After SPA changes, browser 
 
 | 环境 | Web 访问端口 | Mixed 入站端口 | Clash API 默认端口 |
 | --- | --- | --- | --- |
-| 发布环境 | `50015` | `50016` | `50024` |
-| 开发/测试环境 | `50018` | `50019` | `50017` |
+| 发布环境 | `50022` | `50023` | `50024` |
+| 开发/测试环境 | `50015` | `50016` | `50017` |
 
 Web 服务监听地址保持 `0.0.0.0`。Clash API 默认端口由 `data/settings.json` 的 `defaultApiPort` 读取，用于新建档案；已有档案的监听地址保留。未经用户明确指示，不要更改以上端口约定。
 
