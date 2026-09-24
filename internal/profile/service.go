@@ -14,6 +14,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"singbox-web/internal/configref"
 	"singbox-web/internal/paths"
 	"singbox-web/internal/templates"
 )
@@ -409,6 +410,12 @@ func (s *Service) RecordValidation(ctx context.Context, profileID string, revisi
 	}
 	result.Revision = revision
 	result.CheckedAt = result.CheckedAt.UTC()
+	result.ResourceDigests = cloneStringMap(result.ResourceDigests)
+	draft, err := s.store.readDraft(profileID)
+	if err != nil {
+		return err
+	}
+	result.Stale = validationStale(result, s.resourceDigests, s.resourceKnown, draftDependencyKeys(draft))
 	metas[index].LastValidation = &result
 	return s.store.writeMetas(metas)
 }
@@ -439,14 +446,16 @@ func (s *Service) MarkResourcesChanged(ctx context.Context, resourceIDs []string
 		if err != nil {
 			continue
 		}
-		for _, binding := range draft.Bindings {
-			if binding.Enabled {
-				_, ok := wanted[binding.ResourceID]
-				if !ok {
-					continue
-				}
+		for _, key := range draftDependencyKeys(draft) {
+			_, exact := wanted[key]
+			_, legacy := wanted[strings.TrimPrefix(key, "rule:")]
+			if exact || (strings.HasPrefix(key, "rule:") && legacy) {
 				if !metas[index].NeedsApply {
 					metas[index].NeedsApply = true
+					changed = true
+				}
+				if metas[index].LastValidation != nil && !metas[index].LastValidation.Stale {
+					metas[index].LastValidation.Stale = true
 					changed = true
 				}
 				break
@@ -491,6 +500,13 @@ func (s *Service) MarkApplied(ctx context.Context, result AppliedResult) error {
 	validation := result.Validation
 	validation.Revision = result.Revision
 	validation.CheckedAt = validation.CheckedAt.UTC()
+	validation.ResourceDigests = cloneStringMap(result.ResourceDigests)
+	validation.ConfigDigest = result.Digest
+	draft, err := s.store.readDraft(result.ProfileID)
+	if err != nil {
+		return err
+	}
+	validation.Stale = validationStale(validation, s.resourceDigests, s.resourceKnown, draftDependencyKeys(draft))
 	for current := range metas {
 		metas[current].ConfigCurrent = current == index
 	}
@@ -509,10 +525,48 @@ func (s *Service) MarkApplied(ctx context.Context, result AppliedResult) error {
 	return s.store.writeMetas(metas)
 }
 
-// ReconcileResourceDigests records the currently usable rule files and marks
-// every profile whose enabled bindings no longer match its applied snapshot.
-// It is invoked at startup and after a durable rule status write.
+// ReconcileResourceDigests keeps the legacy rule hook. Rule updates replace
+// only rule keys; inbound and subscription digests remain intact.
 func (s *Service) ReconcileResourceDigests(ctx context.Context, current map[string]string) error {
+	typed := make(map[string]string, len(current))
+	for id, digest := range current {
+		typed["rule:"+id] = digest
+	}
+	return s.ReconcileTypedResourceDigests(ctx, "rule", typed)
+}
+
+// ReconcileTypedResourceDigests replaces one resource type after a durable
+// source write or during startup, never erasing other resource types.
+func (s *Service) ReconcileTypedResourceDigests(ctx context.Context, kind string, current map[string]string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if kind != "rule" && kind != "inbound" && kind != "subscription" {
+		return fmt.Errorf("未知资源类型")
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.resourceDigests == nil {
+		s.resourceDigests = map[string]string{}
+	}
+	prefix := kind + ":"
+	for key := range s.resourceDigests {
+		if strings.HasPrefix(key, prefix) {
+			delete(s.resourceDigests, key)
+		}
+	}
+	for key, value := range current {
+		if strings.HasPrefix(key, prefix) {
+			s.resourceDigests[key] = value
+		}
+	}
+	s.resourceKnown = true
+	return s.reconcileResourceStatusLocked()
+}
+
+// ReconcileAllResourceDigests initializes all source types in one pass so
+// startup never creates a false stale status from a partially loaded table.
+func (s *Service) ReconcileAllResourceDigests(ctx context.Context, current map[string]string) error {
 	if err := ctx.Err(); err != nil {
 		return err
 	}
@@ -520,6 +574,10 @@ func (s *Service) ReconcileResourceDigests(ctx context.Context, current map[stri
 	defer s.mu.Unlock()
 	s.resourceDigests = cloneStringMap(current)
 	s.resourceKnown = true
+	return s.reconcileResourceStatusLocked()
+}
+
+func (s *Service) reconcileResourceStatusLocked() error {
 	metas, err := s.refreshMetas()
 	if err != nil {
 		return err
@@ -533,9 +591,16 @@ func (s *Service) ReconcileResourceDigests(ctx context.Context, current map[stri
 		if err != nil {
 			continue
 		}
-		if !bindingsMatchDigests(draft.Bindings, metas[index].AppliedResourceDigests, current) && !metas[index].NeedsApply {
+		if !bindingsMatchDigests(draft, metas[index].AppliedResourceDigests, s.resourceDigests) && !metas[index].NeedsApply {
 			metas[index].NeedsApply = true
 			changed = true
+		}
+		if metas[index].LastValidation != nil {
+			stale := validationStale(*metas[index].LastValidation, s.resourceDigests, s.resourceKnown, draftDependencyKeys(draft))
+			if stale && !metas[index].LastValidation.Stale {
+				metas[index].LastValidation.Stale = true
+				changed = true
+			}
 		}
 	}
 	if !changed {
@@ -549,21 +614,55 @@ func (s *Service) enabledBindingsMatchCurrent(profileID string, digests map[stri
 	if err != nil {
 		return false
 	}
-	return bindingsMatchDigests(draft.Bindings, digests, s.resourceDigests)
+	return bindingsMatchDigests(draft, digests, s.resourceDigests)
 }
 
-func bindingsMatchDigests(bindings []RuleBinding, expected, current map[string]string) bool {
-	for _, binding := range bindings {
-		if !binding.Enabled {
-			continue
+func bindingsMatchDigests(draft Draft, expected, current map[string]string) bool {
+	for _, key := range draftDependencyKeys(draft) {
+		expectedDigest, expectedOK := expected[key]
+		if !expectedOK && strings.HasPrefix(key, "rule:") {
+			expectedDigest, expectedOK = expected[strings.TrimPrefix(key, "rule:")]
 		}
-		expectedDigest, expectedOK := expected[binding.ResourceID]
-		currentDigest, currentOK := current[binding.ResourceID]
+		currentDigest, currentOK := current[key]
 		if !expectedOK || !currentOK || expectedDigest != currentDigest {
 			return false
 		}
 	}
 	return true
+}
+
+func draftDependencyKeys(draft Draft) []string {
+	keys := []string{}
+	for _, binding := range draft.Bindings {
+		if binding.Enabled {
+			keys = append(keys, "rule:"+binding.ResourceID)
+		}
+	}
+	model, err := configref.DecodeLegacy(draft.EditorState)
+	if err != nil {
+		return append(keys, "invalid:references")
+	}
+	return append(keys, model.ResourceKeys()...)
+}
+
+func validationStale(summary ValidationSummary, current map[string]string, known bool, keys []string) bool {
+	if !known {
+		return false
+	}
+	if summary.ConfigDigest == "" || summary.ResourceDigests == nil {
+		return true
+	}
+	for _, key := range keys {
+		if summary.ResourceDigests[key] == "" || current[key] == "" {
+			return true
+		}
+	}
+	for key, digest := range summary.ResourceDigests {
+		if current[key] != digest {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) ReferencesForResource(ctx context.Context, resourceID string) ([]Reference, error) {

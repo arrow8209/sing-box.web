@@ -268,7 +268,7 @@ func (c *Coordinator) apply(ctx context.Context, request ApplyRequest, autoReloa
 	applied := profile.AppliedResult{
 		ProfileID: request.ProfileID, Revision: request.Revision, Digest: validation.Digest,
 		ResourceDigests: validation.ResourceDigests, AppliedAt: now,
-		Validation: profile.ValidationSummary{Valid: true, Stage: validation.Stage, Message: validation.Message, CheckedAt: now},
+		Validation: profile.ValidationSummary{Valid: true, Stage: validation.Stage, Message: validation.Message, CheckedAt: now, ResourceDigests: validation.ResourceDigests, ConfigDigest: validation.Digest},
 	}
 	if err := c.profiles.MarkApplied(ctx, applied); err != nil {
 		operation.SetStage("restore_config")

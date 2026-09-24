@@ -60,6 +60,45 @@ func TestServicePersistsCompleteInboundAndReturnsCredentialFreeSummary(t *testin
 	}
 }
 
+func TestInboundChangeHookRunsAfterUnlockAndUsesContentDigest(t *testing.T) {
+	layout, err := paths.Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := Open(layout, nil, bytes.NewReader(bytes.Repeat([]byte{0x42}, 16)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observed []map[string]string
+	service.SetOnChange(func(ctx context.Context, _ string) {
+		digests, e := service.CurrentDigests(ctx)
+		if e != nil {
+			t.Error(e)
+		}
+		observed = append(observed, digests)
+	})
+	created, err := service.Create(context.Background(), Input{Mode: ModeCustom, Config: json.RawMessage(`{"type":"mixed","tag":"in","listen_port":7891}`)})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "inbound:" + created.ID
+	if len(observed) != 1 || observed[0][key] == "" {
+		t.Fatal(observed)
+	}
+	if _, err := service.Replace(context.Background(), created.ID, Input{Mode: ModeCustom, Config: json.RawMessage(`{"type":"mixed","tag":"in","listen_port":7892}`)}); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 2 || observed[0][key] == observed[1][key] {
+		t.Fatal(observed)
+	}
+	if err := service.Delete(context.Background(), created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 3 || observed[2][key] != "" {
+		t.Fatal(observed)
+	}
+}
+
 func TestServiceEnforcesUniqueTagsAndStructuredTypes(t *testing.T) {
 	layout, err := paths.Resolve(t.TempDir())
 	if err != nil {

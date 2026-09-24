@@ -345,6 +345,119 @@ func TestMarkResourcesChangedIgnoresDisabledBindings(t *testing.T) {
 	}
 }
 
+func TestResourceDigestsMergeAndValidationExpiresWithoutDraftRevision(t *testing.T) {
+	service, layout := newTestService(t)
+	ctx := context.Background()
+	meta, draft, err := service.Create(ctx, CreateInput{Name: "引用档案"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	other, otherDraft, err := service.Create(ctx, CreateInput{Name: "独立档案"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const sid = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+	config := `[{"type":"selector","tag":"组","outbounds":["node"]},{"type":"socks","tag":"node","server":"old"}]`
+	state := `{"version":1,"groups":[{"id":"g","tag":"组","type":"selector","hidden":false,"include":"","exclude":"","icon":"","references":[{"kind":"subscription","subscriptionId":"` + sid + `","tag":"源","resolvedTags":["node"]}],"runtimeTags":["node"]}],"generatedTags":["node"]}`
+	draft, _, err = service.SaveDraft(ctx, meta.ID, RevisionETag(draft.Revision), DraftInput{Buffers: map[string]string{"outbounds": config}, EditorState: map[string]json.RawMessage{"outbounds": json.RawMessage(state)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	otherDraft, _, err = service.SaveDraft(ctx, other.ID, RevisionETag(otherDraft.Revision), DraftInput{Buffers: map[string]string{"outbounds": `[]`}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	initial := map[string]string{"subscription:" + sid: "v1", "rule:resource-a": "rule-v1"}
+	if err := service.ReconcileAllResourceDigests(ctx, initial); err != nil {
+		t.Fatal(err)
+	}
+	apply := func(id string, revision uint64, digests map[string]string) {
+		t.Helper()
+		if err := service.MarkApplied(ctx, AppliedResult{ProfileID: id, Revision: revision, Digest: "config-v1", ResourceDigests: digests, AppliedAt: testClock(), Validation: ValidationSummary{Valid: true, Stage: "core_check", CheckedAt: testClock()}}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	apply(meta.ID, draft.Revision, map[string]string{"subscription:" + sid: "v1"})
+	apply(other.ID, otherDraft.Revision, map[string]string{})
+	if err := service.RecordValidation(ctx, meta.ID, draft.Revision, ValidationSummary{Valid: true, Stage: "core_check", ConfigDigest: "config-v1", ResourceDigests: map[string]string{"subscription:" + sid: "v1"}, CheckedAt: testClock()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ReconcileTypedResourceDigests(ctx, "subscription", map[string]string{"subscription:" + sid: "v2"}); err != nil {
+		t.Fatal(err)
+	}
+	metas, err := service.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range metas {
+		if m.ID == meta.ID {
+			if !m.NeedsApply || m.LastValidation == nil || !m.LastValidation.Stale || m.DraftRevision != draft.Revision {
+				t.Fatalf("stale linked profile: %+v", m)
+			}
+		} else if m.ID == other.ID && m.NeedsApply {
+			t.Fatalf("unrelated profile changed: %+v", m)
+		}
+	}
+	if service.resourceDigests["rule:resource-a"] != "rule-v1" {
+		t.Fatal("subscription update erased rule digest")
+	}
+	if err := service.ReconcileResourceDigests(ctx, map[string]string{"resource-a": "rule-v2"}); err != nil {
+		t.Fatal(err)
+	}
+	if service.resourceDigests["subscription:"+sid] != "v2" {
+		t.Fatal("rule update erased subscription digest")
+	}
+	// Reopening and reconciling all source types preserves the stale conclusion.
+	factory, err := templates.NewFactory(bytes.NewReader(bytes.Repeat([]byte{0x11}, 128)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	reopened, err := Open(layout, factory, testBindingSource{}, testClock, bytes.NewReader(bytes.Repeat([]byte{0x55}, 64)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := reopened.ReconcileAllResourceDigests(ctx, map[string]string{"subscription:" + sid: "v2", "rule:resource-a": "rule-v2"}); err != nil {
+		t.Fatal(err)
+	}
+	metas, err = reopened.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, m := range metas {
+		if m.ID == meta.ID && (!m.NeedsApply || m.LastValidation == nil || !m.LastValidation.Stale) {
+			t.Fatalf("restart lost stale state: %+v", m)
+		}
+	}
+}
+
+func TestOlderApplyCannotClearNewSourceChange(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+	meta, draft, err := service.Create(ctx, CreateInput{Name: "并发引用"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	const id = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+	draft, _, err = service.SaveDraft(ctx, meta.ID, RevisionETag(draft.Revision), DraftInput{Buffers: map[string]string{"inbounds": `[{"type":"mixed","tag":"local"}]`}, EditorState: map[string]json.RawMessage{"inbounds": json.RawMessage(`{"version":1,"managedSniffRules":[],"resourceBindings":[{"tag":"local","resourceId":"` + id + `","sourceTag":"source"}]}`)}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "inbound:" + id
+	if err := service.ReconcileAllResourceDigests(ctx, map[string]string{key: "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.MarkApplied(ctx, AppliedResult{ProfileID: meta.ID, Revision: draft.Revision, Digest: "old-config", ResourceDigests: map[string]string{key: "old"}, AppliedAt: testClock(), Validation: ValidationSummary{Valid: true, CheckedAt: testClock()}}); err != nil {
+		t.Fatal(err)
+	}
+	metas, err := service.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !metas[0].NeedsApply || metas[0].LastValidation == nil || !metas[0].LastValidation.Stale {
+		t.Fatalf("older apply cleared change: %+v", metas[0])
+	}
+}
+
 func TestServiceReopensDraftAndQuarantineState(t *testing.T) {
 	service, layout := newTestService(t)
 	meta, _, err := service.Create(context.Background(), CreateInput{Name: "重启"})

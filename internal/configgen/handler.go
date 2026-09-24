@@ -137,6 +137,7 @@ func (h *Handler) validateInOperation(ctx context.Context, profileID string, rev
 		}
 		_ = h.profiles.RecordValidation(context.Background(), profileID, revision, profile.ValidationSummary{
 			Valid: result.Valid, Stage: result.Stage, Message: result.Message, CheckedAt: h.clock(),
+			ResourceDigests: result.ResourceDigests, ConfigDigest: result.Digest,
 		})
 	}()
 

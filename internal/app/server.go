@@ -192,9 +192,37 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	if err := profileService.ReconcileResourceDigests(context.Background(), currentDigests); err != nil {
+	allDigests := map[string]string{}
+	for id, digest := range currentDigests {
+		allDigests["rule:"+id] = digest
+	}
+	inboundDigests, err := inboundService.CurrentDigests(context.Background())
+	if err != nil {
 		return nil, err
 	}
+	for key, digest := range inboundDigests {
+		allDigests[key] = digest
+	}
+	subscriptionDigests, err := subscriptionService.CurrentDigests(context.Background())
+	if err != nil {
+		return nil, err
+	}
+	for key, digest := range subscriptionDigests {
+		allDigests[key] = digest
+	}
+	if err := profileService.ReconcileAllResourceDigests(context.Background(), allDigests); err != nil {
+		return nil, err
+	}
+	inboundService.SetOnChange(func(ctx context.Context, _ string) {
+		if digests, err := inboundService.CurrentDigests(ctx); err == nil {
+			_ = profileService.ReconcileTypedResourceDigests(ctx, "inbound", digests)
+		}
+	})
+	subscriptionService.SetOnChange(func(ctx context.Context, _ string) {
+		if digests, err := subscriptionService.CurrentDigests(ctx); err == nil {
+			_ = profileService.ReconcileTypedResourceDigests(ctx, "subscription", digests)
+		}
+	})
 	if err := configgen.RecoverStagingDirectories(layout.WorkDir); err != nil {
 		return nil, fmt.Errorf("恢复档案检查目录: %w", err)
 	}

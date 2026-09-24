@@ -26,11 +26,14 @@ type Meta struct {
 }
 
 type ValidationSummary struct {
-	Valid     bool      `json:"valid"`
-	Revision  uint64    `json:"revision"`
-	CheckedAt time.Time `json:"checkedAt"`
-	Stage     string    `json:"stage"`
-	Message   string    `json:"message"`
+	Valid           bool              `json:"valid"`
+	Revision        uint64            `json:"revision"`
+	CheckedAt       time.Time         `json:"checkedAt"`
+	Stage           string            `json:"stage"`
+	Message         string            `json:"message"`
+	ResourceDigests map[string]string `json:"resourceDigests,omitempty"`
+	ConfigDigest    string            `json:"configDigest,omitempty"`
+	Stale           bool              `json:"stale,omitempty"`
 }
 
 type RuleBinding = rules.RuleBinding

@@ -3,12 +3,31 @@
 package configref
 
 import (
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"regexp"
 
 	"singbox-web/internal/apierror"
 )
+
+func InboundDigest(mode string, config json.RawMessage) string {
+	h := sha256.New()
+	h.Write([]byte(mode))
+	h.Write([]byte{0})
+	h.Write(config)
+	return hex.EncodeToString(h.Sum(nil))
+}
+
+func SubscriptionDigest(outbounds []json.RawMessage) string {
+	h := sha256.New()
+	for _, node := range outbounds {
+		h.Write(node)
+		h.Write([]byte{0})
+	}
+	return hex.EncodeToString(h.Sum(nil))
+}
 
 const Stage = "resolve_references"
 

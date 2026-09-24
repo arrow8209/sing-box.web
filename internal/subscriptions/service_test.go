@@ -75,6 +75,49 @@ func TestServicePersistsCompleteOutboundsAndReturnsCredentialFreeSummaries(t *te
 	}
 }
 
+func TestSubscriptionChangeHookRunsAfterUnlockAndUsesOrderedNodes(t *testing.T) {
+	layout, err := paths.Resolve(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	service, err := Open(layout, nil, bytes.NewReader(bytes.Repeat([]byte{0x43}, 16)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var observed []map[string]string
+	service.SetOnChange(func(ctx context.Context, _ string) {
+		digests, e := service.CurrentDigests(ctx)
+		if e != nil {
+			t.Error(e)
+		}
+		observed = append(observed, digests)
+	})
+	nodes := []json.RawMessage{json.RawMessage(`{"type":"direct","tag":"a"}`), json.RawMessage(`{"type":"block","tag":"b"}`)}
+	created, err := service.Create(context.Background(), Input{Name: "source", Outbounds: nodes})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "subscription:" + created.ID
+	if _, err := service.Replace(context.Background(), created.ID, Input{Name: "renamed", Outbounds: nodes}); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 2 || observed[0][key] != observed[1][key] {
+		t.Fatal("display name changed digest", observed)
+	}
+	if _, err := service.Replace(context.Background(), created.ID, Input{Name: "renamed", Outbounds: []json.RawMessage{nodes[1], nodes[0]}}); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 3 || observed[1][key] == observed[2][key] {
+		t.Fatal("node order omitted", observed)
+	}
+	if err := service.Delete(context.Background(), created.ID); err != nil {
+		t.Fatal(err)
+	}
+	if len(observed) != 4 || observed[3][key] != "" {
+		t.Fatal("deletion digest remains", observed)
+	}
+}
+
 func TestServiceReplacesAndDeletesWholeSubscription(t *testing.T) {
 	layout, err := paths.Resolve(t.TempDir())
 	if err != nil {

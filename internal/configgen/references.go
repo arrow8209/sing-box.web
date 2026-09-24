@@ -2,8 +2,6 @@ package configgen
 
 import (
 	"bytes"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -40,19 +38,10 @@ func rawEqual(a, b json.RawMessage) bool {
 func object(raw json.RawMessage) rawObject { var o rawObject; _ = json.Unmarshal(raw, &o); return o }
 
 func InboundDigest(source inbounds.Inbound) string {
-	h := sha256.New()
-	h.Write([]byte(source.Mode))
-	h.Write([]byte{0})
-	h.Write(source.Config)
-	return hex.EncodeToString(h.Sum(nil))
+	return configref.InboundDigest(string(source.Mode), source.Config)
 }
 func SubscriptionDigest(source subscriptions.Subscription) string {
-	h := sha256.New()
-	for _, node := range source.Outbounds {
-		h.Write(node)
-		h.Write([]byte{0})
-	}
-	return hex.EncodeToString(h.Sum(nil))
+	return configref.SubscriptionDigest(source.Outbounds)
 }
 
 // ReferenceInput copies the draft and makes its raw user buffers authoritative.

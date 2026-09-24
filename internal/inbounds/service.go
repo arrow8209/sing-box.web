@@ -13,6 +13,7 @@ import (
 	"time"
 	"unicode/utf8"
 
+	"singbox-web/internal/configref"
 	"singbox-web/internal/paths"
 )
 
@@ -34,10 +35,30 @@ type configHeader struct {
 }
 
 type Service struct {
-	store  *store
-	clock  func() time.Time
-	random io.Reader
-	mu     sync.Mutex
+	store    *store
+	clock    func() time.Time
+	random   io.Reader
+	mu       sync.Mutex
+	onChange func(context.Context, string)
+}
+
+func (s *Service) SetOnChange(hook func(context.Context, string)) { s.onChange = hook }
+
+func (s *Service) CurrentDigests(ctx context.Context) (map[string]string, error) {
+	if err := ctx.Err(); err != nil {
+		return nil, err
+	}
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	items, err := s.store.load()
+	if err != nil {
+		return nil, err
+	}
+	result := make(map[string]string, len(items))
+	for _, item := range items {
+		result["inbound:"+item.ID] = configref.InboundDigest(string(item.Mode), item.Config)
+	}
+	return result, nil
 }
 
 func Open(layout paths.Layout, clock func() time.Time, randomSource io.Reader) (*Service, error) {
@@ -102,7 +123,14 @@ func (s *Service) Create(ctx context.Context, input Input) (Summary, error) {
 		return Summary{}, err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	stored := false
+	changedID := ""
+	defer func() {
+		s.mu.Unlock()
+		if stored && s.onChange != nil {
+			s.onChange(context.Background(), changedID)
+		}
+	}()
 	items, err := s.store.load()
 	if err != nil {
 		return Summary{}, err
@@ -122,6 +150,7 @@ func (s *Service) Create(ctx context.Context, input Input) (Summary, error) {
 	if err := s.store.write(items); err != nil {
 		return Summary{}, err
 	}
+	stored, changedID = true, id
 	return summarize(item), nil
 }
 
@@ -134,7 +163,13 @@ func (s *Service) Replace(ctx context.Context, id string, input Input) (Summary,
 		return Summary{}, err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	stored := false
+	defer func() {
+		s.mu.Unlock()
+		if stored && s.onChange != nil {
+			s.onChange(context.Background(), id)
+		}
+	}()
 	items, err := s.store.load()
 	if err != nil {
 		return Summary{}, err
@@ -150,6 +185,7 @@ func (s *Service) Replace(ctx context.Context, id string, input Input) (Summary,
 	if err := s.store.write(items); err != nil {
 		return Summary{}, err
 	}
+	stored = true
 	return summarize(items[index]), nil
 }
 
@@ -158,7 +194,13 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return err
 	}
 	s.mu.Lock()
-	defer s.mu.Unlock()
+	stored := false
+	defer func() {
+		s.mu.Unlock()
+		if stored && s.onChange != nil {
+			s.onChange(context.Background(), id)
+		}
+	}()
 	items, err := s.store.load()
 	if err != nil {
 		return err
@@ -168,7 +210,11 @@ func (s *Service) Delete(ctx context.Context, id string) error {
 		return ErrNotFound
 	}
 	items = append(append([]Inbound(nil), items[:index]...), items[index+1:]...)
-	return s.store.write(items)
+	if err := s.store.write(items); err != nil {
+		return err
+	}
+	stored = true
+	return nil
 }
 
 func normalizeInput(input Input) (Mode, json.RawMessage, configHeader, error) {
