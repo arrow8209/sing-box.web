@@ -66,16 +66,31 @@ func applyFreezeV2(draft Draft, operation FreezeOperation, verifier FreezeVerifi
 		return Draft{}, bad("freeze.tag", "入站名称冲突")
 	}
 	result := cloneDraft(draft)
-	position := bindings[bindingIndex].Position
+	fullPosition := bindings[bindingIndex].Position
 	if operation.Action == "copy" {
-		position++
+		fullPosition++
 	}
-	if position > len(items) {
-		position = len(items)
+	basePosition := fullPosition
+	for _, binding := range bindings {
+		if binding.Position < fullPosition {
+			basePosition--
+		}
 	}
-	items = slices.Insert(items, position, json.RawMessage(itemText))
+	if basePosition < 0 {
+		basePosition = 0
+	}
+	if basePosition > len(items) {
+		basePosition = len(items)
+	}
+	items = slices.Insert(items, basePosition, json.RawMessage(itemText))
 	result.Buffers["inbounds"] = string(migrationRaw(items))
-	if operation.Action != "copy" {
+	if operation.Action == "copy" {
+		for i := range result.References.Inbounds {
+			if i != bindingIndex && result.References.Inbounds[i].Position >= fullPosition {
+				result.References.Inbounds[i].Position++
+			}
+		}
+	} else {
 		result.References.Inbounds = slices.Delete(result.References.Inbounds, bindingIndex, bindingIndex+1)
 	}
 	var rule json.RawMessage
