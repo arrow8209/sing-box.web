@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("修改订阅后直接检测生成新候选，草稿与 revision 不变", async ({ page }) => {
   await page.goto("/");

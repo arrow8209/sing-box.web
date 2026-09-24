@@ -7,6 +7,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"fmt"
+	"net/http"
+	"net/http/httptest"
+	"net/url"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -45,7 +49,7 @@ func TestEmbeddedTemplatePassesManagedSingBoxCheck(t *testing.T) {
 	}
 
 	workDir := t.TempDir()
-	draft, snapshot, release := createContractDraftAndLocalRules(t, workDir)
+	draft, snapshot, release := createContractDraftAndLocalRules(t, workDir, binary)
 	defer release()
 	output, err := configgen.NewGenerator().Generate(context.Background(), draft, snapshot)
 	if err != nil {
@@ -75,7 +79,7 @@ func readSelection(t *testing.T) selection {
 	return selected
 }
 
-func createContractDraftAndLocalRules(t *testing.T, workDir string) (profile.Draft, rules.Snapshot, func()) {
+func createContractDraftAndLocalRules(t *testing.T, workDir, binary string) (profile.Draft, rules.Snapshot, func()) {
 	t.Helper()
 	layout, err := paths.Resolve(workDir)
 	if err != nil {
@@ -93,6 +97,7 @@ func createContractDraftAndLocalRules(t *testing.T, workDir string) (profile.Dra
 	if err != nil {
 		t.Fatal(err)
 	}
+	service.SetDownloader(rules.NewDownloader(rules.DownloadPolicyForTest(localRuleTransport(t, workDir, binary, factory.ResourceTemplates()))))
 	ids, err := store.EnsureTemplateResources(context.Background(), factory.ResourceTemplates(), nil)
 	if err != nil {
 		t.Fatal(err)
@@ -120,6 +125,72 @@ func createContractDraftAndLocalRules(t *testing.T, workDir string) (profile.Dra
 		t.Fatal(err)
 	}
 	return draft, snapshot, release
+}
+
+type contractRuleTransport struct {
+	baseURL   *url.URL
+	transport *http.Transport
+	paths     map[string]string
+}
+
+func (c contractRuleTransport) RoundTrip(request *http.Request) (*http.Response, error) {
+	path, ok := c.paths[request.URL.String()]
+	if !ok {
+		return nil, fmt.Errorf("unexpected external rule request: %s", request.URL)
+	}
+	local := request.Clone(request.Context())
+	local.URL = c.baseURL.ResolveReference(&url.URL{Path: path})
+	local.Host = local.URL.Host
+	return c.transport.RoundTrip(local)
+}
+
+// Compile synthetic rules with the same verified official binary that checks
+// the generated configuration. Only fixture downloads use the loopback server;
+// template URLs, binary formats and the real core validation remain intact.
+func localRuleTransport(t *testing.T, workDir, binary string, resources []rules.ResourceTemplate) http.RoundTripper {
+	t.Helper()
+	payloads := map[string][]byte{}
+	for name, rule := range map[string]string{
+		"geosite": `{"version":3,"rules":[{"domain_suffix":["example.test"]}]}`,
+		"geoip":   `{"version":3,"rules":[{"ip_cidr":["192.0.2.0/24"]}]}`,
+	} {
+		source := filepath.Join(workDir, name+".json")
+		compiled := filepath.Join(workDir, name+".srs")
+		if err := os.WriteFile(source, []byte(rule), 0o600); err != nil {
+			t.Fatal(err)
+		}
+		runBounded(t, binary, "rule-set", "compile", "--output", compiled, source)
+		payload, err := os.ReadFile(compiled)
+		if err != nil {
+			t.Fatal(err)
+		}
+		payloads["/"+name+".srs"] = payload
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		payload, ok := payloads[r.URL.Path]
+		if !ok {
+			http.NotFound(w, r)
+			return
+		}
+		w.Header().Set("Content-Type", "application/octet-stream")
+		_, _ = w.Write(payload)
+	}))
+	t.Cleanup(server.Close)
+	baseURL, err := url.Parse(server.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transport := &http.Transport{Proxy: nil}
+	t.Cleanup(transport.CloseIdleConnections)
+	paths := map[string]string{}
+	for _, resource := range resources {
+		path := "/geosite.srs"
+		if strings.Contains(resource.URL, "/geoip/") {
+			path = "/geoip.srs"
+		}
+		paths[resource.URL] = path
+	}
+	return contractRuleTransport{baseURL: baseURL, transport: transport, paths: paths}
 }
 
 func runBounded(t *testing.T, binary string, args ...string) string {

@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("从根菜单进入核心管理并直接下载最新稳定版", async ({ page }) => {
   await page.goto("/");

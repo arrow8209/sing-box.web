@@ -24,7 +24,7 @@ import (
 )
 
 func main() {
-	harnessAddress := "127.0.0.1:4173"
+	harnessAddress := "127.0.0.1:50015"
 	if port := os.Getenv("SINGBOX_WEB_E2E_PORT"); port != "" {
 		harnessAddress = net.JoinHostPort("127.0.0.1", port)
 	}
@@ -74,7 +74,7 @@ func main() {
 	apiTarget, _ := url.Parse(appURL)
 	appProxy := httputil.NewSingleHostReverseProxy(apiTarget)
 	appProxy.Transport = &http.Transport{Proxy: nil}
-	// The browser remains on :4173 while this proxy reaches the isolated app.
+	// The browser uses the harness listener while this proxy reaches the isolated app.
 	// Preserve the public Host so production same-origin checks see the exact
 	// Origin that the browser sent.
 	proxyDirector := appProxy.Director

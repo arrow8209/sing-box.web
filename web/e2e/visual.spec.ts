@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 const scenarios = [
   { name: "desktop-light", width: 1440, height: 900, theme: "light" },

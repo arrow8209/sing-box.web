@@ -123,13 +123,9 @@ sh scripts/build.sh
 npm --prefix web run test:e2e
 ```
 
-浏览器 E2E 使用隔离的临时目录、本地 fake core 和本地规则/release 服务，不会读取仓库的 `data/`、访问公网或启动真实代理。真实 sing-box 契约测试使用已记录的官方二进制选择：`sh scripts/contract-test.sh`。只有维护者在明确允许网络访问后才可执行 `sh scripts/contract-test.sh --refresh` 更新选择。
+浏览器 E2E 在每个用例开始时启动独立临时服务，使用各自的档案、设置、本地 fake core 和本地规则/release 服务；用例失败后也会关闭服务并清理运行目录，避免影响后续用例。测试不会读取仓库的 `data/`、访问公网或启动真实代理。默认占用开发/测试 Web 端口 `50015`，运行前请确保该端口空闲。
 
-如本机正用 `prototype/` 占用默认的 4173 端口，可为 E2E 指定其他本机端口：
-
-```bash
-SINGBOX_WEB_E2E_PORT=4174 npm --prefix web run test:e2e
-```
+真实 sing-box 契约测试使用已记录的官方二进制选择：`sh scripts/contract-test.sh`。脚本下载并校验官方核心；测试再用该核心编译本地合成规则，通过回环 HTTP 服务下载规则，并对生成配置执行真实 `check`，不依赖公网规则源。只有维护者在明确允许网络访问后才可执行 `sh scripts/contract-test.sh --refresh` 更新选择。
 
 ## 视觉参照原型
 

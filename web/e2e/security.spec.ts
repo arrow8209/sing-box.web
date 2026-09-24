@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("未知 API 不回退为 SPA，深层 SPA 路由可用", async ({ page, request }) => {
   const api = await request.get("/api/v1/not-found");

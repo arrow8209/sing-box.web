@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("仅密码登录且会话 Cookie 受保护", async ({ page }) => {
   const response = await page.goto("/");

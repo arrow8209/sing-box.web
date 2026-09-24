@@ -1,6 +1,6 @@
 import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("节点切换经服务端送达核心，刷新保持选择且失败不会假报成功", async ({ page }, testInfo) => {
   test.setTimeout(90000);

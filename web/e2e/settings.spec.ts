@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("核心设置保存反馈不会挤动表单和后续卡片", async ({ page }) => {
   test.setTimeout(60000);

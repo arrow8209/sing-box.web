@@ -1,4 +1,4 @@
-import { expect, test } from "@playwright/test";
+import { expect, test } from "./fixtures";
 
 test("自动重载开启时预览和检测不保存草稿，手动应用只提交一次", async ({ page }) => {
   await page.goto("/");

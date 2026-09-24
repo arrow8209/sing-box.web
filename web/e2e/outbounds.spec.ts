@@ -1,4 +1,4 @@
-import { expect, test, type Page } from "@playwright/test";
+import { expect, test, type Page } from "./fixtures";
 
 const profileName = "出站 E2E 配置";
 const subscriptionName = "出站引用 E2E";
@@ -165,7 +165,8 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   await page.goto("/");
   const dashboardSelector = page.locator('[data-proxy-group-tag="节点选择"]');
   await expect(dashboardSelector).toBeVisible();
-  await dashboardSelector.locator(".proxy-group-main").click();
+  const expandSelector = dashboardSelector.locator(".proxy-group-main");
+  if (await expandSelector.getAttribute("aria-expanded") !== "true") await expandSelector.click();
   const dashboardMembers = dashboardSelector.locator(".proxy-node-card");
   await expect(dashboardMembers).toHaveCount(3);
   expect(await dashboardMembers.evaluateAll((members) => members.map((member) => member.getAttribute("data-proxy-member-tag")))).toEqual(["E2E 自动选择", "新加坡 E2E", "香港 E2E"]);
