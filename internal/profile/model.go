@@ -8,6 +8,7 @@ import (
 	"strings"
 	"time"
 
+	"singbox-web/internal/configref"
 	"singbox-web/internal/rules"
 )
 
@@ -61,10 +62,13 @@ type DeleteGuard interface {
 }
 
 type Draft struct {
-	ProfileID string                     `json:"profileId"`
-	Revision  uint64                     `json:"revision"`
-	Config    map[string]json.RawMessage `json:"config"`
-	Buffers   map[string]string          `json:"buffers"`
+	ProfileID     string                     `json:"profileId"`
+	Revision      uint64                     `json:"revision"`
+	SchemaVersion int                        `json:"schemaVersion,omitempty"`
+	References    *configref.Persisted       `json:"references,omitempty"`
+	ResolvedModel *configref.Model           `json:"-"`
+	Config        map[string]json.RawMessage `json:"config"`
+	Buffers       map[string]string          `json:"buffers"`
 	// EditorState stores UI-only structured editor data. It is deliberately
 	// separate from Config/Buffers so these values are never emitted as
 	// sing-box configuration fields.
@@ -74,10 +78,12 @@ type Draft struct {
 }
 
 type DraftInput struct {
-	Buffers     map[string]string          `json:"buffers"`
-	EditorState map[string]json.RawMessage `json:"editorState,omitempty"`
-	Bindings    []RuleBinding              `json:"bindings"`
-	Freeze      *FreezeOperation           `json:"freeze,omitempty"`
+	SchemaVersion int                        `json:"schemaVersion,omitempty"`
+	References    *configref.Persisted       `json:"references,omitempty"`
+	Buffers       map[string]string          `json:"buffers"`
+	EditorState   map[string]json.RawMessage `json:"editorState,omitempty"`
+	Bindings      []RuleBinding              `json:"bindings"`
+	Freeze        *FreezeOperation           `json:"freeze,omitempty"`
 }
 
 type FreezeOperation struct {
@@ -114,6 +120,7 @@ var (
 	ErrQuarantined                        = fmt.Errorf("档案草稿已隔离")
 	ErrDeleteNameMismatch                 = fmt.Errorf("删除确认名称不匹配")
 	ErrCurrentProfileRequiresCoreDecision = fmt.Errorf("当前档案需要核心操作层决策")
+	ErrSchemaVersionUnsupported           = fmt.Errorf("客户端不支持当前档案引用版本，请刷新页面")
 )
 
 type RevisionConflict struct{ LatestRevision uint64 }

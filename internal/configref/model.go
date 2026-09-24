@@ -62,6 +62,7 @@ type InboundBinding struct {
 	Tag        string `json:"tag"`
 	ResourceID string `json:"resourceId"`
 	SourceTag  string `json:"sourceTag"`
+	Position   int    `json:"position,omitempty"`
 }
 
 type SniffRule struct {

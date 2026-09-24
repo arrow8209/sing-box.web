@@ -53,9 +53,15 @@ func (h *Handler) candidateView(draft profile.Draft, output Output) *CandidateVi
 	if !h.resolveReferences {
 		return nil
 	}
-	model, err := configref.DecodeLegacy(draft.EditorState)
-	if err != nil {
-		return nil
+	var model configref.Model
+	if draft.ResolvedModel != nil {
+		model = *draft.ResolvedModel
+	} else {
+		var err error
+		model, err = configref.DecodeLegacy(draft.EditorState)
+		if err != nil {
+			return nil
+		}
 	}
 	view := &CandidateView{ProfileID: draft.ProfileID, Revision: draft.Revision, Digest: output.Digest, ResourceDigests: output.ResourceDigests, Items: []CandidateItem{}}
 	bindings := map[string]configref.InboundBinding{}
@@ -99,7 +105,11 @@ func (h *Handler) candidateView(draft profile.Draft, output Output) *CandidateVi
 					item.Sniff = sniff[tag]
 					item.Text = string(raw)
 					item.RouteText = string(draft.Config["route"])
-					item.InboundStateText = string(draft.EditorState["inbounds"])
+					if draft.SchemaVersion == 2 {
+						item.InboundStateText = string(rawValue(model.Inbounds))
+					} else {
+						item.InboundStateText = string(draft.EditorState["inbounds"])
+					}
 				}
 			} else if g, ok := groups[tag]; ok {
 				item.Members = slices.Clone(g.RuntimeTags)

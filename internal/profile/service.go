@@ -224,6 +224,13 @@ func (s *Service) Duplicate(ctx context.Context, profileID string) (Meta, Draft,
 	if source.Revision != metas[index].DraftRevision {
 		return Meta{}, Draft{}, fmt.Errorf("草稿修订与档案元数据不一致")
 	}
+	legacyCopy := cloneDraft(source)
+	if source.SchemaVersion < 2 {
+		source, err = migrateLegacyDraft(source)
+		if err != nil {
+			return Meta{}, Draft{}, err
+		}
+	}
 	id, err := randomHex(s.random, 16)
 	if err != nil {
 		return Meta{}, Draft{}, err
@@ -232,6 +239,14 @@ func (s *Service) Duplicate(ctx context.Context, profileID string) (Meta, Draft,
 	draft.ProfileID = id
 	draft.Revision = 1
 	draft.SavedAt = s.clock().UTC()
+	if legacyCopy.SchemaVersion < 2 {
+		legacyCopy.ProfileID = id
+		legacyCopy.Revision = 1
+		legacyCopy.SavedAt = draft.SavedAt
+		if err := s.store.writeLegacyBackup(legacyCopy); err != nil {
+			return Meta{}, Draft{}, err
+		}
+	}
 	meta := Meta{
 		ID:                     id,
 		Name:                   duplicateName(metas[index].Name, metas),
@@ -359,6 +374,9 @@ func (s *Service) SaveDraft(ctx context.Context, profileID, ifMatch string, inpu
 	if expected != draft.Revision {
 		return Draft{}, RevisionETag(draft.Revision), RevisionConflict{LatestRevision: draft.Revision}
 	}
+	if draft.SchemaVersion == 2 && input.SchemaVersion != 2 {
+		return Draft{}, "", ErrSchemaVersionUnsupported
+	}
 	if input.Freeze != nil {
 		if s.freezeVerifier == nil {
 			return Draft{}, "", fmt.Errorf("当前服务不支持候选冻结")
@@ -366,11 +384,23 @@ func (s *Service) SaveDraft(ctx context.Context, profileID, ifMatch string, inpu
 		if input.Buffers != nil || input.EditorState != nil || input.Bindings != nil {
 			return Draft{}, "", fmt.Errorf("冻结操作不能同时覆盖完整草稿")
 		}
-		patched, err := applyFreeze(draft, *input.Freeze, s.freezeVerifier)
+		oldCopy := savedCopy{}
+		if draft.SchemaVersion == 2 && input.Freeze.Action == "restore_saved" {
+			oldCopy, err = s.store.savedMigrationCopy(profileID, input.Freeze.Tag)
+			if err != nil {
+				return Draft{}, "", err
+			}
+		}
+		var patched Draft
+		if draft.SchemaVersion == 2 {
+			patched, err = applyFreezeV2(draft, *input.Freeze, s.freezeVerifier, oldCopy)
+		} else {
+			patched, err = applyFreeze(draft, *input.Freeze, s.freezeVerifier)
+		}
 		if err != nil {
 			return Draft{}, "", err
 		}
-		input = DraftInput{Buffers: patched.Buffers, EditorState: patched.EditorState, Bindings: draft.Bindings}
+		input = DraftInput{SchemaVersion: input.SchemaVersion, Buffers: patched.Buffers, EditorState: patched.EditorState, Bindings: draft.Bindings, References: patched.References}
 	}
 	nextConfig, err := reconcileBuffers(draft.Config, input.Buffers)
 	if err != nil {
@@ -384,7 +414,35 @@ func (s *Service) SaveDraft(ctx context.Context, profileID, ifMatch string, inpu
 	if input.EditorState != nil {
 		nextEditorState = cloneConfig(input.EditorState)
 	}
-	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, Config: nextConfig, Buffers: nextBuffers, EditorState: nextEditorState, Bindings: append([]RuleBinding{}, input.Bindings...), SavedAt: s.clock().UTC()}
+	next := Draft{ProfileID: profileID, Revision: draft.Revision + 1, SchemaVersion: draft.SchemaVersion, References: draft.References, Config: nextConfig, Buffers: nextBuffers, EditorState: nextEditorState, Bindings: append([]RuleBinding{}, input.Bindings...), SavedAt: s.clock().UTC()}
+	if input.SchemaVersion == 2 {
+		if draft.SchemaVersion == 2 {
+			if input.References == nil {
+				return Draft{}, "", fmt.Errorf("保存新格式草稿必须携带 references")
+			}
+			copy := input.References.Clone()
+			next.References = &copy
+		} else {
+			legacyInput := next
+			if input.References != nil {
+				legacyInput.EditorState = cloneConfig(draft.EditorState)
+			}
+			migrated, err := migrateLegacyDraft(legacyInput)
+			if err != nil {
+				return Draft{}, "", err
+			}
+			if input.References != nil {
+				if err := applyV2Override(&migrated, *input.References); err != nil {
+					return Draft{}, "", err
+				}
+				if input.EditorState != nil {
+					migrated.EditorState = cloneConfig(input.EditorState)
+				}
+			}
+			next = migrated
+		}
+		next.SchemaVersion = 2
+	}
 	if err := validateDraftEnvelope(next, maxModuleBytes, maxDraftBytes); err != nil {
 		return Draft{}, "", err
 	}
@@ -654,6 +712,9 @@ func draftDependencyKeys(draft Draft) []string {
 			keys = append(keys, "rule:"+binding.ResourceID)
 		}
 	}
+	if draft.SchemaVersion == 2 && draft.References != nil {
+		return append(keys, draft.References.ResourceKeys()...)
+	}
 	model, err := configref.DecodeLegacy(draft.EditorState)
 	if err != nil {
 		return append(keys, "invalid:references")
@@ -828,6 +889,17 @@ func reconcileBuffers(current map[string]json.RawMessage, buffers map[string]str
 func validateDraftEnvelope(draft Draft, moduleLimit, totalLimit int) error {
 	if draft.ProfileID == "" || draft.Revision == 0 || draft.Config == nil || draft.Buffers == nil {
 		return fmt.Errorf("草稿包不完整")
+	}
+	if draft.SchemaVersion != 0 && draft.SchemaVersion != 1 && draft.SchemaVersion != 2 {
+		return ErrSchemaVersionUnsupported
+	}
+	if draft.SchemaVersion == 2 {
+		if draft.References == nil {
+			return fmt.Errorf("引用输入缺失")
+		}
+		if err := draft.References.Validate(); err != nil {
+			return err
+		}
 	}
 	for module, value := range draft.Config {
 		if len(value) > moduleLimit {

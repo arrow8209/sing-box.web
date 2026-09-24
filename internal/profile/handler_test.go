@@ -117,7 +117,7 @@ func TestProfileCRUDRequiresAuthenticationAndCSRF(t *testing.T) {
 func TestProfileCopyCreatesIndependentDraft(t *testing.T) {
 	handler, session := newAuthenticatedProfileAPI(t)
 	profileID := createProfile(t, handler, session, `{"name":"家庭出口"}`)
-	updated := profileRequest(t, handler, session, http.MethodPut, "/api/v1/profiles/"+profileID+"/draft", `{"buffers":{"log":"{\"level\":\"debug\"}"},"editorState":{"inbounds":{"disabledRules":[1]}},"bindings":[]}`, map[string]string{"If-Match": `"rev-1"`})
+	updated := profileRequest(t, handler, session, http.MethodPut, "/api/v1/profiles/"+profileID+"/draft", `{"buffers":{"log":"{\"level\":\"debug\"}"},"editorState":{"ui":{"disabledRules":[1]}},"bindings":[]}`, map[string]string{"If-Match": `"rev-1"`})
 	if updated.Code != http.StatusOK {
 		t.Fatalf("update=%d body=%s", updated.Code, updated.Body.String())
 	}
@@ -141,7 +141,7 @@ func TestProfileCopyCreatesIndependentDraft(t *testing.T) {
 	if err := json.Unmarshal(draftResponse.Body.Bytes(), &draft); err != nil {
 		t.Fatal(err)
 	}
-	if draft.ProfileID != copied.ID || draft.Revision != 1 || draft.Buffers["log"] != `{"level":"debug"}` || !strings.Contains(string(draft.EditorState["inbounds"]), "disabledRules") {
+	if draft.ProfileID != copied.ID || draft.Revision != 1 || draft.SchemaVersion != 2 || draft.Buffers["log"] != `{"level":"debug"}` || !strings.Contains(string(draft.EditorState["ui"]), "disabledRules") {
 		t.Fatalf("draft=%+v", draft)
 	}
 

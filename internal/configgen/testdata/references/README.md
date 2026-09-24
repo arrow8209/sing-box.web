@@ -19,7 +19,7 @@
 | 托管 sniff | 新增插在开头，已有规则原位更新/删除；只认与保存的归属快照完全相等的规则；有冲突的手工 sniff 不修改 |
 | 未知字段 / 大整数 | 保留原始 JSON token 的值，禁止经过 float64 或 JS number 重写候选 |
 
-错误统一为 `stage: resolve_references`，包含 `code` 和 `fieldPath`；message 不包含源内容、地址或凭据。代码包括 `reference_source_missing`、`reference_node_missing`、`reference_filter_unsupported`、`reference_conflict`、`reference_metadata_invalid`、`reference_ownership_missing`、`reference_version_unsupported`。字段路径从旧 `editorState` / 模块路径开始，新 schema 迁移时使用 `references` 路径。
+错误统一为 `stage: resolve_references`，包含 `code` 和 `fieldPath`；message 不包含源内容、地址或凭据。代码包括 `reference_source_missing`、`reference_source_unavailable`、`reference_node_missing`、`reference_filter_unsupported`、`reference_conflict`、`reference_metadata_invalid`、`reference_ownership_missing`、`reference_version_unsupported`。字段路径从旧 `editorState` / 模块路径开始，新 schema 迁移时使用 `references` 路径。
 
 摘要使用 SHA-256：入站输入为 mode 与完整 config 原文；订阅为有序 outbounds 原文（名称和更新时间不影响配置）；使用 `inbound:<id>`、`subscription:<id>`、`rule:<id>` 区分类型。规则已有裸 ID 摘要入口仅作为旧记录兼容，不允许一次局部核对清空其他类型。
 

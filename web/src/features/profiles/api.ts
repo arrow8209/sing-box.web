@@ -1,5 +1,6 @@
 import { request, type ApiError } from "@/api/client";
 import type { AutoReloadOutcome, Draft, DraftInput, FreezeOperation, ProfileSummary } from "./types";
+import { useCapabilitiesStore } from "@/features/capabilities/store";
 
 interface DraftSaveResponse extends Draft {
   autoReload?: AutoReloadOutcome;
@@ -42,7 +43,9 @@ export const profileApi: ProfileApi = {
     return { data: response.data, etag: requiredETag(response.etag) };
   },
   async saveDraft(id, etag, draft) {
-    const input: DraftInput = { buffers: draft.buffers, editorState: draft.editorState ?? {}, bindings: draft.bindings };
+    const useV2 = useCapabilitiesStore().capabilities.value?.serverReferenceResolution === true;
+    const input: DraftInput = { buffers: draft.buffers, editorState: draft.editorState ?? {}, bindings: draft.bindings,
+      ...(useV2 ? { schemaVersion: 2, ...(draft.references ? { references: draft.references } : {}) } : {}) };
     const response = await request<DraftSaveResponse>(`/profiles/${encodeURIComponent(id)}/draft`, {
       method: "PUT",
       headers: { "If-Match": etag },
@@ -53,7 +56,7 @@ export const profileApi: ProfileApi = {
   },
   async freeze(id, etag, operation) {
     const response = await request<DraftSaveResponse>(`/profiles/${encodeURIComponent(id)}/draft`, {
-      method: "PUT", headers: { "If-Match": etag }, body: { freeze: operation }
+      method: "PUT", headers: { "If-Match": etag }, body: { freeze: operation, schemaVersion: 2 }
     });
     const { autoReload, ...data } = response.data;
     return { data, etag: requiredETag(response.etag), autoReload };

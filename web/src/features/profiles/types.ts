@@ -31,6 +31,8 @@ export interface ProfileSummary {
 export interface Draft {
   profileId: string;
   revision: number;
+  schemaVersion?: number;
+  references?: PersistedReferences;
   config: Record<string, unknown>;
   buffers: Record<string, string>;
   editorState?: Record<string, unknown>;
@@ -40,7 +42,14 @@ export interface Draft {
 
 // The server deliberately rebuilds config from buffers. Keep config out of saves:
 // JSON in config can contain values that browsers cannot round-trip safely.
-export type DraftInput = Pick<Draft, "buffers" | "editorState" | "bindings">;
+export type DraftInput = Pick<Draft, "buffers" | "editorState" | "bindings" | "schemaVersion" | "references">;
+
+export interface PersistedReference { kind: string; tag?: string; outboundId?: string; subscriptionId?: string; nodeTag?: string; }
+export interface PersistedReferences {
+  version: 2;
+  outbounds: Array<{ id: string; tag: string; type: string; include?: string; exclude?: string; references: PersistedReference[] }>;
+  inbounds: Array<{ tag: string; resourceId: string; sourceTag: string; position?: number }>;
+}
 
 export interface FreezeOperation {
   action: "detach" | "copy" | "restore_saved";

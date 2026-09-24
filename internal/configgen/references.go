@@ -2,6 +2,7 @@ package configgen
 
 import (
 	"bytes"
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"maps"
@@ -61,12 +62,21 @@ func ReferenceInput(input profile.Draft) (profile.Draft, configref.Model, error)
 		}
 		draft.Config[key] = json.RawMessage(text)
 	}
-	model, err := configref.DecodeLegacy(draft.EditorState)
+	var model configref.Model
+	var err error
+	if draft.SchemaVersion == 2 {
+		if draft.References == nil {
+			return profile.Draft{}, configref.Model{}, configref.Error("reference_metadata_invalid", "references", "缺少新版引用输入")
+		}
+		model, err = draft.References.ToModel()
+	} else {
+		model, err = configref.DecodeLegacy(draft.EditorState)
+	}
 	if err != nil {
 		return profile.Draft{}, configref.Model{}, err
 	}
 	// A deleted local entry must not resurrect itself through stale metadata.
-	if model.Inbounds != nil {
+	if model.Inbounds != nil && draft.SchemaVersion != 2 {
 		items, err := referenceArray(draft.Config["inbounds"], "inbounds")
 		if err != nil {
 			return profile.Draft{}, configref.Model{}, err
@@ -86,14 +96,19 @@ func ResolveReferences(input profile.Draft, snapshot ReferenceSnapshot) (Resolve
 		if err := resolveOutbounds(&draft, model.Outbounds, snapshot, digests); err != nil {
 			return ResolvedReferences{}, err
 		}
-		draft.EditorState["outbounds"] = rawValue(model.Outbounds)
+		if draft.SchemaVersion != 2 {
+			draft.EditorState["outbounds"] = rawValue(model.Outbounds)
+		}
 	}
 	if model.Inbounds != nil {
 		if err := resolveInbounds(&draft, model.Inbounds, snapshot, digests); err != nil {
 			return ResolvedReferences{}, err
 		}
-		draft.EditorState["inbounds"] = rawValue(model.Inbounds)
+		if draft.SchemaVersion != 2 {
+			draft.EditorState["inbounds"] = rawValue(model.Inbounds)
+		}
 	}
+	draft.ResolvedModel = &model
 	return ResolvedReferences{Draft: draft, Model: model, ResourceDigests: digests}, nil
 }
 
@@ -380,9 +395,15 @@ func resolveInbounds(draft *profile.Draft, state *configref.Inbounds, snapshot R
 	if err != nil {
 		return err
 	}
+	if draft.SchemaVersion == 2 {
+		slices.SortFunc(state.ResourceBindings, func(a, b configref.InboundBinding) int { return cmp.Compare(a.Position, b.Position) })
+	}
 	for i := range state.ResourceBindings {
 		b := &state.ResourceBindings[i]
 		path := fmt.Sprintf("editorState.inbounds.resourceBindings[%d]", i)
+		if draft.SchemaVersion == 2 {
+			path = fmt.Sprintf("references.inbounds[%d]", i)
+		}
 		source, ok := snapshot.Inbounds[b.ResourceID]
 		if !ok {
 			return configref.Error("reference_source_missing", path, "入站来源不存在，请重新关联或明确恢复此前副本")
@@ -403,9 +424,19 @@ func resolveInbounds(draft *profile.Draft, state *configref.Inbounds, snapshot R
 		}
 		index := findTag(items, b.Tag)
 		if index < 0 {
-			continue
+			if draft.SchemaVersion != 2 {
+				continue
+			}
+			index = b.Position
+			if index > len(items) {
+				index = len(items)
+			}
+			items = slices.Insert(items, index, rawValue(config))
+		} else if draft.SchemaVersion == 2 {
+			return configref.Error("reference_conflict", path+".tag", "关联入站与独立配置名称冲突")
+		} else {
+			items[index] = rawValue(config)
 		}
-		items[index] = rawValue(config)
 		if err := applySniff(draft, state, b.Tag, sniff, timeout); err != nil {
 			return err
 		}

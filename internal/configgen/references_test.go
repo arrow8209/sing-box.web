@@ -1,6 +1,7 @@
 package configgen
 
 import (
+	"context"
 	"encoding/json"
 	"errors"
 	"os"
@@ -11,9 +12,26 @@ import (
 	"singbox-web/internal/apierror"
 	"singbox-web/internal/configref"
 	"singbox-web/internal/inbounds"
+	"singbox-web/internal/paths"
 	"singbox-web/internal/profile"
 	"singbox-web/internal/subscriptions"
 )
+
+type failingInboundSource struct{}
+
+func (failingInboundSource) Get(context.Context, string) (inbounds.Inbound, error) {
+	return inbounds.Inbound{}, errors.New("secret.example.test: storage failed")
+}
+
+func TestReferenceSourceReadFailureDoesNotExposeResourceDetails(t *testing.T) {
+	f := referenceFixtures(t)[7]
+	h := NewHandler(paths.Layout{}, nil, nil, nil, nil, nil, nil, WithReferenceSources(failingInboundSource{}, nil))
+	_, err := h.resolveSnapshot(context.Background(), f.Draft)
+	assertReferenceError(t, err, "reference_source_unavailable", "editorState.inbounds.resourceBindings[0]")
+	if strings.Contains(err.Error(), "secret.example.test") {
+		t.Fatal("source detail leaked")
+	}
+}
 
 type referenceFixture struct {
 	Name          string                       `json:"name"`

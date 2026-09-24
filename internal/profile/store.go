@@ -6,7 +6,9 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 
+	"singbox-web/internal/configref"
 	"singbox-web/internal/paths"
 	"singbox-web/internal/storage"
 )
@@ -61,7 +63,36 @@ func (s *store) writeMetas(metas []Meta) error {
 }
 
 func (s *store) writeDraft(draft Draft) error {
+	if draft.SchemaVersion == 2 {
+		if _, err := os.Stat(s.draftPath(draft.ProfileID)); err == nil {
+			previous, err := s.readDraft(draft.ProfileID)
+			if err != nil {
+				return err
+			}
+			if previous.SchemaVersion < 2 {
+				if err := s.writeLegacyBackup(previous); err != nil {
+					return err
+				}
+			}
+		} else if !os.IsNotExist(err) {
+			return err
+		}
+	}
 	return storage.WriteJSON(s.draftPath(draft.ProfileID), cloneDraft(draft), 0o600)
+}
+
+func (s *store) writeLegacyBackup(previous Draft) error {
+	backupDir := filepath.Join(s.draftsDir, "migration-backups")
+	if err := os.MkdirAll(backupDir, 0o700); err != nil {
+		return err
+	}
+	backup := filepath.Join(backupDir, fmt.Sprintf("%s-rev%d-v1.json", previous.ProfileID, previous.Revision))
+	if _, err := os.Stat(backup); os.IsNotExist(err) {
+		return storage.WriteJSON(backup, previous, 0o600)
+	} else if err != nil {
+		return err
+	}
+	return nil
 }
 
 func (s *store) readDraft(profileID string) (Draft, error) {
@@ -97,6 +128,45 @@ func (s *store) create(meta Meta, draft Draft) error {
 
 func (s *store) draftPath(profileID string) string {
 	return filepath.Join(s.draftsDir, profileID+".json")
+}
+
+func (s *store) savedMigrationCopy(profileID, tag string) (savedCopy, error) {
+	entries, err := os.ReadDir(filepath.Join(s.draftsDir, "migration-backups"))
+	if err != nil {
+		return savedCopy{}, configref.Error("saved_copy_unavailable", "freeze.tag", "没有可恢复的旧副本，请补充独立配置")
+	}
+	for _, entry := range entries {
+		if !strings.HasPrefix(entry.Name(), profileID+"-rev") || !strings.HasSuffix(entry.Name(), "-v1.json") {
+			continue
+		}
+		var archived Draft
+		if archived, err = storage.ReadJSON[Draft](filepath.Join(s.draftsDir, "migration-backups", entry.Name())); err != nil {
+			return savedCopy{}, err
+		}
+		var items []json.RawMessage
+		if json.Unmarshal([]byte(archived.Buffers["inbounds"]), &items) != nil {
+			continue
+		}
+		for _, item := range items {
+			var fields map[string]json.RawMessage
+			_ = json.Unmarshal(item, &fields)
+			var found string
+			_ = json.Unmarshal(fields["tag"], &found)
+			if found == tag {
+				copy := savedCopy{text: string(item)}
+				if model, e := configref.DecodeLegacy(archived.EditorState); e == nil && model.Inbounds != nil {
+					for _, rule := range model.Inbounds.ManagedSniffRules {
+						if rule.Tag == tag {
+							copy.sniffRule = rule.Rule
+							break
+						}
+					}
+				}
+				return copy, nil
+			}
+		}
+	}
+	return savedCopy{}, configref.Error("saved_copy_unavailable", "freeze.tag", "没有可恢复的旧副本，请补充独立配置")
 }
 
 func (s *store) corrupt(err error) error {
@@ -149,6 +219,11 @@ func (s *store) validateMetas(metas []Meta) error {
 
 func cloneDraft(source Draft) Draft {
 	result := source
+	if source.References != nil {
+		copied := source.References.Clone()
+		result.References = &copied
+	}
+	result.ResolvedModel = nil
 	result.Config = make(map[string]json.RawMessage, len(source.Config))
 	for key, value := range source.Config {
 		result.Config[key] = append(json.RawMessage(nil), value...)
@@ -177,6 +252,7 @@ func cloneMeta(source Meta) Meta {
 	}
 	if source.LastValidation != nil {
 		validation := *source.LastValidation
+		validation.ResourceDigests = cloneStringMap(validation.ResourceDigests)
 		result.LastValidation = &validation
 	}
 	result.AppliedResourceDigests = make(map[string]string, len(source.AppliedResourceDigests))

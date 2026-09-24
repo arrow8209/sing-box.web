@@ -8,6 +8,127 @@ import (
 	"singbox-web/internal/configref"
 )
 
+type savedCopy struct {
+	text      string
+	sniffRule json.RawMessage
+}
+
+func applyFreezeV2(draft Draft, operation FreezeOperation, verifier FreezeVerifier, previous savedCopy) (Draft, error) {
+	bad := func(path, message string) error { return configref.Error("candidate_invalid", path, message) }
+	if operation.Module != "inbounds" || operation.Tag == "" || draft.References == nil {
+		return Draft{}, bad("freeze", "候选入站无效")
+	}
+	if operation.Action != "detach" && operation.Action != "copy" && operation.Action != "restore_saved" {
+		return Draft{}, bad("freeze.action", "冻结操作无效")
+	}
+	if operation.Action != "restore_saved" {
+		if err := verifier.VerifyFreeze(draft.ProfileID, draft.Revision, operation); err != nil {
+			return Draft{}, err
+		}
+	}
+	bindings := draft.References.Inbounds
+	bindingIndex := -1
+	for i, b := range bindings {
+		if b.Tag == operation.Tag {
+			bindingIndex = i
+			break
+		}
+	}
+	if bindingIndex < 0 {
+		return Draft{}, bad("freeze.tag", "入站已解除关联")
+	}
+	itemText := operation.Text
+	if operation.Action == "restore_saved" {
+		itemText = previous.text
+	}
+	fields := freezeObject(json.RawMessage(itemText))
+	if fields == nil || freezeString(fields["tag"]) != operation.Tag {
+		return Draft{}, bad("freeze.text", "没有可用的候选或旧副本")
+	}
+	items, err := freezeArray(draft.Buffers["inbounds"])
+	if err != nil {
+		return Draft{}, err
+	}
+	used := map[string]bool{}
+	for _, item := range items {
+		used[freezeString(freezeObject(item)["tag"])] = true
+	}
+	for _, b := range bindings {
+		used[b.Tag] = true
+	}
+	if operation.Action == "copy" {
+		if operation.NewTag == "" || utf8.RuneCountInString(operation.NewTag) > 128 || used[operation.NewTag] {
+			return Draft{}, bad("freeze.newTag", "新入站名称为空、过长或已被使用")
+		}
+		fields["tag"], _ = json.Marshal(operation.NewTag)
+		itemText = string(migrationRaw(fields))
+	} else if used[operation.Tag] && operation.Action != "detach" && operation.Action != "restore_saved" {
+		return Draft{}, bad("freeze.tag", "入站名称冲突")
+	}
+	result := cloneDraft(draft)
+	position := bindings[bindingIndex].Position
+	if operation.Action == "copy" {
+		position++
+	}
+	if position > len(items) {
+		position = len(items)
+	}
+	items = slices.Insert(items, position, json.RawMessage(itemText))
+	result.Buffers["inbounds"] = string(migrationRaw(items))
+	if operation.Action != "copy" {
+		result.References.Inbounds = slices.Delete(result.References.Inbounds, bindingIndex, bindingIndex+1)
+	}
+	var rule json.RawMessage
+	if operation.Action == "restore_saved" {
+		rule = previous.sniffRule
+	} else {
+		var state configref.Inbounds
+		if json.Unmarshal([]byte(operation.InboundStateText), &state) != nil {
+			return Draft{}, bad("freeze.inboundStateText", "候选嗅探状态无效")
+		}
+		for _, managed := range state.ManagedSniffRules {
+			if managed.Tag == operation.Tag {
+				rule = managed.Rule
+				break
+			}
+		}
+	}
+	if len(rule) > 0 {
+		target := operation.Tag
+		if operation.Action == "copy" {
+			target = operation.NewTag
+		}
+		if err := insertIndependentSniff(&result, rule, target); err != nil {
+			return Draft{}, err
+		}
+	}
+	return result, nil
+}
+
+func insertIndependentSniff(draft *Draft, rule json.RawMessage, tag string) error {
+	route := freezeObject(json.RawMessage(draft.Buffers["route"]))
+	if route == nil {
+		return configref.Error("candidate_invalid", "route", "路由结构无效，无法固定嗅探规则")
+	}
+	var rules []json.RawMessage
+	if raw, ok := route["rules"]; ok && json.Unmarshal(raw, &rules) != nil {
+		return configref.Error("candidate_invalid", "route.rules", "路由规则结构无效")
+	}
+	for _, existing := range rules {
+		f := freezeObject(existing)
+		if freezeString(f["action"]) == "sniff" && freezeString(f["inbound"]) == tag {
+			return nil
+		}
+	}
+	fields := freezeObject(rule)
+	fields["inbound"], _ = json.Marshal(tag)
+	newRule := migrationRaw(fields)
+	rules = append([]json.RawMessage{newRule}, rules...)
+	route["rules"] = migrationRaw(rules)
+	draft.Buffers["route"] = string(migrationRaw(route))
+	return nil
+}
+
 // applyFreeze patches the saved raw buffer under the same lock and ETag as
 // SaveDraft. The candidate is signed by configgen; source services are not read.
 func applyFreeze(draft Draft, operation FreezeOperation, verifier FreezeVerifier) (Draft, error) {

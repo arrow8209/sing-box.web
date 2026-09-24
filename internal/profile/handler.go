@@ -255,6 +255,8 @@ func writeProfileError(w http.ResponseWriter, err error, stage string) {
 		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "current_profile_requires_core_decision", Message: "当前档案需要核心操作层决策", Stage: stage})
 	case errors.Is(err, ErrPreconditionRequired):
 		apierror.Write(w, http.StatusPreconditionRequired, apierror.Error{Code: "if_match_required", Message: "保存草稿必须携带有效 If-Match", Stage: stage})
+	case errors.Is(err, ErrSchemaVersionUnsupported):
+		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "schema_version_unsupported", Message: "档案已使用新版引用格式，请刷新页面后重试", Stage: stage})
 	default:
 		apierror.WriteError(w, err)
 	}
