@@ -22,9 +22,10 @@ test("自动重载开启时预览和检测不保存草稿，手动应用只提�
     const revision = (await saved.json() as { revision: number }).revision;
     const firstApply = await fetch(path + "/apply", { method: "POST", headers, body: JSON.stringify({ revision }) });
     if (!firstApply.ok || !(await firstApply.json() as { applied: boolean }).applied) throw new Error("initial apply failed");
-    const behavior = await fetch("/api/v1/settings/core", { method: "PUT", headers, body: JSON.stringify({ autoStart: false, autoReload: true }) });
+    const previous = await (await fetch("/api/v1/settings/core")).json() as { autoStart: boolean; autoReload: boolean };
+    const behavior = await fetch("/api/v1/settings/core", { method: "PUT", headers, body: JSON.stringify({ ...previous, autoReload: true }) });
     if (!behavior.ok) throw new Error("settings failed");
-    return { id: profile.id, revision };
+    return { id: profile.id, revision, previous };
   });
   await page.goto("/workspace");
   await page.locator(".config-name").filter({ hasText: "操作副作用 E2E" }).click();
@@ -61,10 +62,10 @@ test("自动重载开启时预览和检测不保存草稿，手动应用只提�
   expect(after.draft.revision).toBe(fixture.revision);
   expect(after.core.state).toBe(before.core.state);
   expect(after.core.pid).toBe(before.core.pid);
-  await page.evaluate(async (id) => {
+  await page.evaluate(async ({ id, previous }) => {
     const session = await (await fetch("/api/v1/auth/session")).json();
     const headers = { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken };
-    await fetch("/api/v1/settings/core", { method: "PUT", headers, body: JSON.stringify({ autoStart: false, autoReload: false }) });
+    await fetch("/api/v1/settings/core", { method: "PUT", headers, body: JSON.stringify(previous) });
     await fetch("/api/v1/profiles/" + id, { method: "DELETE", headers, body: JSON.stringify({ confirmName: "操作副作用 E2E", stopCurrent: true }) });
-  }, fixture.id);
+  }, fixture);
 });
