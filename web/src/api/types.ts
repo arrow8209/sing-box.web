@@ -24,6 +24,7 @@ export interface LoginResult {
 }
 
 export interface RequestOptions {
+  signal?: AbortSignal;
   method?: "GET" | "POST" | "PUT" | "PATCH" | "DELETE";
   headers?: HeadersInit;
   body?: unknown;

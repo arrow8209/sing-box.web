@@ -11,9 +11,8 @@ import type { ProfileSummary } from "@/features/profiles/types";
 import AppIcon from "@/layout/AppIcon.vue";
 import DashboardProxySelector from "./DashboardProxySelector.vue";
 import DashboardRouteMode from "./DashboardRouteMode.vue";
+import DashboardMetrics from "./DashboardMetrics.vue";
 import { outboundOrderFromDraft } from "./proxy-groups";
-
-interface DashboardMetric { icon: string; tone: string; label: string; value: string; unit: string; href?: string }
 
 const core = useCoreStore();
 const profileStore = useProfileStore();
@@ -30,15 +29,9 @@ const notice = ref("");
 const noticeTone = ref<"info" | "error">("info");
 const proxySelector = ref<InstanceType<typeof DashboardProxySelector> | null>(null);
 const routeModeControl = ref<InstanceType<typeof DashboardRouteMode> | null>(null);
+const runtimeMetrics = ref<InstanceType<typeof DashboardMetrics> | null>(null);
 const now = ref(Date.now());
 let clockTimer: ReturnType<typeof setInterval> | undefined;
-
-const metrics: DashboardMetric[] = [
-  { icon: "upload", tone: "", label: "实时上传", value: "2.48", unit: "MB/s" },
-  { icon: "download", tone: "cyan", label: "实时下载", value: "8.72", unit: "MB/s" },
-  { icon: "memory", tone: "orange", label: "内存占用", value: "86.4", unit: "MB" },
-  { icon: "link", tone: "green", label: "活动连接", value: "128", unit: "条", href: "/connections" }
-];
 
 const serviceRunning = computed(() => ["running", "starting", "stopping"].includes(core.status.value?.state ?? ""));
 const running = computed(() => serviceRunning.value);
@@ -53,7 +46,7 @@ const activeProfile = computed(() => profiles.value.find((item) => item.id === c
   ?? profiles.value[0]);
 const draftStats = computed(() => {
   const draft = profileStore.draft.value;
-  if (!draft) return { inbounds: 3, outbounds: 4, routeRules: 11 };
+  if (!draft) return { inbounds: "--", outbounds: "--", routeRules: "--" };
   const config = draft.config;
   const route = config.route as Record<string, unknown> | undefined;
   return {
@@ -91,11 +84,11 @@ async function refreshStoppedCandidate(): Promise<void> {
 watch([running, serverResolution, () => profileStore.activeProfileId.value, () => profileStore.draft.value?.revision], () => { void refreshStoppedCandidate(); });
 const dashboardOutboundEditorState = computed(() => !running.value || profileStore.draft.value?.profileId === core.status.value?.currentProfileId
   ? profileStore.draft.value?.editorState?.outbounds : undefined);
-const proxyRuntimeKey = computed(() => [core.status.value?.currentProfileId, core.status.value?.pid, core.status.value?.appliedRevision].join(":"));
+const proxyRuntimeKey = computed(() => [core.status.value?.currentProfileId, core.status.value?.pid, core.status.value?.startedAt, core.status.value?.appliedRevision].join(":"));
 const uptime = computed(() => {
   if (!running.value) return "--";
   const startedAt = core.status.value?.startedAt;
-  if (!startedAt) return "12 天 08:42:16";
+  if (!startedAt) return "--";
   const started = new Date(startedAt).getTime();
   if (!Number.isFinite(started)) return "--";
   const seconds = Math.max(0, Math.floor((now.value - started) / 1000));
@@ -134,7 +127,7 @@ async function refresh(): Promise<void> {
   try {
     await Promise.all([core.refresh(), refreshProfiles()]);
     await refreshStoppedCandidate();
-    await Promise.all([proxySelector.value?.refresh(), routeModeControl.value?.refresh()]);
+    await Promise.all([proxySelector.value?.refresh(), routeModeControl.value?.refresh(), runtimeMetrics.value?.refresh()]);
     showNotice("状态已刷新。");
   } finally {
     refreshing.value = false;
@@ -192,7 +185,7 @@ onBeforeUnmount(() => {
     <header class="page-intro">
       <div class="page-intro-copy">
         <h2>早上好，管理员</h2>
-        <p v-if="running">所有服务运行正常。过去 24 小时共处理 18.6 GB 流量，未发现异常连接。</p>
+        <p v-if="running">运行指标来自 sing-box 核心，流量统计覆盖经核心转发的连接。</p>
         <p v-else>核心服务当前未运行，启动后将恢复流量转发与运行状态监控。</p>
       </div>
       <div class="page-actions">
@@ -216,22 +209,16 @@ onBeforeUnmount(() => {
               <button class="hero-btn" :class="{ 'hero-btn-danger': running }" data-core-toggle type="button" :disabled="coreTransitioning" @click="toggleCore"><AppIcon :name="coreAction ? 'rotate' : 'power'" :size="14" />{{ coreActionLabel }}</button>
             </div>
           </div>
-          <div class="hero-metrics" aria-label="实时运行数据">
-            <component :is="metric.href ? 'a' : 'div'" v-for="metric in metrics" :key="metric.label" class="hero-metric" :class="{ 'hero-metric-link': metric.href }" :href="metric.href">
-              <span class="hero-metric-icon" :class="metric.tone"><AppIcon :name="metric.icon" :size="14" /></span>
-              <span class="hero-metric-copy"><span>{{ metric.label }}</span><strong>{{ metric.value }} <small>{{ metric.unit }}</small></strong></span>
-              <AppIcon v-if="metric.href" class="hero-metric-arrow" name="chevron" :size="12" />
-            </component>
-          </div>
+          <DashboardMetrics ref="runtimeMetrics" :state="core.status.value?.state" :busy="Boolean(coreTransitioning)" :runtime-key="proxyRuntimeKey" />
           <div class="hero-profile">
             <span class="hero-profile-label">活动配置</span>
-            <strong class="hero-profile-name" :title="activeProfile?.name || '自定义配置 A'">{{ activeProfile?.name || "自定义配置 A" }}</strong>
+            <strong class="hero-profile-name" :title="activeProfile?.name || '未选择档案'">{{ activeProfile?.name || "未选择档案" }}</strong>
             <span class="hero-profile-applied">最后应用于{{ appliedLabel }}</span>
             <div class="hero-profile-stats"><span>入站 <strong>{{ draftStats.inbounds }}</strong></span><span>出站 <strong>{{ draftStats.outbounds }}</strong></span><span>路由规则 <strong>{{ draftStats.routeRules }}</strong></span></div>
           </div>
           <div class="hero-meta">
             <div class="hero-meta-item"><span>运行时间</span><strong>{{ uptime }}</strong></div>
-            <div class="hero-meta-item"><span>核心版本</span><strong>{{ core.status.value?.installedVersion || "1.11.11" }}</strong></div>
+            <div class="hero-meta-item"><span>核心版本</span><strong>{{ core.status.value?.installedVersion || "--" }}</strong></div>
             <div class="hero-meta-item"><span>进程 ID</span><strong>{{ core.status.value?.pid || "--" }}</strong></div>
           </div>
         </div>
@@ -277,20 +264,6 @@ onBeforeUnmount(() => {
 .hero-btn { display: inline-flex; min-height: 31px; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid rgb(255 255 255 / 20%); border-radius: 8px; color: #fff; background: rgb(255 255 255 / 10%); font-size: var(--font-size-xs); font-weight: 650; backdrop-filter: blur(8px); transition: background 150ms ease, transform 150ms ease; }
 .hero-btn:hover { background: rgb(255 255 255 / 18%); transform: translateY(-1px); }
 .hero-btn-danger { color: #ffeff0; border-color: rgb(255 225 228 / 20%); background: rgb(107 20 35 / 22%); }
-.hero-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 6px; }
-.hero-metric { display: flex; min-width: 0; min-height: 34px; align-items: center; gap: 5px; padding: 4px 6px; border: 1px solid rgb(255 255 255 / 13%); border-radius: 8px; color: #fff; background: rgb(255 255 255 / 10%); text-decoration: none; }
-.hero-metric-link { transition: background 150ms ease, border-color 150ms ease; }
-.hero-metric-link:hover { border-color: rgb(255 255 255 / 40%); background: rgb(255 255 255 / 20%); }
-.hero-metric-link:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
-.hero-metric-arrow { flex: 0 0 auto; opacity: .8; }
-.hero-metric-icon { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: #dce5ff; background: rgb(255 255 255 / 13%); }
-.hero-metric-icon.cyan { color: #a4f4ff; }
-.hero-metric-icon.orange { color: #ffe0ad; }
-.hero-metric-icon.green { color: #aaf3d0; }
-.hero-metric-copy { display: flex; min-width: 0; flex: 1; align-items: baseline; justify-content: space-between; gap: 4px; }
-.hero-metric-copy > span { color: rgb(255 255 255 / 76%); font-size: var(--font-size-xs); white-space: nowrap; }
-.hero-metric-copy strong { overflow: hidden; color: #fff; font-size: 15px; font-weight: 730; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
-.hero-metric-copy small { font-size: var(--font-size-xs); font-weight: 550; }
 .hero-profile { display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; gap: 3px 8px; padding-top: 5px; border-top: 1px solid rgb(255 255 255 / 18%); font-size: var(--font-size-xs); line-height: 1.2; }
 .hero-profile-label, .hero-profile-applied { color: rgb(255 255 255 / 75%); white-space: nowrap; }
 .hero-profile-name { max-width: 135px; overflow: hidden; color: #fff; text-overflow: ellipsis; white-space: nowrap; }
@@ -314,12 +287,7 @@ onBeforeUnmount(() => {
   .hero-header { align-items: flex-start; flex-wrap: wrap; }
   .hero-actions { width: 100%; }
   .hero-btn { flex: 1; justify-content: center; }
-  .hero-metric-copy { display: block; }
-  .hero-metric-copy > span, .hero-metric-copy strong { display: block; }
   .hero-profile-stats { width: 100%; margin-left: 0; }
-}
-@media (max-width: 359px) {
-  .hero-metric-icon { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 </style>

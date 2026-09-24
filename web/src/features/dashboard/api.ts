@@ -1,5 +1,18 @@
 import { request } from "@/api/client";
 
+export interface RuntimeMetrics {
+  uploadTotal: number;
+  downloadTotal: number;
+  memory: number;
+  connectionCount: number;
+  runtimeKey: string;
+  observedAt: string;
+}
+export interface RuntimeMetricsApi { get(signal?: AbortSignal): Promise<RuntimeMetrics>; }
+export const runtimeMetricsApi: RuntimeMetricsApi = {
+  async get(signal) { return (await request<RuntimeMetrics>("/runtime/metrics", { signal })).data; }
+};
+
 export type RouteMode = "rule" | "global" | "direct";
 export interface RuntimeMode { mode: string; availableModes: RouteMode[]; }
 export interface RuntimeModeApi {

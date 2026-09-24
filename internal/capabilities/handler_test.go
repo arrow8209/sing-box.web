@@ -21,8 +21,8 @@ func TestHandlerReturnsPhaseOneCapabilities(t *testing.T) {
 	if response != PhaseOne {
 		t.Fatalf("response=%+v", response)
 	}
-	if response.Runtime || response.Traffic || !response.ProxyGroups || !response.Connections {
-		t.Fatalf("connections and proxy groups runtime capabilities should be enabled: %+v", response)
+	if response.Runtime || !response.Traffic || !response.ProxyGroups || !response.Connections {
+		t.Fatalf("traffic, connections and proxy groups capabilities should be enabled: %+v", response)
 	}
 	if !response.Subscriptions || !response.InboundResources || !response.Application {
 		t.Fatalf("resource capabilities must be enabled: %+v", response)

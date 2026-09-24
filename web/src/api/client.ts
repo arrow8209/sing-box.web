@@ -19,6 +19,7 @@ export async function request<T>(path: string, options: RequestOptions = {}): Pr
   if (options.body !== undefined) headers.set("Content-Type", "application/json");
   if (!/^(GET|HEAD)$/.test(options.method ?? "GET") && csrfToken) headers.set("X-CSRF-Token", csrfToken);
   const response = await fetch(`/api/v1${path}`, {
+    ...(options.signal ? { signal: options.signal } : {}),
     method: options.method ?? "GET",
     credentials: "same-origin",
     headers,

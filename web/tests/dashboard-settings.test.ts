@@ -163,7 +163,8 @@ describe("仪表盘与设置", () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      const data = path.endsWith("/runtime/mode") ? { mode: "global", availableModes: ["rule", "global", "direct"] } : path.endsWith("/runtime/proxy-groups")
+      const data = path.endsWith("/runtime/metrics") ? { uploadTotal: 1000, downloadTotal: 2000, memory: 24 * 1024 * 1024, connectionCount: 9, runtimeKey: "4321", observedAt: "2026-09-24T00:00:00Z" }
+        : path.endsWith("/runtime/mode") ? { mode: "global", availableModes: ["rule", "global", "direct"] } : path.endsWith("/runtime/proxy-groups")
         ? outbounds.filter((outbound): outbound is { type: string; tag: string; outbounds: string[] } => "outbounds" in outbound).map((outbound) => ({ tag: outbound.tag, type: outbound.type === "urltest" ? "URLTest" : "Selector", selected: outbound.outbounds[0], members: outbound.outbounds.map((tag) => ({ tag, type: "AnyTLS" })) }))
         : path.endsWith("/core") && init?.method === "DELETE"
         ? { ...core, state: "stopped", pid: 0, expectedRunning: false }
@@ -185,6 +186,11 @@ describe("仪表盘与设置", () => {
     expect(wrapper.get(".hero-metrics").text()).toContain("实时上传");
     expect(wrapper.get(".hero-metrics").text()).toContain("实时下载");
     expect(wrapper.get(".hero-metrics").text()).toContain("内存占用");
+    expect(wrapper.get('[data-metric="memory"] strong').text()).toBe("24.0 MB");
+    expect(wrapper.get('[data-metric="connections"] strong').text()).toBe("9 条");
+    expect(wrapper.get('[data-metric="upload"] strong').text()).toBe("--");
+    expect(wrapper.text()).not.toContain("18.6 GB");
+    expect(wrapper.text()).not.toContain("12 天 08:42:16");
     expect(wrapper.get(".hero-status .hero-profile").text()).toContain("家庭出口");
     expect(wrapper.get(".hero-status .hero-profile-stats").text()).toContain("路由规则 11");
     expect(wrapper.get('a.hero-metric-link[href="/connections"]').text()).toContain("活动连接");
@@ -198,6 +204,7 @@ describe("仪表盘与设置", () => {
     await flushPromises();
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/core", expect.objectContaining({ method: "DELETE" }));
     expect(wrapper.text()).toContain("sing-box 已停止");
+    expect(wrapper.findAll(".hero-metric strong").every((item) => item.text() === "--")).toBe(true);
     expect(wrapper.findAll('.mode-option[aria-pressed="true"]')).toHaveLength(0);
     expect(wrapper.findAll(".mode-option").every((button) => button.attributes("disabled") !== undefined)).toBe(true);
     expect(wrapper.text()).toContain("sing-box 进程已结束");

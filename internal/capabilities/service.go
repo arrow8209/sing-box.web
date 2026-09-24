@@ -24,7 +24,7 @@ var PhaseOne = Response{
 	Application:      true,
 	CoreUpdate:       true,
 	Runtime:          false,
-	Traffic:          false,
+	Traffic:          true,
 	Connections:      true,
 	ProxyGroups:      true,
 }

@@ -12,6 +12,7 @@ import (
 const connectionsPath = "/api/v1/runtime/connections"
 const proxyGroupsPath = "/api/v1/runtime/proxy-groups"
 const modePath = "/api/v1/runtime/mode"
+const metricsPath = "/api/v1/runtime/metrics"
 
 type Handler struct {
 	service *Service
@@ -22,6 +23,20 @@ func NewHandler(service *Service) *Handler { return &Handler{service: service} }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.service == nil {
 		apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "runtime_unavailable", Message: "运行数据服务不可用"})
+		return
+	}
+	if r.URL.Path == metricsPath {
+		if r.Method != http.MethodGet {
+			httpapi.MethodNotAllowed(w, http.MethodGet)
+			return
+		}
+		snapshot, err := h.service.Metrics(r.Context())
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		httpapi.WriteJSON(w, http.StatusOK, snapshot)
 		return
 	}
 	if r.URL.Path == modePath {

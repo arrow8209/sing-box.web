@@ -20,6 +20,11 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
       return;
     }
     const path = new URL(request.url!, "http://127.0.0.1").pathname;
+    if (path === "/connections") {
+      response.setHeader("Content-Type", "application/json");
+      response.end(JSON.stringify({ memory: 32 * 1024 * 1024, uploadTotal: 0, downloadTotal: 0, connections: [] }));
+      return;
+    }
     if (path === "/configs") {
       if (request.method === "PATCH") {
         if (failModeWrite) { response.writeHead(400).end(); return; }

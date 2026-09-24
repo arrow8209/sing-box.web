@@ -76,20 +76,9 @@ func NewServiceWithClient(layout paths.Layout, status statusSource, client httpD
 
 func (s *Service) Connections(ctx context.Context) (ConnectionsSnapshot, error) {
 	var snapshot ConnectionsSnapshot
-	response, err := s.request(ctx, http.MethodGet, "/connections", nil)
+	payload, err := s.readConnectionsPayload(ctx)
 	if err != nil {
 		return snapshot, err
-	}
-	defer response.Body.Close()
-	if response.StatusCode != http.StatusOK {
-		return snapshot, fmt.Errorf("%w: status %d", ErrControllerUnavailable, response.StatusCode)
-	}
-	payload, err := io.ReadAll(io.LimitReader(response.Body, maximumConnectionsBody+1))
-	if err != nil {
-		return snapshot, fmt.Errorf("%w: read response", ErrControllerUnavailable)
-	}
-	if len(payload) > maximumConnectionsBody {
-		return snapshot, fmt.Errorf("%w: response too large", ErrControllerUnavailable)
 	}
 	if err := json.Unmarshal(payload, &snapshot); err != nil {
 		return snapshot, fmt.Errorf("%w: invalid response", ErrControllerUnavailable)
@@ -106,6 +95,25 @@ func (s *Service) Connections(ctx context.Context) (ConnectionsSnapshot, error) 
 		}
 	}
 	return snapshot, nil
+}
+
+func (s *Service) readConnectionsPayload(ctx context.Context) ([]byte, error) {
+	response, err := s.request(ctx, http.MethodGet, "/connections", nil)
+	if err != nil {
+		return nil, err
+	}
+	defer response.Body.Close()
+	if response.StatusCode != http.StatusOK {
+		return nil, fmt.Errorf("%w: status %d", ErrControllerUnavailable, response.StatusCode)
+	}
+	payload, err := io.ReadAll(io.LimitReader(response.Body, maximumConnectionsBody+1))
+	if err != nil {
+		return nil, fmt.Errorf("%w: read response", ErrControllerUnavailable)
+	}
+	if len(payload) > maximumConnectionsBody {
+		return nil, fmt.Errorf("%w: response too large", ErrControllerUnavailable)
+	}
+	return payload, nil
 }
 
 func (s *Service) CloseConnection(ctx context.Context, id string) error {

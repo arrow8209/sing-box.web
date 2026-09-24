@@ -8,6 +8,15 @@ function mockCapabilities(value: Record<string, boolean>): void {
 }
 
 describe("运行能力边界", () => {
+  it("实时指标已接入时引导至仪表盘，不再提示流量尚未提供", async () => {
+    mockCapabilities({ runtime: false, traffic: true, connections: true, proxyGroups: true });
+    const wrapper = mount(RuntimeUnavailableView);
+    await flushPromises();
+    expect(wrapper.text()).toContain("实时指标已接入仪表盘");
+    expect(wrapper.get('a[href="/"]').text()).toBe("查看仪表盘");
+    expect(wrapper.text()).not.toContain("将在后续阶段提供");
+    wrapper.unmount();
+  });
   it("显示已接入的活动连接与尚不可用的其他运行能力", async () => {
     mockCapabilities({ configuration: true, inboundResources: true, subscriptions: true, ruleResources: true, application: false, coreUpdate: true, runtime: false, traffic: false, connections: true, proxyGroups: false });
     const wrapper = mount(RuntimeUnavailableView);

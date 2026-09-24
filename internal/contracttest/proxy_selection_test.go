@@ -13,6 +13,8 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -27,7 +29,7 @@ func (runningContractCore) Status(context.Context) core.Status {
 	return core.Status{State: core.ProcessRunning}
 }
 
-func TestProxyAndModeChangesRouteActualTrafficAndRefreshReadsCore(t *testing.T) {
+func TestRuntimeControlsAndMetricsUseActualCore(t *testing.T) {
 	binary := os.Getenv("SINGBOX_CONTRACT_BINARY")
 	selected := readSelection(t)
 	if binary == "" || sha256File(t, binary) != selected.BinarySHA256 {
@@ -118,11 +120,24 @@ func TestProxyAndModeChangesRouteActualTrafficAndRefreshReadsCore(t *testing.T) 
 		}
 		time.Sleep(50 * time.Millisecond)
 	}
+	metricsStream := make(chan struct{})
+	releaseMetricsStream := sync.OnceFunc(func() { close(metricsStream) })
 	origin := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/metrics-transfer" {
+			_, _ = io.Copy(io.Discard, r.Body)
+			_, _ = io.WriteString(w, strings.Repeat("d", 64<<10))
+			w.(http.Flusher).Flush()
+			select {
+			case <-metricsStream:
+			case <-r.Context().Done():
+			}
+			return
+		}
 		host, _, _ := net.SplitHostPort(r.RemoteAddr)
 		_, _ = io.WriteString(w, host)
 	}))
 	defer origin.Close()
+	defer releaseMetricsStream()
 	proxyURL, _ := url.Parse("http://" + inboundAddress)
 	transport := &http.Transport{Proxy: http.ProxyURL(proxyURL), DisableKeepAlives: true}
 	defer transport.CloseIdleConnections()
@@ -164,5 +179,34 @@ func TestProxyAndModeChangesRouteActualTrafficAndRefreshReadsCore(t *testing.T) 
 			t.Fatalf("refreshed mode=%+v error=%v", refreshed, err)
 		}
 	}
-	t.Logf("sing-box %s: node selection and rule/global/direct modes changed actual traffic sources; fresh runtime services read the confirmed choices", selected.Version)
+	before, err := service.Metrics(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	transfer, err := client.Post(origin.URL+"/metrics-transfer", "application/octet-stream", strings.NewReader(strings.Repeat("u", 64<<10)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer transfer.Body.Close()
+	if _, err := io.CopyN(io.Discard, transfer.Body, 64<<10); err != nil {
+		t.Fatal(err)
+	}
+	metrics, err := service.Metrics(ctx)
+	if err != nil || metrics.Memory <= 0 || metrics.ConnectionCount < 1 || metrics.UploadTotal-before.UploadTotal < 64<<10 || metrics.DownloadTotal-before.DownloadTotal < 64<<10 || !metrics.ObservedAt.After(before.ObservedAt) {
+		t.Fatalf("live transfer metrics=%+v before=%+v error=%v", metrics, before, err)
+	}
+	releaseMetricsStream()
+	_ = transfer.Body.Close()
+	deadline = time.Now().Add(2 * time.Second)
+	for {
+		metrics, err = service.Metrics(ctx)
+		if err == nil && metrics.ConnectionCount == 0 {
+			break
+		}
+		if time.Now().After(deadline) {
+			t.Fatalf("closed connection metrics=%+v error=%v", metrics, err)
+		}
+		time.Sleep(20 * time.Millisecond)
+	}
+	t.Logf("sing-box %s: node and mode changes routed real traffic; live transfers increased upload/download counters, reported memory and active connections, and closed connections disappeared", selected.Version)
 }

@@ -151,7 +151,7 @@ func NewRouter(deps Dependencies) http.Handler {
 			updater.ServeHTTP(w, r)
 		case r.URL.Path == "/api/v1/settings/proxy" || r.URL.Path == "/api/v1/settings/core" || r.URL.Path == "/api/v1/settings/server":
 			settings.ServeHTTP(w, r)
-		case r.URL.Path == "/api/v1/runtime/connections" || strings.HasPrefix(r.URL.Path, "/api/v1/runtime/connections/") || r.URL.Path == "/api/v1/runtime/proxy-groups" || r.URL.Path == "/api/v1/runtime/mode":
+		case r.URL.Path == "/api/v1/runtime/connections" || strings.HasPrefix(r.URL.Path, "/api/v1/runtime/connections/") || r.URL.Path == "/api/v1/runtime/proxy-groups" || r.URL.Path == "/api/v1/runtime/mode" || r.URL.Path == "/api/v1/runtime/metrics":
 			runtimeData.ServeHTTP(w, r)
 		case r.URL.Path == "/api" || strings.HasPrefix(r.URL.Path, "/api/"):
 			apierror.Write(w, http.StatusNotFound, apierror.Error{Code: "not_found", Message: "请求的资源不存在"})
