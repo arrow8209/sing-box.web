@@ -5,7 +5,6 @@ import OutboundConfigPanel from "@/features/config-editor/OutboundConfigPanel.vu
 import OutboundEditorDialog from "@/features/config-editor/OutboundEditorDialog.vue";
 import RouteConfigPanel from "@/features/config-editor/RouteConfigPanel.vue";
 import RouteRuleEditorDialog from "@/features/config-editor/RouteRuleEditorDialog.vue";
-import { restoreOutboundEditorState } from "@/features/config-editor/outbound";
 import type { RouteRuleEditorResult } from "@/features/config-editor/route";
 import type { Draft } from "@/features/profiles/types";
 import { useRuleResourceStore } from "@/features/rule-resources/store";
@@ -33,6 +32,10 @@ const outbounds = [
   { type: "future-protocol", tag: "JSON 自定义节点" }
 ];
 const configuredTags = ["节点选择", "自动选择", "全局直连", "全局拦截", "GLOBAL"];
+const explicitState = { version: 1, generatedTags: ["订阅代理节点", "订阅直连节点", "direct", "block"], groups: outbounds
+  .filter((item) => configuredTags.includes(String(item.tag))).map((item, index) => ({ id: `group-${index}`, tag: item.tag, type: item.type,
+    hidden: item.tag === "全局拦截", include: "", exclude: "", icon: "", references: [],
+    runtimeTags: "outbounds" in item && Array.isArray(item.outbounds) ? item.outbounds : [] })) };
 
 beforeEach(() => {
   vi.spyOn(useRuleResourceStore(), "refresh").mockResolvedValue();
@@ -46,24 +49,24 @@ afterEach(() => { vi.restoreAllMocks(); });
 
 describe("出站选项与出站设置对应", () => {
   it("重新打开编辑器时刷新已修改订阅，并移除已删除订阅的缓存", async () => {
-    const draft: Draft = { profileId: "b".repeat(32), revision: 1, config: { outbounds }, buffers: {}, bindings: [], savedAt: "2026-09-10T00:00:00Z", editorState: { outbounds: restoreOutboundEditorState(outbounds, [subscription]) } };
+    const draft: Draft = { profileId: "b".repeat(32), revision: 1, config: { outbounds }, buffers: {}, bindings: [], savedAt: "2026-09-10T00:00:00Z", editorState: { outbounds: explicitState } };
     const wrapper = mount(OutboundConfigPanel, { props: { draft } });
     await flushPromises();
-    expect(subscriptionApi.get).toHaveBeenCalledOnce();
+    expect(subscriptionApi.get).not.toHaveBeenCalled();
     const updated = { ...subscription, updatedAt: "2026-09-23T00:00:00Z", outbounds: [{ type: "trojan", tag: "订阅代理节点", server: "updated.example.test" }] };
     vi.mocked(subscriptionApi.list).mockResolvedValue([{ id: updated.id, name: updated.name, nodeCount: 1, protocols: ["trojan"], updatedAt: updated.updatedAt }]);
     vi.mocked(subscriptionApi.get).mockResolvedValue(updated);
     await wrapper.get('[aria-label="编辑出站 自动选择"]').trigger("click");
     await flushPromises();
     const editor = wrapper.findComponent(OutboundEditorDialog);
-    expect(subscriptionApi.get).toHaveBeenCalledTimes(2);
+    expect(subscriptionApi.get).toHaveBeenCalledOnce();
     expect(editor.props("subscriptions")).toEqual([updated]);
     editor.vm.$emit("close");
     vi.mocked(subscriptionApi.list).mockResolvedValue([]);
     await wrapper.get('[aria-label="编辑出站 自动选择"]').trigger("click");
     await flushPromises();
     expect(editor.props("subscriptions")).toEqual([]);
-    expect(subscriptionApi.get).toHaveBeenCalledTimes(2);
+    expect(subscriptionApi.get).toHaveBeenCalledOnce();
     wrapper.unmount();
   });
 
@@ -73,7 +76,7 @@ describe("出站选项与出站设置对应", () => {
       config: { outbounds, route: { final: "节点选择" } },
       buffers: {}, bindings: [], savedAt: "2026-09-10T00:00:00Z"
     };
-    if (scenario !== "导入配置") draft.editorState = { outbounds: restoreOutboundEditorState(outbounds, [subscription]) };
+    if (scenario !== "导入配置") draft.editorState = { outbounds: explicitState };
     if (scenario === "订阅读取失败") vi.mocked(subscriptionApi.get).mockRejectedValue(new Error("订阅暂不可用"));
     const outboundPanel = mount(OutboundConfigPanel, { props: { draft } });
     const routePanel = mount(RouteConfigPanel, { props: { draft } });
@@ -81,7 +84,7 @@ describe("出站选项与出站设置对应", () => {
     await flushPromises();
 
     const cardTags = outboundPanel.findAll(".outbound-card").map((card) => card.attributes("data-outbound-tag"));
-    expect(cardTags).toEqual(configuredTags);
+    expect(cardTags).toEqual(scenario === "导入配置" ? ["节点选择", "自动选择", "订阅直连节点", "全局直连", "全局拦截", "GLOBAL", "direct", "block"] : configuredTags);
     expect(routePanel.get('[aria-label="默认出站标签"]').findAll("option").map((option) => option.attributes("value")).filter(Boolean)).toEqual(cardTags);
     await routePanel.get(".add-button").trigger("click");
     expect(routePanel.get('[aria-label="目标出站"]').findAll("option").map((option) => option.attributes("value")).filter(Boolean)).toEqual(cardTags);

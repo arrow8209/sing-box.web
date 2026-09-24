@@ -10,8 +10,6 @@ import type { PreviewResult } from "@/features/application/types";
 import { createProfileStore } from "@/features/profiles/store";
 import type { ProfileApi } from "@/features/profiles/api";
 import type { Draft, ProfileSummary } from "@/features/profiles/types";
-import type { ReferenceSources } from "@/features/application/references";
-import type { SubscriptionDetail } from "@/features/subscriptions/types";
 
 const profileId = "0123456789abcdef0123456789abcdef";
 const draft = (): Draft => ({ profileId, revision: 4, config: {}, buffers: { log: "{}" }, bindings: [], savedAt: "2026-08-21T00:00:00Z" });
@@ -38,9 +36,8 @@ function linkedProfiles() {
       return { data: structuredClone(saved), etag: `"rev-${saved.revision}"` };
     })
   };
-  const latest: SubscriptionDetail = { id: "a".repeat(32), name: "测试订阅", outbounds: [{ type: "ssh", tag: "test-node", server: "updated.example.test" }], updatedAt: "2026-09-23T00:00:00Z" };
-  const sources: ReferenceSources = { subscription: vi.fn(async () => latest), inbound: vi.fn() };
-  return { profiles: createProfileStore(api), profileApi: api, sources, latest };
+  const sources = { subscription: vi.fn(), inbound: vi.fn() };
+  return { profiles: createProfileStore(api), profileApi: api, sources };
 }
 
 describe("配置应用", () => {
@@ -51,7 +48,7 @@ describe("配置应用", () => {
     await env.profiles.refresh(); await env.profiles.open(profileId);
     const success = { revision: 4, files: [], digest: "a".repeat(64), valid: true, stage: "core_check", exitCode: 0 };
     const api: ApplicationApi = { preview: vi.fn(async () => success), validate: vi.fn(async () => success), apply: vi.fn(async () => ({ applied: true, profileId, revision: 4, digest: success.digest, validation: success })) };
-    const store = createApplicationStore(env.profiles, api, env.sources, ref(true));
+    const store = createApplicationStore(env.profiles, api, ref(true));
     await store[action]();
     expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
     expect(env.sources.subscription).not.toHaveBeenCalled();
@@ -64,7 +61,7 @@ describe("配置应用", () => {
     await env.profiles.refresh(); await env.profiles.open(profileId);
     let finish: (result: { revision: number; files: []; digest: string }) => void = () => undefined;
     const api: ApplicationApi = { preview: vi.fn(() => new Promise<PreviewResult>((resolve) => { finish = resolve; })), validate: vi.fn(), apply: vi.fn() };
-    const store = createApplicationStore(env.profiles, api, env.sources, ref(true));
+    const store = createApplicationStore(env.profiles, api, ref(true));
     const pending = store.preview(); await flushPromises();
     env.profiles.mutate((current) => { current.buffers.log = '{"level":"debug"}'; });
     finish({ revision: 4, files: [], digest: "late" }); await pending;
@@ -73,77 +70,16 @@ describe("配置应用", () => {
     expect(api.validate).not.toHaveBeenCalled();
     expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
   });
-  it.each(["preview", "validate", "apply"] as const)("%s 前读取最新订阅并保存草稿，随后使用新修订执行", async (action) => {
+  it("旧服务端缺少引用解析能力时提示更新且不保存派生结果", async () => {
     const env = linkedProfiles(); stores.push(env.profiles);
     await env.profiles.refresh(); await env.profiles.open(profileId);
-    const success = { revision: 5, files: [], digest: "a".repeat(64), valid: true, stage: "core_check", exitCode: 0 };
-    const api: ApplicationApi = {
-      preview: vi.fn(async () => success), validate: vi.fn(async () => success),
-      apply: vi.fn(async () => ({ applied: true, profileId, revision: 5, digest: success.digest, validation: success }))
-    };
-    const store = createApplicationStore(env.profiles, api, env.sources);
-    await store[action]();
-    expect(env.profileApi.saveDraft).toHaveBeenCalledOnce();
-    expect(env.sources.subscription).toHaveBeenCalledWith("a".repeat(32));
-    expect(env.profiles.draft.value?.buffers.outbounds).not.toContain("removed-group");
-    expect(env.profiles.draft.value?.buffers.outbounds).toContain("updated.example.test");
-    expect(api[action]).toHaveBeenCalledWith(profileId, action === "apply" ? { revision: 5 } : 5);
-    expect(store.preparing.value).toBe(false);
-    expect(store.error.value).toBeNull();
-    await store[action]();
-    expect(env.profileApi.saveDraft).toHaveBeenCalledOnce();
-    expect(env.sources.subscription).toHaveBeenCalledTimes(2);
-  });
-
-  it("引用读取失败时不保存部分同步结果，也不继续检测", async () => {
-    const env = linkedProfiles(); stores.push(env.profiles);
-    await env.profiles.refresh(); await env.profiles.open(profileId);
-    vi.mocked(env.sources.subscription).mockRejectedValue(new Error("订阅已删除"));
     const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(), apply: vi.fn() };
-    const store = createApplicationStore(env.profiles, api, env.sources);
-    await store.validate();
-    expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
-    expect(api.validate).not.toHaveBeenCalled();
-    expect(store.error.value).toMatchObject({ stage: "sync_references", fieldPath: "outbounds" });
-    expect(store.error.value?.message).toContain("订阅已删除");
-    expect(env.profiles.draft.value?.buffers.outbounds).toContain("removed-group");
-    store.previewResult.value = { revision: 4, files: [], digest: "old-preview" };
+    const store = createApplicationStore(env.profiles, api, ref(false));
     await store.preview();
-    expect(store.previewResult.value).toBeNull();
+    expect(store.error.value?.code).toBe("reference_resolution_unavailable");
     expect(api.preview).not.toHaveBeenCalled();
-  });
-
-  it("同步期间的本地编辑不会被覆盖", async () => {
-    const env = linkedProfiles(); stores.push(env.profiles);
-    await env.profiles.refresh(); await env.profiles.open(profileId);
-    let finish: (value: SubscriptionDetail) => void = () => undefined;
-    vi.mocked(env.sources.subscription).mockImplementation(() => new Promise((resolve) => { finish = resolve; }));
-    const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(), apply: vi.fn() };
-    const store = createApplicationStore(env.profiles, api, env.sources);
-    const pending = store.validate();
-    await flushPromises();
-    expect(store.preparing.value).toBe(true);
-    env.profiles.mutate((current) => { current.buffers.log = '{"level":"debug"}'; });
-    finish(env.latest);
-    await pending;
-    expect(store.error.value?.message).toContain("同步期间草稿已变更");
-    expect(env.profiles.draft.value?.buffers.log).toBe('{"level":"debug"}');
     expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
-    expect(api.validate).not.toHaveBeenCalled();
   });
-
-  it("同步草稿保存冲突时不会检测旧修订", async () => {
-    const env = linkedProfiles(); stores.push(env.profiles);
-    await env.profiles.refresh(); await env.profiles.open(profileId);
-    vi.mocked(env.profileApi.saveDraft).mockRejectedValue(new ApiError(409, { code: "draft_revision_conflict", message: "版本冲突", latestRevision: 6 }));
-    const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(), apply: vi.fn() };
-    const store = createApplicationStore(env.profiles, api, env.sources);
-    await store.validate();
-    expect(env.profiles.saveState.value).toBe("conflict");
-    expect(api.validate).not.toHaveBeenCalled();
-    expect(store.error.value?.stage).toBe("sync_references");
-  });
-
   it("配置操作组依次提供预览、检测和应用", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
     const wrapper = mount(ApplicationBar);
@@ -154,7 +90,7 @@ describe("配置应用", () => {
   it("预览仅呈现模块内容", async () => {
     const profileStore = profiles(); stores.push(profileStore); await profileStore.refresh(); await profileStore.open(profileId);
     const api: ApplicationApi = { preview: vi.fn(async () => ({ revision: 4, files: [{ name: "80-route.json", content: { route: { rule_set: [{ path: "data/rulesets/resource-a.srs" }] } } }], digest: "a".repeat(64) })), validate: vi.fn(), apply: vi.fn() };
-    const store = createApplicationStore(profileStore, api); await store.preview();
+    const store = createApplicationStore(profileStore, api, ref(true)); await store.preview();
     expect(JSON.stringify(store.previewResult.value)).toContain("data/rulesets/resource-a.srs"); expect(JSON.stringify(store.previewResult.value)).not.toContain("https://");
   });
   it("检查成功时显示成功结果", () => {
@@ -178,7 +114,7 @@ describe("配置应用", () => {
       configDirectory: `config.staging-${profileId}`
     };
     const api: ApplicationApi = { preview: vi.fn(), validate: vi.fn(async () => validation), apply: vi.fn() };
-    const store = createApplicationStore(profileStore, api); await store.validate();
+    const store = createApplicationStore(profileStore, api, ref(true)); await store.validate();
 
     const wrapper = mount(ValidationErrors, { props: { validation: store.validation.value, error: null } });
     expect(wrapper.text()).toContain("核心检查：sing-box 配置检查失败");
@@ -200,7 +136,7 @@ describe("配置应用", () => {
       preview: vi.fn(), validate: vi.fn(),
       apply: vi.fn(async () => ({ applied: false, profileId, revision: 4, digest: failed.digest, validation: failed }))
     };
-    const store = createApplicationStore(profileStore, api);
+    const store = createApplicationStore(profileStore, api, ref(true));
     const result = await store.apply();
     expect(api.apply).toHaveBeenCalledWith(profileId, { revision: 4 });
     expect(result?.applied).toBe(false);
@@ -216,7 +152,7 @@ describe("配置应用", () => {
       apply: vi.fn(async () => ({ applied: true, profileId, revision: 4, digest: success.digest, validation: success }))
     };
     const refresh = vi.spyOn(profileStore, "refresh");
-    const store = createApplicationStore(profileStore, api);
+    const store = createApplicationStore(profileStore, api, ref(true));
     const result = await store.apply();
     expect(result?.applied).toBe(true);
     expect(refresh).toHaveBeenCalled();
@@ -229,7 +165,7 @@ describe("配置应用", () => {
       preview: vi.fn(), validate: vi.fn(),
       apply: vi.fn(async () => { throw new ApiError(409, { code: "config_copy_conflict", message: "配置目录在复制期间发生变更，请重试" }); })
     };
-    const store = createApplicationStore(profileStore, api);
+    const store = createApplicationStore(profileStore, api, ref(true));
     expect(await store.apply()).toBeNull();
     expect(store.error.value).toEqual({ code: "config_copy_conflict", message: "配置目录在复制期间发生变更，请重试", stage: undefined, fieldPath: undefined, output: "" });
   });

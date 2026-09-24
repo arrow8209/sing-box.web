@@ -32,6 +32,21 @@ async function createProfile(page: Page): Promise<void> {
   await dialog.getByLabel("名称").fill(profileName);
   await dialog.getByRole("button", { name: "确认" }).click();
   await expect(page.getByRole("heading", { name: profileName })).toBeVisible();
+  // This flow checks outbound references without relying on downloaded rule fixtures.
+  await page.evaluate(async (name) => {
+    const session = await (await fetch("/api/v1/auth/session")).json();
+    const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
+    const id = profiles.find((item) => item.name === name)!.id;
+    const response = await fetch(`/api/v1/profiles/${id}/draft`);
+    const draft = await response.json() as { buffers: Record<string, string>; editorState: Record<string, unknown> };
+    const dns = JSON.parse(draft.buffers.dns!) as Record<string, unknown>; dns.rules = [];
+    const route = JSON.parse(draft.buffers.route!) as Record<string, unknown>; route.rules = [];
+    const saved = await fetch(`/api/v1/profiles/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken, "If-Match": response.headers.get("ETag")! },
+      body: JSON.stringify({ buffers: { ...draft.buffers, dns: JSON.stringify(dns), route: JSON.stringify(route) }, bindings: [], editorState: draft.editorState }) });
+    if (!saved.ok) throw new Error(`isolated profile save failed: ${saved.status}`);
+  }, profileName);
+  await page.reload();
+  await page.locator(".config-name").filter({ hasText: profileName }).click();
 }
 
 async function openOutbounds(page: Page): Promise<void> {
@@ -118,24 +133,36 @@ test("按原型创建、引用、编辑和持久化自定义配置出站", async
   const persisted = await page.evaluate(async (name) => {
     const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
     const profile = profiles.find((item) => item.name === name);
-    return await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { buffers: Record<string, string>; editorState: { outbounds: { groups: Array<Record<string, unknown>> } } };
+    return { id: profile?.id, draft: await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { revision: number; schemaVersion: number; buffers: Record<string, string>; references: { outbounds: Array<Record<string, unknown>> }; editorState: { outbounds: { groups: Array<Record<string, unknown>> } } } };
   }, profileName);
-  const saved = JSON.parse(persisted.buffers.outbounds) as Array<Record<string, unknown>>;
-  expect(saved.find((item) => item.tag === "节点选择")?.outbounds).toEqual(["E2E 自动选择", "新加坡 E2E", "香港 E2E"]);
-  expect(saved.find((item) => item.tag === "新加坡 E2E")).toMatchObject({ password: "outbound-e2e-secret", tls: { enabled: true } });
-  expect(saved.find((item) => item.tag === "香港 E2E")).toMatchObject({ future: { keep: true } });
+  const saved = JSON.parse(persisted.draft.buffers.outbounds) as Array<Record<string, unknown>>;
+  expect(persisted.draft.schemaVersion).toBe(2);
+  expect(saved.find((item) => item.tag === "节点选择")).not.toHaveProperty("outbounds");
+  expect(saved.find((item) => item.tag === "新加坡 E2E")).toBeUndefined();
+  expect(saved.find((item) => item.tag === "香港 E2E")).toBeUndefined();
   expect(saved.find((item) => item.tag === "节点选择")).not.toHaveProperty("hidden");
   expect(saved.find((item) => item.tag === "节点选择")).not.toHaveProperty("include");
-  expect(persisted.buffers.outbounds).not.toContain("subscription-node");
-  expect(persisted.buffers.outbounds).not.toContain("sourceId");
-  expect(persisted.editorState.outbounds.groups.find((item) => item.tag === "节点选择")?.references).toMatchObject([
+  expect(persisted.draft.buffers.outbounds).not.toContain("subscription-node");
+  expect(persisted.draft.buffers.outbounds).not.toContain("sourceId");
+  expect(persisted.draft.references.outbounds.find((item) => item.tag === "节点选择")?.references).toMatchObject([
     { kind: "outbound" },
     { kind: "subscription" }
   ]);
+  expect(persisted.draft.editorState.outbounds.groups.find((item) => item.tag === "节点选择")).not.toHaveProperty("references");
+  const candidate = await page.evaluate(async ({ id, revision }) => {
+    const session = await (await fetch("/api/v1/auth/session")).json();
+    const response = await fetch(`/api/v1/profiles/${id}/preview`, { method: "POST", headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken }, body: JSON.stringify({ revision }) });
+    return await response.json() as { files: Array<{ name: string; content: { outbounds?: Array<Record<string, unknown>> } }> };
+  }, { id: persisted.id, revision: persisted.draft.revision });
+  const generated = candidate.files.find((item) => item.name === "70-outbounds.json")?.content.outbounds ?? [];
+  expect(generated.find((item) => item.tag === "节点选择")?.outbounds).toEqual(["E2E 自动选择", "新加坡 E2E", "香港 E2E"]);
+  expect(generated.find((item) => item.tag === "新加坡 E2E")).toMatchObject({ password: "outbound-e2e-secret", tls: { enabled: true } });
+  expect(generated.find((item) => item.tag === "香港 E2E")).toMatchObject({ future: { keep: true } });
 
   await page.goto("/");
   const dashboardSelector = page.locator('[data-proxy-group-tag="节点选择"]');
   await expect(dashboardSelector).toBeVisible();
+  await dashboardSelector.locator(".proxy-group-main").click();
   const dashboardMembers = dashboardSelector.locator(".proxy-node-card");
   await expect(dashboardMembers).toHaveCount(3);
   expect(await dashboardMembers.evaluateAll((members) => members.map((member) => member.getAttribute("data-proxy-member-tag")))).toEqual(["E2E 自动选择", "新加坡 E2E", "香港 E2E"]);

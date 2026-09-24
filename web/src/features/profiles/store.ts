@@ -163,7 +163,8 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
         saveState.value = "saved";
         await refresh();
       } catch (cause) {
-        classifySaveFailure(cause);
+        if (isApiError(cause) && cause.status === 409 && cause.body.code === "draft_revision_conflict") classifySaveFailure(cause);
+        else saveState.value = "saved";
         throw cause;
       }
     })();

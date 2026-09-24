@@ -3,7 +3,7 @@ import { describe, expect, it, vi } from "vitest";
 import InboundConfigPanel from "@/features/config-editor/InboundConfigPanel.vue";
 import InboundEditorDialog from "@/features/inbounds/InboundEditorDialog.vue";
 import InboundImportDialog from "@/features/inbounds/InboundImportDialog.vue";
-import { applyInboundRouteIntents } from "@/features/config-editor/inbound";
+import { serializeInboundInput } from "@/features/config-editor/inbound-input";
 import { uniqueInboundTag, validateInboundJson } from "@/features/inbounds/model";
 import { useInboundStore } from "@/features/inbounds/store";
 import type { Draft } from "@/features/profiles/types";
@@ -16,6 +16,13 @@ function draft(inbounds: unknown[]): Draft {
 }
 
 describe("入站配置", () => {
+  it("添加独立入站时保留原始大整数 JSON token", () => {
+    const saved = draft([{ type: "mixed", tag: "original", future: 9007199254740993 }]);
+    saved.buffers.inbounds = '[{"type":"mixed","tag":"original","future":9007199254740993}]';
+    const text = serializeInboundInput(saved, [saved.config.inbounds instanceof Array ? saved.config.inbounds[0] as { type: string; tag: string } : { type: "mixed", tag: "original" }, { type: "http", tag: "new" }]);
+    expect(text).toContain("9007199254740993");
+    expect(text).toContain('"tag":"new"');
+  });
   it("新建 Mixed 使用服务端默认端口，编辑既有入站保留原端口", async () => {
     const wrapper = mount(InboundEditorDialog, {
       props: { open: true, resource: null, existingTags: [], defaultMixedPort: 50019 }
@@ -93,39 +100,6 @@ describe("入站配置", () => {
     expect(custom.emitted("submit")?.[0]?.[0]).toEqual({ mode: "custom", config: legacy });
   });
 
-  it("只增删结构化编辑器管理的 sniff 路由规则", () => {
-    const initial = draft([{ type: "mixed", tag: "mixed-in" }]);
-    const manual = { inbound: "manual-in", action: "sniff", timeout: "2s" };
-    const terminal = { action: "route", outbound: "direct" };
-    initial.config.route = { rules: [manual, terminal] };
-    initial.buffers.route = `{"future":9007199254740993,"rules":[${JSON.stringify(manual)},${JSON.stringify(terminal)}]}`;
-    initial.editorState = { route: { version: 1, insertionPosition: 1, disabledRules: [] } };
-
-    const enabled = applyInboundRouteIntents(initial, [{ tag: "mixed-in", sniff: true }]);
-    expect(enabled.routeText).toBeDefined();
-    expect((JSON.parse(enabled.routeText!) as { rules: unknown[] }).rules).toEqual([
-      { inbound: "mixed-in", action: "sniff", timeout: "300ms" }, manual, terminal
-    ]);
-    expect(enabled.routeText).toContain("9007199254740993");
-    expect(enabled.editorState.managedSniffRules).toHaveLength(1);
-    expect(enabled.routeEditorState?.insertionPosition).toBe(2);
-
-    const withManaged: Draft = {
-      ...initial,
-      config: { ...initial.config, route: JSON.parse(enabled.routeText!) },
-      buffers: { ...initial.buffers, route: enabled.routeText! },
-      editorState: { ...initial.editorState, inbounds: enabled.editorState, route: enabled.routeEditorState }
-    };
-    const disabled = applyInboundRouteIntents(withManaged, [{ previousTag: "mixed-in", tag: "mixed-in", sniff: false }]);
-    expect((JSON.parse(disabled.routeText!) as { rules: unknown[] }).rules).toEqual([manual, terminal]);
-    expect(disabled.routeText).toContain("9007199254740993");
-    expect(disabled.editorState.managedSniffRules).toEqual([]);
-
-    const manualOnly = applyInboundRouteIntents(initial, [{ previousTag: "manual-in", tag: "manual-in", sniff: false }]);
-    expect(manualOnly.routeText).toBeUndefined();
-    expect(initial.config.route).toEqual({ rules: [manual, terminal] });
-  });
-
   it("结构化编辑器生成 TUN 地址、路由与开关", async () => {
     const wrapper = mount(InboundEditorDialog, { props: { open: true, resource: null, existingTags: [] } });
     await wrapper.get('input[type="radio"][value="tun"]').setValue(true);
@@ -165,20 +139,16 @@ describe("入站配置", () => {
 
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect(wrapper.emitted("save")).toBeTruthy();
-    const payload = wrapper.emitted("save")?.[0]?.[0] as { text: string; routeText?: string; editorState: Record<string, unknown> };
+    const payload = wrapper.emitted("save")?.[0]?.[0] as { text: string; references: { inbounds: Array<{ tag: string; resourceId: string; sourceTag: string; position: number }> }; routeText?: string };
     const saved = JSON.parse(payload.text) as Array<Record<string, unknown>>;
-    expect(saved).toHaveLength(2);
-    expect(saved[1]).toEqual({
-      type: "mixed", tag: "mixed-in-2", listen: "0.0.0.0", listen_port: 19090, future: { keep: true }
-    });
-    expect((JSON.parse(payload.routeText!) as { rules: unknown[] }).rules[0]).toEqual({
-      inbound: "mixed-in-2", action: "sniff", timeout: "750ms"
-    });
-    expect(payload.editorState).toMatchObject({ version: 1, managedSniffRules: [{ tag: "mixed-in-2" }], resourceBindings: [{ tag: "mixed-in-2", resourceId: id, sourceTag: "mixed-in" }] });
+    expect(saved).toHaveLength(1);
+    expect(saved[0]?.tag).toBe("mixed-in");
+    expect(payload.references.inbounds).toEqual([{ tag: "mixed-in-2", resourceId: id, sourceTag: "mixed-in", position: 1 }]);
+    expect(payload.routeText).toBeUndefined();
     expect(JSON.stringify(saved)).not.toContain(id);
     expect(JSON.stringify(saved)).not.toContain("sourceId");
     source.listen_port = 19091;
-    expect(saved[1]?.listen_port).toBe(19090);
+    expect(payload.references.inbounds[0]?.resourceId).toBe(id);
   });
 
   it("旧入站可明确关联源资源并保留本地名称，解除关联保留已同步内容", async () => {
@@ -196,20 +166,17 @@ describe("入站配置", () => {
     expect(dialog.find('input[type="radio"]').exists()).toBe(true);
     dialog.vm.$emit("import", [id]);
     await flushPromises();
-    const linked = wrapper.emitted("save")![0]![0] as { text: string; editorState: Record<string, unknown> };
-    expect(JSON.parse(linked.text)).toEqual([{ ...source, tag: "local-in" }]);
-    expect(linked.editorState).toMatchObject({ resourceBindings: [{ tag: "local-in", resourceId: id, sourceTag: "shared-http" }] });
-    await wrapper.setProps({ draft: { ...original, config: { inbounds: JSON.parse(linked.text) }, buffers: { inbounds: linked.text }, editorState: { inbounds: linked.editorState } } });
+    const linked = wrapper.emitted("save")![0]![0] as { text: string; references: NonNullable<Draft["references"]> };
+    expect(JSON.parse(linked.text)).toEqual([]);
+    expect(linked.references.inbounds).toEqual([{ tag: "local-in", resourceId: id, sourceTag: "shared-http", position: 0 }]);
+    const candidate = { profileId: original.profileId, revision: original.revision, digest: "digest", resourceDigests: {}, items: [{ module: "inbounds" as const, tag: "local-in", type: "http", independent: false,
+      sourceId: id, sourceName: "shared-http", text: JSON.stringify({ ...source, tag: "local-in" }), routeText: "{}", inboundStateText: '{"version":1,"managedSniffRules":[]}', token: "signed" }] };
+    await wrapper.setProps({ serverResolution: true, candidate, draft: { ...original, schemaVersion: 2, references: linked.references, config: { inbounds: [] }, buffers: { inbounds: linked.text }, editorState: {} } });
     expect(wrapper.find(".entry-copy em").text()).toBe("已关联源资源");
     await wrapper.get('[aria-label="编辑 local-in"]').trigger("click");
-    const editor = wrapper.findComponent(InboundEditorDialog);
-    expect(editor.props("linkedSource")).toBe("shared-http");
-    expect(editor.text()).toContain("保存为独立入站");
-    editor.vm.$emit("close");
+    expect(wrapper.findComponent(InboundEditorDialog).props("open")).toBe(false);
     await wrapper.get('[aria-label="解除关联 local-in"]').trigger("click");
-    const detached = wrapper.emitted("save")!.at(-1)![0] as typeof linked;
-    expect(detached.editorState).not.toHaveProperty("resourceBindings");
-    expect(detached.text).toBe(linked.text);
+    expect(wrapper.emitted("freeze")?.[0]?.[0]).toMatchObject({ action: "detach", tag: "local-in", text: JSON.stringify({ ...source, tag: "local-in" }), token: "signed" });
     wrapper.unmount();
   });
 });

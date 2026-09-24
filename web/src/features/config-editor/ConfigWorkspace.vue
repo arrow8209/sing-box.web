@@ -15,6 +15,7 @@ import { useApplicationStore } from "@/features/application/store";
 import { useCapabilitiesStore } from "@/features/capabilities/store";
 import type { CandidateView } from "@/features/application/types";
 import type { FreezeOperation } from "@/features/profiles/types";
+import { presentationEditorState } from "@/features/profiles/reference-input";
 import AdvancedPanel from "./AdvancedPanel.vue";
 import ConfigTabs from "./ConfigTabs.vue";
 import DnsConfigPanel from "./DnsConfigPanel.vue";
@@ -36,7 +37,7 @@ import ReferenceErrors from "./ReferenceErrors.vue";
 import RouteConfigPanel from "./RouteConfigPanel.vue";
 import type { RoutePanelSave } from "./route";
 import StructuredModulePanel from "./StructuredModulePanel.vue";
-import { detachEditedInboundResources, type InboundPanelSave } from "./inbound";
+import type { InboundPanelSave } from "./inbound";
 import { validateModuleShape } from "./json";
 import { configSectionFor, configTabs, type ConfigModule, type ConfigTabId } from "./module-map";
 import { saveModuleBuffer } from "./paths";
@@ -68,7 +69,7 @@ const hasLinkedOutbound = computed(() => {
   const state = draft.value?.editorState?.outbounds as { groups?: Array<{ references?: Array<{ kind?: string }> }> } | undefined;
   return Boolean(state?.groups?.some((group) => group.references?.some((item) => item.kind === "subscription" || item.kind === "subscription-node")));
 });
-const dialogReadOnly = computed(() => serverResolution.value && (dialogModule.value === "inbounds" && hasLinkedInbound.value || dialogModule.value === "outbounds" && hasLinkedOutbound.value));
+const dialogReadOnly = computed(() => serverResolution.value && draft.value?.schemaVersion !== 2 && (dialogModule.value === "inbounds" && hasLinkedInbound.value || dialogModule.value === "outbounds" && hasLinkedOutbound.value));
 const profile = computed(() => store.profiles.value.find((item) => item.id === store.activeProfileId.value));
 const deleting = computed(() => store.profiles.value.find((item) => item.id === deletingId.value) ?? null);
 const activeModules = computed(() => configTabs.find((tab) => tab.id === active.value)?.modules ?? []);
@@ -79,7 +80,7 @@ const applyDisabledReason = computed(() => {
   if (Object.keys(errors.value).length > 0) return "请先修正当前编辑错误";
   return "";
 });
-watch(() => draft.value?.profileId, (current, previous) => { if (current !== previous) application.clear(); });
+watch(() => `${draft.value?.profileId ?? ""}:${draft.value?.revision ?? 0}`, (current, previous) => { if (current !== previous) application.clear(); });
 watch([active, serverResolution], () => { if (serverResolution.value && (active.value === "inbounds" || active.value === "outbounds")) application.clear(); }, { immediate: true });
 watch([active, () => draft.value?.profileId, () => draft.value?.revision, () => store.saveState.value, serverResolution, () => application.requesting.value], () => {
   if (serverResolution.value && (active.value === "inbounds" || active.value === "outbounds") && draft.value && store.saveState.value === "saved"
@@ -124,7 +125,7 @@ async function deleteProfile(stopCurrent: boolean): Promise<void> {
 function applyResult(next: Draft, module: string, error?: string): void { store.mutate((current) => Object.assign(current, next)); if (error) errors.value = { ...errors.value, [module]: error }; else { const copy = { ...errors.value }; delete copy[module]; errors.value = copy; } }
 function persist(module: ConfigModule, text: string): boolean {
   if (!draft.value) return false;
-  if (serverResolution.value && (module === "inbounds" && hasLinkedInbound.value || module === "outbounds" && hasLinkedOutbound.value)) { errors.value = { ...errors.value, [module]: "关联生成内容只读；请先转为独立配置。" }; return false; }
+  if (serverResolution.value && draft.value.schemaVersion !== 2 && (module === "inbounds" && hasLinkedInbound.value || module === "outbounds" && hasLinkedOutbound.value)) { errors.value = { ...errors.value, [module]: "关联生成内容只读；请先转为独立配置。" }; return false; }
   const prepared = module === "dns" ? ensureDefaultFakeIpDnsRuleText(text, draft.value.editorState?.dns) : text;
   const result = saveModuleBuffer(draft.value, module, prepared);
   const shapeError = validateModuleShape(prepared, module, configSectionFor(module).type);
@@ -132,9 +133,6 @@ function persist(module: ConfigModule, text: string): boolean {
   if (module === "dns" && !error) {
     const dns = parseDnsObjectText(prepared);
     if (dns) result.draft.editorState = { ...(result.draft.editorState ?? {}), dns: reconcileDnsEditorState(result.draft.editorState?.dns, dns) };
-  }
-  if (module === "inbounds" && !error && draft.value.editorState?.inbounds) {
-    result.draft.editorState = { ...(result.draft.editorState ?? {}), inbounds: detachEditedInboundResources(draft.value, result.draft) };
   }
   applyResult(result.draft, module, error?.message);
   return !error;
@@ -167,7 +165,9 @@ function saveOutbounds(payload: OutboundPanelSave): void {
       if (updated !== source) result = saveModuleBuffer(result.draft, module, updated);
     }
   }
-  result.draft.editorState = { ...(result.draft.editorState ?? {}), outbounds: payload.editorState };
+  result.draft.editorState = { ...(result.draft.editorState ?? {}), outbounds: payload.uiState };
+  result.draft.references = payload.references;
+  result.draft.editorState = presentationEditorState(result.draft);
   applyResult(result.draft, "outbounds", result.error?.message);
 }
 function saveInbounds(payload: InboundPanelSave): void {
@@ -178,9 +178,11 @@ function saveInbounds(payload: InboundPanelSave): void {
     result = saveModuleBuffer(result.draft, "route", payload.routeText);
     errorModule = "route";
   }
-  const editorState: Record<string, unknown> = { ...(result.draft.editorState ?? {}), inbounds: payload.editorState };
+  const editorState: Record<string, unknown> = { ...(result.draft.editorState ?? {}) };
+  if (payload.editorState) editorState.inbounds = payload.editorState;
   if (payload.routeEditorState) editorState.route = payload.routeEditorState;
   result.draft.editorState = editorState;
+  if (payload.references) { result.draft.references = payload.references; result.draft.editorState = presentationEditorState(result.draft); }
   applyResult(result.draft, errorModule, result.error?.message);
   if (!result.error) {
     const copy = { ...errors.value };

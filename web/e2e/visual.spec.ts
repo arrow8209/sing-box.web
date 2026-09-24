@@ -33,12 +33,32 @@ async function setTheme(page: Page, theme: "light" | "dark"): Promise<void> {
 async function ensureVisualProfile(page: Page): Promise<void> {
   await page.goto("/profiles");
   await expect(page.getByRole("heading", { name: "配置档案" })).toBeVisible();
-  if (await page.locator(".profile-list .profile").count()) return;
-  await page.getByRole("button", { name: "新建档案" }).click();
-  const dialog = page.getByRole("dialog", { name: "新建档案" });
-  await dialog.getByLabel("名称").fill("视觉基准档案");
-  await dialog.getByRole("button", { name: "确认" }).click();
-  await expect(page.getByRole("heading", { name: "视觉基准档案" })).toBeVisible();
+  if (!await page.locator(".profile-list .profile").count()) {
+    await page.getByRole("button", { name: "新建档案" }).click();
+    const dialog = page.getByRole("dialog", { name: "新建档案" });
+    await dialog.getByLabel("名称").fill("视觉基准档案");
+    await dialog.getByRole("button", { name: "确认" }).click();
+    await expect(page.getByRole("heading", { name: "视觉基准档案" })).toBeVisible();
+  }
+  // Use an isolated candidate that can be generated without downloading the
+  // default rule fixtures; keep visual baselines focused on the actual UI.
+  const changed = await page.evaluate(async () => {
+    const session = await (await fetch("/api/v1/auth/session")).json();
+    const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
+    const id = profiles.find((item) => item.name === "视觉基准档案")?.id;
+    if (!id) return false;
+    const response = await fetch(`/api/v1/profiles/${id}/draft`);
+    const draft = await response.json() as { buffers: Record<string, string>; editorState: Record<string, unknown>; bindings: unknown[]; schemaVersion?: number; references?: unknown };
+    if (!draft.bindings.length) return false;
+    const dns = JSON.parse(draft.buffers.dns!) as Record<string, unknown>; dns.rules = [];
+    const route = JSON.parse(draft.buffers.route!) as Record<string, unknown>; route.rules = [];
+    const saved = await fetch(`/api/v1/profiles/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken, "If-Match": response.headers.get("ETag")! },
+      body: JSON.stringify({ buffers: { ...draft.buffers, dns: JSON.stringify(dns), route: JSON.stringify(route) }, bindings: [], editorState: draft.editorState,
+        ...(draft.schemaVersion === 2 ? { schemaVersion: 2, references: draft.references } : {}) }) });
+    if (!saved.ok) throw new Error(`visual profile setup failed: ${saved.status}`);
+    return true;
+  });
+  if (changed) await page.reload();
 }
 
 async function ensureVisualSubscription(page: Page): Promise<void> {

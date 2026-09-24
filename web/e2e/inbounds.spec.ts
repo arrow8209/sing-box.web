@@ -78,13 +78,14 @@ test("入站由服务端生成候选，关联转独立与旧副本恢复需明�
     const resources = await (await fetch("/api/v1/inbound-resources")).json() as Array<{ id: string }>;
     const profiles = await (await fetch("/api/v1/profiles")).json() as Array<{ id: string; name: string }>;
     const profile = profiles.find((item) => item.name === "入站 E2E 配置");
-    const draft = await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { buffers: Record<string, string>; editorState: { inbounds: { resourceBindings: unknown[] } } };
-    return { resourceId: resources[0]?.id ?? "", inbounds: draft.buffers.inbounds, route: draft.buffers.route, bindings: draft.editorState.inbounds.resourceBindings };
+    const draft = await (await fetch(`/api/v1/profiles/${profile?.id}/draft`)).json() as { schemaVersion: number; buffers: Record<string, string>; references: { inbounds: unknown[] } };
+    return { resourceId: resources[0]?.id ?? "", schemaVersion: draft.schemaVersion, inbounds: draft.buffers.inbounds, route: draft.buffers.route, bindings: draft.references.inbounds };
   });
   expect(persisted.inbounds).not.toContain(persisted.resourceId);
   expect(persisted.inbounds).not.toContain("sourceId");
   expect(persisted.inbounds).not.toContain('"sniff"');
-  expect(persisted.bindings).toEqual([{ tag: "mixed-in-2", resourceId: persisted.resourceId, sourceTag: "mixed-in" }]);
+  expect(persisted.schemaVersion).toBe(2);
+  expect(persisted.bindings).toEqual([{ tag: "mixed-in-2", resourceId: persisted.resourceId, sourceTag: "mixed-in", position: 1 }]);
   expect(((JSON.parse(persisted.route) as { rules?: Array<Record<string, unknown>> }).rules ?? []).some((rule) => (
     rule.inbound === "mixed-in-2" && rule.action === "sniff"
   ))).toBe(false);
@@ -115,10 +116,9 @@ test("入站由服务端生成候选，关联转独立与旧副本恢复需明�
   await expect(page.locator(".errors")).toContainText("解析引用");
   await expect(page.locator(".errors")).toContainText("请重新关联或明确恢复此前副本");
   await page.getByRole("button", { name: "恢复此前副本 mixed-in-2", exact: true }).click();
-  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" }).locator("em")).toHaveText("独立配置");
+  await expect(page.locator(".profile-error")).toContainText("没有可恢复的旧副本");
+  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" }).locator("em")).toHaveText("已关联源资源");
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
-  await page.locator("[data-validate]").click();
-  await expect(page.locator(".errors")).toContainText("配置检查通过");
 
   await page.goto("/inbounds");
   await page.getByRole("button", { name: "新建入站配置", exact: true }).click();
@@ -128,6 +128,11 @@ test("入站由服务端生成候选，关联转独立与旧副本恢复需明�
   await replacement.getByRole("button", { name: "新建入站配置", exact: true }).click();
   await expect(page.locator(".resource-row")).toContainText("shared-source");
   await openInboundTab(page);
+  await page.getByRole("button", { name: "关联源资源 mixed-in-2", exact: true }).click();
+  const relink = page.getByRole("dialog", { name: "关联入站资源", exact: true });
+  await relink.getByRole("radio", { name: "关联 shared-source" }).check();
+  await relink.getByRole("button", { name: "确认关联", exact: true }).click();
+  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19100");
   await page.getByRole("button", { name: "关联源资源 mixed-in", exact: true }).click();
   const association = page.getByRole("dialog", { name: "关联入站资源", exact: true });
   await association.getByRole("radio", { name: "关联 shared-source" }).check();

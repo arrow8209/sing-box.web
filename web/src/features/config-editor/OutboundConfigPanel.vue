@@ -7,14 +7,13 @@ import type { CandidateView } from "@/features/application/types";
 import OutboundEditorDialog from "./OutboundEditorDialog.vue";
 import { useOutboundEditor } from "./use-outbound-editor";
 import {
-  applyOutboundEditorState,
   cloneValue,
   isObject,
   isPolicyOutbound,
   outboundDescription,
   outboundIcon,
   outboundReferenceTags,
-  renameOutboundTagInBuffer,
+  persistOutboundInputs,
   removeOutboundGroup,
   updateOutboundGroup,
   type OutboundEditorGroup,
@@ -27,7 +26,7 @@ const emit = defineEmits<{ editJson: []; save: [payload: OutboundPanelSave] }>()
 const editorOpen = ref(false);
 const editingId = ref<string | null>(null);
 const preparing = ref(false);
-const { rawItems, editorState, groups, subscriptionDetails, subscriptionError, loadSubscriptionDetails } = useOutboundEditor(() => props.draft);
+const { rawItems, groups, subscriptionDetails, subscriptionError, loadSubscriptionDetails } = useOutboundEditor(() => props.draft);
 const notice = ref("");
 const noticeTone = ref<"info" | "error" | "success">("info");
 const editing = computed(() => groups.value.find((group) => group.id === editingId.value) ?? null);
@@ -81,15 +80,9 @@ function closeEditor(): void {
   editingId.value = null;
 }
 
-function bufferText(): string {
-  return props.draft.buffers.outbounds ?? JSON.stringify(rawItems.value, null, 2);
-}
-
-function persist(nextGroups: OutboundEditorGroup[], renamed?: { from: string; to: string }): ReturnType<typeof applyOutboundEditorState> {
-  const result = applyOutboundEditorState(bufferText(), rawItems.value, editorState.value, nextGroups, subscriptionDetails.value);
-  if (renamed) result.text = renameOutboundTagInBuffer(result.text, "outbounds", renamed.from, renamed.to);
-  emit("save", { text: result.text, editorState: result.state, renamed });
-  return result;
+function persist(nextGroups: OutboundEditorGroup[], renamed?: { from: string; to: string }): boolean {
+  try { emit("save", persistOutboundInputs(props.draft, groups.value, nextGroups, renamed)); return true; }
+  catch (cause) { show(cause instanceof Error ? cause.message : "无法保存出站输入", "error"); return false; }
 }
 
 function submit(result: OutboundEditorResult): void {
@@ -97,14 +90,13 @@ function submit(result: OutboundEditorResult): void {
   const renamed = editing.value && editing.value.tag !== result.group.tag
     ? { from: editing.value.tag, to: result.group.tag }
     : undefined;
-  const saved = persist(updateOutboundGroup(groups.value, result.group), renamed);
+  if (!persist(updateOutboundGroup(groups.value, result.group), renamed)) return;
   closeEditor();
-  const generated = saved.generatedCount ? `，当前生成 ${saved.generatedCount} 个引用节点` : "";
-  show(`${result.group.tag} 已${wasEditing ? "更新" : "添加"}${generated}。`, "success");
+  show(`${result.group.tag} 已${wasEditing ? "更新" : "添加"}；引用将在服务端生成。`, "success");
 }
 
 function remove(group: OutboundEditorGroup): void {
-  persist(removeOutboundGroup(groups.value, group.id));
+  if (!persist(removeOutboundGroup(groups.value, group.id))) return;
   show(`${group.tag} 已从当前配置移除；其他策略组中的原引用会保留并标记为失效。`, "success");
 }
 
@@ -122,7 +114,7 @@ function updateHealth(key: "url" | "interval" | "tolerance", event: Event): void
   }
   const group = cloneValue(healthGroup.value);
   group.config[key] = value;
-  persist(updateOutboundGroup(groups.value, group));
+  if (!persist(updateOutboundGroup(groups.value, group))) return;
   show("健康检查参数已更新。", "success");
 }
 

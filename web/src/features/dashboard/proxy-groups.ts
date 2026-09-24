@@ -1,12 +1,13 @@
-import {
-  isOutboundConfig,
-  isPolicyOutbound,
-  outboundEditorGroups,
-  outboundReferenceTags,
-  restoreOutboundEditorState,
-  type OutboundConfig
-} from "@/features/config-editor/outbound";
 import type { RuntimeProxyGroup } from "./api";
+
+type OutboundConfig = Record<string, unknown> & { type: string; tag: string };
+function isOutboundConfig(value: unknown): value is OutboundConfig { return Boolean(value && typeof value === "object" && !Array.isArray(value) && typeof (value as Record<string, unknown>).type === "string" && typeof (value as Record<string, unknown>).tag === "string"); }
+function isPolicyOutbound(value: OutboundConfig): boolean { return value.type === "selector" || value.type === "urltest"; }
+function memberTags(value: OutboundConfig): string[] { return Array.isArray(value.outbounds) ? value.outbounds.filter((tag): tag is string => typeof tag === "string") : []; }
+function presentationByTag(value: unknown): Map<string, { id: string; hidden: boolean; icon: string }> {
+  const state = value && typeof value === "object" && !Array.isArray(value) ? value as { groups?: Array<{ id?: string; tag?: string; hidden?: boolean; icon?: string }> } : null;
+  return new Map((state?.groups ?? []).filter((group) => typeof group.tag === "string").map((group) => [group.tag!, { id: group.id ?? group.tag!, hidden: group.hidden === true, icon: group.icon ?? "" }]));
+}
 
 export interface DashboardProxyMember {
   id: string;
@@ -78,17 +79,18 @@ function configuredLatency(config: OutboundConfig | undefined): number | null | 
   return typeof config?.latency === "number" && Number.isFinite(config.latency) ? config.latency : undefined;
 }
 
-/** Builds the dashboard shortcut groups from the profile's materialized sing-box outbounds. */
+/** Builds display groups from a server candidate or applied outbound list. */
 export function buildDashboardProxyGroups(outbounds: unknown[], storedState?: unknown): DashboardProxyGroup[] {
-  const editorState = restoreOutboundEditorState(outbounds, [], storedState);
-  const configuredGroups = outboundEditorGroups(outbounds, editorState).filter((group) => isPolicyOutbound(group.config));
+  const display = presentationByTag(storedState);
+  const configs = outbounds.filter(isOutboundConfig);
+  const configuredGroups: Array<OutboundConfig & { id: string; hidden: boolean; icon: string }> = configs.filter(isPolicyOutbound).map((config) => ({ ...config, id: display.get(config.tag)?.id ?? config.tag, hidden: display.get(config.tag)?.hidden ?? false, icon: display.get(config.tag)?.icon ?? "" }));
   const groupByTag = new Map(configuredGroups.map((group) => [group.tag, group]));
-  const configByTag = new Map(outbounds.filter(isOutboundConfig).map((config) => [config.tag, config]));
+  const configByTag = new Map(configs.map((config) => [config.tag, config]));
 
   return configuredGroups.filter((group) => !group.hidden).map((group, index) => {
     const presentation = groupPresentation(group.tag, group.type);
-    const memberTags = [...new Set(outboundReferenceTags(group.config))];
-    const members = memberTags.map((tag) => {
+    const tags = [...new Set(memberTags(group))];
+    const members = tags.map((tag) => {
       const config = configByTag.get(tag);
       const referencedGroup = groupByTag.get(tag);
       const referencedPresentation = referencedGroup ? groupPresentation(referencedGroup.tag, referencedGroup.type) : null;
@@ -104,14 +106,14 @@ export function buildDashboardProxyGroups(outbounds: unknown[], storedState?: un
         ...(referencedGroup ? { groupId: referencedGroup.id } : {})
       };
     });
-    const configuredDefault = typeof group.config.default === "string" ? group.config.default : "";
+    const configuredDefault = typeof group.default === "string" ? group.default : "";
     return {
       id: group.id,
       tag: group.tag,
-      icon: presentation.icon,
+      icon: group.icon || presentation.icon,
       name: presentation.name,
       type: typeLabel(group.type),
-      selected: memberTags.includes(configuredDefault) ? configuredDefault : memberTags[0] ?? "",
+      selected: tags.includes(configuredDefault) ? configuredDefault : tags[0] ?? "",
       expanded: index < 2,
       members
     };

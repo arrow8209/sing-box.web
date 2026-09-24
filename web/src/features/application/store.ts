@@ -2,8 +2,6 @@ import { computed, ref, type Ref } from "vue";
 import { isApiError } from "@/features/profiles/api";
 import { useProfileStore, type ProfileStore } from "@/features/profiles/store";
 import { applicationApi, type ApplicationApi } from "./api";
-import { ReferenceSyncError, sameJsonValue, synchronizeReferences, type ReferenceSources } from "./references";
-import { cloneValue } from "@/features/config-editor/outbound";
 import { useCapabilitiesStore } from "@/features/capabilities/store";
 import type { ApplicationError, ApplyResult, PreviewResult, ValidationResult } from "./types";
 
@@ -23,7 +21,7 @@ function errorFrom(cause: unknown): ApplicationError {
   return { code: "network_error", message: cause instanceof Error ? cause.message : "请求失败" };
 }
 
-export function createApplicationStore(profiles: ProfileStore = useProfileStore(), api: ApplicationApi = applicationApi, sources?: ReferenceSources, serverResolution: Readonly<Ref<boolean>> = computed(() => useCapabilitiesStore().capabilities.value?.serverReferenceResolution === true)): ApplicationStore {
+export function createApplicationStore(profiles: ProfileStore = useProfileStore(), api: ApplicationApi = applicationApi, serverResolution: Readonly<Ref<boolean>> = computed(() => useCapabilitiesStore().capabilities.value?.serverReferenceResolution === true)): ApplicationStore {
   const previewResult = ref<PreviewResult | null>(null);
   const validation = ref<ValidationResult | null>(null);
   const error = ref<ApplicationError | null>(null);
@@ -37,37 +35,19 @@ export function createApplicationStore(profiles: ProfileStore = useProfileStore(
     preparing.value = true;
     preparation = (async () => {
       try {
-        if (serverResolution.value) {
-          if (profiles.saveState.value === "saving") await profiles.waitForSave();
-          const saved = active();
-          if (!saved.id || !saved.revision || profiles.saveState.value !== "saved") {
-            throw new ReferenceSyncError("请先等待用户编辑保存完成，并处理保存错误或冲突。", "");
-          }
-          return { id: saved.id, revision: saved.revision };
+        if (!serverResolution.value) {
+          error.value = { code: "reference_resolution_unavailable", stage: "resolve_references", message: "服务端版本不支持配置引用解析，请更新服务端并刷新页面。" };
+          return null;
         }
-        await profiles.flush();
-        const value = active();
-        if (!value.id || !value.revision || !profiles.draft.value || profiles.saveState.value !== "saved") return null;
-        const snapshot = cloneValue(profiles.draft.value);
-        const synchronized = await synchronizeReferences(snapshot, sources);
-        if (profiles.activeProfileId.value !== value.id || profiles.saveState.value !== "saved"
-          || !sameJsonValue(profiles.draft.value, snapshot)) {
-          throw new ReferenceSyncError("同步期间草稿已变更或切换，请等待保存完成后重试。", "");
+        if (profiles.saveState.value === "saving") await profiles.waitForSave();
+        const saved = active();
+        if (!saved.id || !saved.revision || profiles.saveState.value !== "saved") {
+          error.value = { code: "draft_not_saved", stage: "resolve_references", message: "请先等待用户编辑保存完成，并处理保存错误或冲突。" };
+          return null;
         }
-        if (!sameJsonValue(synchronized.buffers, snapshot.buffers) || !sameJsonValue(synchronized.editorState, snapshot.editorState)) {
-          profiles.mutate((current) => {
-            current.buffers = synchronized.buffers;
-            current.config = synchronized.config;
-            current.editorState = synchronized.editorState;
-          });
-          await profiles.flush();
-          if (profiles.saveState.value !== "saved") throw new ReferenceSyncError("同步后的草稿尚未保存成功，请先处理保存错误或版本冲突。", "");
-        }
-        const prepared = active();
-        if (prepared.id !== value.id || !prepared.revision) return null;
-        return { id: prepared.id, revision: prepared.revision };
+        return { id: saved.id, revision: saved.revision };
       } catch (cause) {
-        error.value = { ...errorFrom(cause), stage: serverResolution.value ? "resolve_references" : "sync_references", ...(cause instanceof ReferenceSyncError ? { code: "reference_sync_failed", fieldPath: cause.fieldPath || undefined } : {}) };
+        error.value = { ...errorFrom(cause), stage: "resolve_references" };
         return null;
       }
     })().finally(() => { preparation = null; preparing.value = false; });
