@@ -221,12 +221,14 @@ defineExpose({ refresh: refreshRuntime });
               <strong>{{ member.name }}</strong>
               <span class="proxy-node-check" aria-hidden="true"><AppIcon v-if="member.id === group.selected" name="check" :size="12" /></span>
             </button>
-            <button v-if="member.latency !== null" class="proxy-latency" :class="testingTags.has(member.tag) ? 'testing' : latencyTone(member)" type="button" :disabled="testing" :aria-label="`测试 ${member.name} 延迟`" :aria-busy="testingTags.has(member.tag)" title="点击测试延时" @click="startTest([member], `${member.name} 延迟已刷新。`)">
-              <template v-if="testingTags.has(member.tag)"><AppIcon name="rotate" :size="10" />测速中</template>
-              <template v-else>{{ latencyLabel(member) }}</template>
-            </button>
-            <span v-else class="proxy-latency unavailable">{{ latencyLabel(member) }}</span>
-            <small class="proxy-node-type">{{ member.type }}<template v-if="member.network"> · {{ member.network }}</template></small>
+            <div class="proxy-node-meta">
+              <button v-if="member.latency !== null" class="proxy-latency" :class="testingTags.has(member.tag) ? 'testing' : latencyTone(member)" type="button" :disabled="testing" :aria-label="`测试 ${member.name} 延迟`" :aria-busy="testingTags.has(member.tag)" title="点击测试延时" @click="startTest([member], `${member.name} 延迟已刷新。`)">
+                <template v-if="testingTags.has(member.tag)"><AppIcon name="rotate" :size="10" />测速中</template>
+                <template v-else>{{ latencyLabel(member) }}</template>
+              </button>
+              <span v-else class="proxy-latency unavailable">{{ latencyLabel(member) }}</span>
+              <small class="proxy-node-type" :title="member.network ? `${member.type} · ${member.network}` : member.type">{{ member.type }}<template v-if="member.network"> · {{ member.network }}</template></small>
+            </div>
           </div>
         </div>
       </section>
@@ -285,8 +287,9 @@ defineExpose({ refresh: refreshRuntime });
 .proxy-runtime-error { display: flex; align-items: center; justify-content: space-between; gap: var(--section-gap); margin: 0; padding: 8px var(--card-padding); color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
 .proxy-runtime-error button { flex: 0 0 auto; min-height: 30px; padding: 4px 8px; color: var(--red); background: transparent; font-size: inherit; }
 .proxy-node-select strong { display: block; color: var(--text); font-size: var(--font-size-base); font-weight: 690; overflow-wrap: anywhere; }
-.proxy-node-type { max-width: 100%; padding-right: 24px; color: var(--text-faint); font-size: var(--font-size-sm); overflow-wrap: anywhere; }
-.proxy-latency { display: inline-flex; min-height: 24px; width: max-content; align-items: center; gap: 4px; padding: 2px 4px; margin-left: -4px; border-radius: 4px; background: transparent; font-size: var(--font-size-xs); font-weight: 700; }
+.proxy-node-meta { display: flex; width: 100%; min-width: 0; align-items: center; gap: 8px; }
+.proxy-node-type { min-width: 0; flex: 1; overflow: hidden; padding-right: 24px; color: var(--text-faint); font-size: var(--font-size-sm); text-overflow: ellipsis; white-space: nowrap; }
+.proxy-latency { display: inline-flex; min-height: 24px; flex: 0 0 auto; align-items: center; gap: 4px; padding: 2px 4px; margin-left: -4px; border-radius: 4px; background: transparent; font-size: var(--font-size-xs); font-weight: 700; }
 button.proxy-latency { position: relative; z-index: 1; }
 button.proxy-latency:hover:not(:disabled) { color: var(--primary); background: var(--primary-soft); text-decoration: underline; text-underline-offset: 3px; }
 .proxy-latency.fast, .proxy-latency.medium { color: var(--green); }
