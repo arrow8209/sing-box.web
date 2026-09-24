@@ -27,6 +27,7 @@ type revisionRequest struct {
 // them without understanding the internal Output type.
 type PreviewResult struct {
 	Revision        uint64            `json:"revision"`
+	Candidate       *CandidateView    `json:"candidate,omitempty"`
 	Files           []File            `json:"files,omitempty"`
 	Digest          string            `json:"digest,omitempty"`
 	ResourceDigests map[string]string `json:"resourceDigests,omitempty"`
@@ -59,6 +60,7 @@ type Handler struct {
 	checker            *Checker
 	gate               OperationGate
 	clock              func() time.Time
+	candidateKey       []byte
 	inboundSource      InboundSource
 	subscriptionSource SubscriptionSource
 	resolveReferences  bool
@@ -77,7 +79,7 @@ func NewHandler(layout paths.Layout, profiles *profile.Service, resources *rules
 	if clock == nil {
 		clock = time.Now
 	}
-	h := &Handler{layout: layout, profiles: profiles, rules: resources, generator: generator, checker: checker, gate: gate, clock: clock}
+	h := &Handler{layout: layout, profiles: profiles, rules: resources, generator: generator, checker: checker, gate: gate, clock: clock, candidateKey: newCandidateKey()}
 	for _, option := range options {
 		option(h)
 	}
@@ -108,7 +110,9 @@ func (h *Handler) Preview(ctx context.Context, profileID string, revision uint64
 		return PreviewResult{}, err
 	}
 	h.includeReferenceDigests(&output, digests)
-	return previewResult(revision, output), nil
+	result := previewResult(revision, output)
+	result.Candidate = h.candidateView(draft, output)
+	return result, nil
 }
 
 func (h *Handler) Validate(ctx context.Context, profileID string, revision uint64) (result ValidateResult, err error) {
@@ -159,7 +163,9 @@ func (h *Handler) validateInOperation(ctx context.Context, profileID string, rev
 		return ValidateResult{}, err
 	}
 	h.includeReferenceDigests(&output, digests)
-	result = ValidateResult{PreviewResult: previewResult(revision, output), Stage: "core_check"}
+	preview := previewResult(revision, output)
+	preview.Candidate = h.candidateView(draft, output)
+	result = ValidateResult{PreviewResult: preview, Stage: "core_check"}
 	staging, err := h.layout.StagingConfigDir(profileID)
 	if err != nil {
 		return ValidateResult{}, err

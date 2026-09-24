@@ -233,6 +233,9 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 		configOptions = append(configOptions, configgen.WithReferenceSources(inboundService, subscriptionService))
 	}
 	configHandler := configgen.NewHandler(layout, profileService, ruleService, nil, checker, operation, clock, configOptions...)
+	if configHandler.ServerReferenceResolution() {
+		profileService.SetFreezeVerifier(configHandler)
+	}
 	coreStore := core.NewStore(layout.CoreFile)
 	coreLog, err := core.NewBoundedLog(layout.CoreLog, 1<<20, 16<<10)
 	if err != nil {

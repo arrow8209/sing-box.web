@@ -172,3 +172,90 @@ func fileIndex(files []configgen.File, name string) int {
 	}
 	return -1
 }
+
+func TestCandidateFreezeUsesDisplayedRawTextAndETag(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	id, revision, library := saveReferenceFixture(t, env)
+	env.config = configgen.NewHandler(env.layout, env.profiles, env.rules, nil, nil, nil, nil, configgen.WithReferenceSources(inboundLibrary{library}, subscriptionLibrary{library}))
+	env.profiles.SetFreezeVerifier(env.config)
+	ctx := context.Background()
+	preview, err := env.config.Preview(ctx, id, revision)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if preview.Candidate == nil || preview.Candidate.ProfileID != id || preview.Candidate.Revision != revision {
+		t.Fatalf("candidate=%+v", preview.Candidate)
+	}
+	var linked configgen.CandidateItem
+	for _, item := range preview.Candidate.Items {
+		if item.Module == "inbounds" && item.Tag == "local" {
+			linked = item
+			break
+		}
+	}
+	if linked.Independent || linked.Token == "" || linked.ListenPort.String() != "19091" || !strings.Contains(linked.Text, "9007199254740997") {
+		t.Fatalf("linked=%+v", linked)
+	}
+	request := profile.FreezeOperation{Action: "copy", Module: "inbounds", Tag: linked.Tag, NewTag: "local-copy", Text: linked.Text, RouteText: linked.RouteText, InboundStateText: linked.InboundStateText, Digest: preview.Digest, ResourceDigests: preview.ResourceDigests, Token: linked.Token}
+	// Source changes after display: the save still fixes exactly the displayed
+	// candidate and never rereads the resource.
+	library.inbound.Config = json.RawMessage(`{"type":"mixed","tag":"source","listen_port":19099,"future":9007199254740999}`)
+	readsBefore := library.reads["inbound:"+library.inbound.ID]
+	payload, _ := json.Marshal(profile.DraftInput{Freeze: &request})
+	httpRequest := httptest.NewRequest(http.MethodPut, "/api/v1/profiles/"+id+"/draft", bytes.NewReader(payload))
+	httpRequest.Header.Set("If-Match", profile.RevisionETag(revision))
+	httpResponse := httptest.NewRecorder()
+	profile.NewHandler(env.profiles).ServeHTTP(httpResponse, httpRequest)
+	if httpResponse.Code != http.StatusOK {
+		t.Fatal(httpResponse.Code, httpResponse.Body.String())
+	}
+	var saved profile.Draft
+	if err := json.Unmarshal(httpResponse.Body.Bytes(), &saved); err != nil {
+		t.Fatal(err)
+	}
+	if httpResponse.Header().Get("ETag") != profile.RevisionETag(saved.Revision) {
+		t.Fatal("missing ETag")
+	}
+	if library.reads["inbound:"+library.inbound.ID] != readsBefore {
+		t.Fatal("freeze reread source")
+	}
+	if !strings.Contains(saved.Buffers["inbounds"], `"future":9007199254740997`) || strings.Contains(saved.Buffers["inbounds"], `9007199254740999`) || !strings.Contains(saved.Buffers["inbounds"], `"tag":"local-copy"`) {
+		t.Fatal(saved.Buffers["inbounds"])
+	}
+	if !strings.Contains(saved.Buffers["route"], `"inbound":"local-copy"`) {
+		t.Fatal(saved.Buffers["route"])
+	}
+	if _, _, err := env.profiles.SaveDraft(ctx, id, profile.RevisionETag(revision), profile.DraftInput{Freeze: &request}); err == nil {
+		t.Fatal("stale ETag accepted")
+	}
+	// An altered raw token is rejected even if the candidate digest is copied.
+	current, _, err := env.profiles.GetDraft(ctx, id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	bad := request
+	bad.Text = strings.Replace(request.Text, "19091", "19092", 1)
+	if _, _, err := env.profiles.SaveDraft(ctx, id, profile.RevisionETag(current.Revision), profile.DraftInput{Freeze: &bad}); err == nil {
+		t.Fatal("altered candidate accepted")
+	}
+}
+
+func TestExplicitSavedCopyRecoveryAfterSourceDeletion(t *testing.T) {
+	env := newIntegrationEnvironment(t)
+	id, revision, library := saveReferenceFixture(t, env)
+	env.config = configgen.NewHandler(env.layout, env.profiles, env.rules, nil, nil, nil, nil, configgen.WithReferenceSources(inboundLibrary{library}, subscriptionLibrary{library}))
+	env.profiles.SetFreezeVerifier(env.config)
+	draft, _, err := env.profiles.GetDraft(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previous := draft.Buffers["inbounds"]
+	operation := profile.FreezeOperation{Action: "restore_saved", Module: "inbounds", Tag: "local"}
+	saved, _, err := env.profiles.SaveDraft(context.Background(), id, profile.RevisionETag(revision), profile.DraftInput{Freeze: &operation})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saved.Buffers["inbounds"] != previous || strings.Contains(string(saved.EditorState["inbounds"]), "resourceBindings") {
+		t.Fatal("saved copy recovery changed content or kept binding")
+	}
+}

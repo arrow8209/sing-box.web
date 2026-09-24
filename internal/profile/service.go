@@ -33,8 +33,11 @@ type Service struct {
 	guard           DeleteGuard
 	resourceDigests map[string]string
 	resourceKnown   bool
+	freezeVerifier  FreezeVerifier
 	mu              sync.Mutex
 }
+
+func (s *Service) SetFreezeVerifier(verifier FreezeVerifier) { s.freezeVerifier = verifier }
 
 func Open(layout paths.Layout, factory *templates.Factory, source DefaultBindingSource, clock func() time.Time, randomSource io.Reader) (*Service, error) {
 	if factory == nil {
@@ -355,6 +358,19 @@ func (s *Service) SaveDraft(ctx context.Context, profileID, ifMatch string, inpu
 	}
 	if expected != draft.Revision {
 		return Draft{}, RevisionETag(draft.Revision), RevisionConflict{LatestRevision: draft.Revision}
+	}
+	if input.Freeze != nil {
+		if s.freezeVerifier == nil {
+			return Draft{}, "", fmt.Errorf("当前服务不支持候选冻结")
+		}
+		if input.Buffers != nil || input.EditorState != nil || input.Bindings != nil {
+			return Draft{}, "", fmt.Errorf("冻结操作不能同时覆盖完整草稿")
+		}
+		patched, err := applyFreeze(draft, *input.Freeze, s.freezeVerifier)
+		if err != nil {
+			return Draft{}, "", err
+		}
+		input = DraftInput{Buffers: patched.Buffers, EditorState: patched.EditorState, Bindings: draft.Bindings}
 	}
 	nextConfig, err := reconcileBuffers(draft.Config, input.Buffers)
 	if err != nil {

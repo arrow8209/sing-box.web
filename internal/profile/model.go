@@ -77,6 +77,24 @@ type DraftInput struct {
 	Buffers     map[string]string          `json:"buffers"`
 	EditorState map[string]json.RawMessage `json:"editorState,omitempty"`
 	Bindings    []RuleBinding              `json:"bindings"`
+	Freeze      *FreezeOperation           `json:"freeze,omitempty"`
+}
+
+type FreezeOperation struct {
+	Action           string            `json:"action"`
+	Module           string            `json:"module"`
+	Tag              string            `json:"tag"`
+	NewTag           string            `json:"newTag,omitempty"`
+	Text             string            `json:"text,omitempty"`
+	RouteText        string            `json:"routeText,omitempty"`
+	InboundStateText string            `json:"inboundStateText,omitempty"`
+	Digest           string            `json:"digest,omitempty"`
+	ResourceDigests  map[string]string `json:"resourceDigests,omitempty"`
+	Token            string            `json:"token,omitempty"`
+}
+
+type FreezeVerifier interface {
+	VerifyFreeze(profileID string, revision uint64, operation FreezeOperation) error
 }
 
 type CreateInput struct {
