@@ -36,10 +36,19 @@ func TestFactoryCreatesUniqueSecretsAndCacheIDs(t *testing.T) {
 	}
 }
 
-func TestDefaultProfileUsesClashAPIPort50024(t *testing.T) {
+func TestDefaultProfileUsesReleasePorts(t *testing.T) {
 	seed, err := newTestFactory(t).NewProfileSeed(time.Unix(1, 0))
 	if err != nil {
 		t.Fatal(err)
+	}
+	var inbounds []struct {
+		ListenPort int `json:"listen_port"`
+	}
+	if err := json.Unmarshal(seed.Config["inbounds"], &inbounds); err != nil {
+		t.Fatal(err)
+	}
+	if len(inbounds) != 1 || inbounds[0].ListenPort != 50023 {
+		t.Fatalf("default inbounds=%+v, want Mixed port 50023", inbounds)
 	}
 	var experimental struct {
 		ClashAPI struct {

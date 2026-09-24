@@ -122,7 +122,7 @@
       "type": "mixed",
       "tag": "mixed-in",
       "listen": "127.0.0.1",
-      "listen_port": 50016,
+      "listen_port": 50023,
       "tcp_fast_open": false,
       "tcp_multi_path": false,
       "udp_fragment": false

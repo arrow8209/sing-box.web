@@ -53,8 +53,8 @@ test("入站由服务端生成候选，关联转独立与旧副本恢复需明�
   await page.getByRole("button", { name: "新建入站配置", exact: true }).click();
   const createDialog = page.getByRole("dialog", { name: "新建入站配置" });
   const serverSettings = await page.evaluate(async () => (await fetch("/api/v1/settings/server")).json() as Promise<{ webPort: number; defaultMixedPort: number; defaultApiPort: number; defaultApiController: string }>);
-  expect(serverSettings).toEqual({ webPort: 50015, defaultMixedPort: 50016, defaultApiPort: 50024, defaultApiController: "127.0.0.1:50024" });
-  await expect(createDialog.locator('input[type="number"]').first()).toHaveValue("50016");
+  expect(serverSettings).toEqual({ webPort: 50022, defaultMixedPort: 50023, defaultApiPort: 50024, defaultApiController: "127.0.0.1:50024" });
+  await expect(createDialog.locator('input[type="number"]').first()).toHaveValue("50023");
   await createDialog.locator('input[name="tag"]').fill("mixed-in");
   await createDialog.locator('input[type="number"]').first().fill("19090");
   await expect(createDialog.getByText("协议嗅探", { exact: true })).toHaveCount(0);

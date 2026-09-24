@@ -46,7 +46,7 @@ func TestServerCloseReleasesExclusiveLock(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if server.http.Addr != "0.0.0.0:50015" {
+	if server.http.Addr != "0.0.0.0:50022" {
 		t.Fatalf("addr=%q", server.http.Addr)
 	}
 	if err := server.Close(context.Background()); err != nil {

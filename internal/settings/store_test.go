@@ -74,14 +74,14 @@ func TestOpenStoreKeepsLegacyCoreBehaviorDefaults(t *testing.T) {
 		t.Fatalf("value=%+v err=%v", value, err)
 	}
 	ports, err := store.GetServer()
-	if err != nil || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 || ports.DefaultAPIPort != 50024 || ports.DefaultAPIController != "127.0.0.1:50024" {
+	if err != nil || ports.WebPort != 50022 || ports.DefaultMixedPort != 50023 || ports.DefaultAPIPort != 50024 || ports.DefaultAPIController != "127.0.0.1:50024" {
 		t.Fatalf("ports=%+v err=%v", ports, err)
 	}
 }
 
 func TestServerPortsSurviveOtherSettingsUpdates(t *testing.T) {
 	path := t.TempDir() + "/settings.json"
-	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":"","webPort":50018,"defaultMixedPort":50019,"defaultApiPort":50017}`), 0o600); err != nil {
+	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":"","webPort":50015,"defaultMixedPort":50016,"defaultApiPort":50017}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store, err := OpenStore(path)
@@ -99,7 +99,7 @@ func TestServerPortsSurviveOtherSettingsUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	ports, err := reopened.GetServer()
-	if err != nil || ports.WebPort != 50018 || ports.DefaultMixedPort != 50019 || ports.DefaultAPIPort != 50017 || ports.DefaultAPIController != "127.0.0.1:50017" {
+	if err != nil || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 || ports.DefaultAPIPort != 50017 || ports.DefaultAPIController != "127.0.0.1:50017" {
 		t.Fatalf("ports=%+v err=%v", ports, err)
 	}
 }

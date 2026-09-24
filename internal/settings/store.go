@@ -19,8 +19,8 @@ const (
 	settingsVersion  = 1
 	maxProxyURLBytes = 2048
 	defaultAutoStart = true
-	DefaultWebPort   = 50015
-	DefaultMixedPort = 50016
+	DefaultWebPort   = 50022
+	DefaultMixedPort = 50023
 	DefaultAPIPort   = 50024
 )
 

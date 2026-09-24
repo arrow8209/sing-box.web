@@ -3,7 +3,7 @@
   "proxyUrl": "",
   "autoStart": true,
   "autoReload": false,
-  "webPort": 50018,
-  "defaultMixedPort": 50019,
+  "webPort": 50015,
+  "defaultMixedPort": 50016,
   "defaultApiPort": 50017
 }
