@@ -1,4 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { mount } from "@vue/test-utils";
+import OutboundEditorDialog from "@/features/config-editor/OutboundEditorDialog.vue";
 import { persistOutboundInputs, renameOutboundTagInBuffer, removeOutboundGroup, updateOutboundGroup, type OutboundEditorGroup } from "@/features/config-editor/outbound";
 import type { Draft } from "@/features/profiles/types";
 
@@ -16,6 +18,15 @@ function fixture(): { draft: Draft; group: OutboundEditorGroup } {
 }
 
 describe("出站表单输入", () => {
+  it("选项因后台保存变化时保留用户已勾选的引用", async () => {
+    const direct: OutboundEditorGroup = { id: "direct-id", tag: "e2e-direct", type: "direct", hidden: false, include: "", exclude: "", icon: "", references: [], runtimeTags: [], config: { type: "direct", tag: "e2e-direct" } };
+    const wrapper = mount(OutboundEditorDialog, { props: { open: true, group: null, groups: [direct], subscriptions: [] } });
+    await wrapper.get('input[type="checkbox"][value="outbound:direct-id"]').setValue(true);
+    await wrapper.setProps({ groups: [] });
+    await wrapper.get("form").trigger("submit");
+    const submitted = wrapper.emitted("submit")?.[0]?.[0] as { group: OutboundEditorGroup };
+    expect(submitted.group.references).toEqual([{ kind: "outbound", outboundId: "direct-id", tag: "e2e-direct" }]);
+  });
   it("保存策略组引用时不展开节点，保留独立 JSON 与未知大整数", () => {
     const { draft, group } = fixture();
     const renamed: OutboundEditorGroup = { ...group, tag: "新选择", include: "HK", config: { ...group.config, tag: "新选择" },

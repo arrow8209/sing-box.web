@@ -56,6 +56,7 @@ const emit = defineEmits<{ close: []; submit: [result: OutboundEditorResult] }>(
 
 const selected = ref<OutboundEditorType>("selector");
 const selectedKeys = ref<string[]>([]);
+const selectedSnapshot = ref(new Map<string, ReferenceMember>());
 const expanded = reactive<Record<string, boolean>>({});
 const baseConfig = ref<OutboundConfig | null>(null);
 const form = reactive<EditorForm>({
@@ -161,9 +162,14 @@ const referenceGroups = computed<ReferenceGroup[]>(() => {
 
 const allMembers = computed(() => referenceGroups.value.flatMap((group) => group.members));
 const selectedMembers = computed(() => selectedKeys.value.flatMap((key) => {
-  const member = allMembers.value.find((candidate) => candidate.key === key);
+  const member = allMembers.value.find((candidate) => candidate.key === key) ?? selectedSnapshot.value.get(key);
   return member ? [member] : [];
 }));
+function rememberMember(member: ReferenceMember): void {
+  const next = new Map(selectedSnapshot.value);
+  next.set(member.key, cloneValue(member));
+  selectedSnapshot.value = next;
+}
 const resolvedReferenceCount = computed(() => selectedMembers.value.reduce((count, member) => count + member.count, 0));
 const structuredError = computed(() => {
   const tag = form.tag.trim();
@@ -202,6 +208,7 @@ function initialize(): void {
   for (const key of Object.keys(expanded)) delete expanded[key];
   referenceGroups.value.forEach((referenceGroup) => { expanded[referenceGroup.id] = referenceGroup.expanded; });
   selectedKeys.value = (group?.references ?? []).map(referenceKey);
+  selectedSnapshot.value = new Map(allMembers.value.filter((member) => selectedKeys.value.includes(member.key)).map((member) => [member.key, cloneValue(member)]));
   for (const key of selectedKeys.value) {
     const referenceGroup = referenceGroups.value.find((candidate) => candidate.members.some((member) => member.key === key));
     if (referenceGroup) expanded[referenceGroup.id] = true;
@@ -273,7 +280,7 @@ function groupSelectedCount(group: ReferenceGroup): number {
             <button class="reference-head" type="button" :aria-expanded="expanded[referenceGroup.id]" @click="expanded[referenceGroup.id] = !expanded[referenceGroup.id]"><span>{{ referenceGroup.name }}</span><b v-if="groupSelectedCount(referenceGroup)">已选 {{ groupSelectedCount(referenceGroup) }}</b><strong>{{ referenceGroup.total }}</strong><AppIcon name="chevron" :size="13" /></button>
             <div v-if="expanded[referenceGroup.id]" class="reference-body">
               <div v-if="referenceGroup.members.length" class="reference-grid">
-                <label v-for="member in referenceGroup.members" :key="member.key" class="reference-tile"><input v-model="selectedKeys" type="checkbox" :value="member.key" /><span class="reference-content"><span class="reference-copy"><strong>{{ member.tag }}</strong><small>{{ member.type }}</small></span><AppIcon name="check" :size="12" /></span></label>
+                <label v-for="member in referenceGroup.members" :key="member.key" class="reference-tile"><input v-model="selectedKeys" type="checkbox" :value="member.key" @change="rememberMember(member)" /><span class="reference-content"><span class="reference-copy"><strong>{{ member.tag }}</strong><small>{{ member.type }}</small></span><AppIcon name="check" :size="12" /></span></label>
               </div>
               <p v-else class="reference-empty">该分组暂无可引用项目</p>
               <p v-if="referenceGroup.note" class="reference-note">{{ referenceGroup.note }}</p>

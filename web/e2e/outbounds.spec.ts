@@ -71,7 +71,10 @@ async function addUrlTest(page: Page): Promise<void> {
   await dialog.getByRole("radio", { name: "自动选择" }).check();
   await dialog.locator('input[name="tag"]').fill("E2E 自动选择");
   await dialog.locator('input[name="interval"]').fill("5m");
-  await dialog.locator(".reference-group").first().locator(".reference-tile").filter({ hasText: "e2e-direct" }).locator(".reference-content").click();
+  const reference = dialog.locator(".reference-group").first().locator(".reference-tile").filter({ hasText: "e2e-direct" });
+  await reference.locator(".reference-content").click();
+  await expect(reference.locator('input[type="checkbox"]')).toBeChecked();
+  await expect(dialog.getByText("已选 1 项 · 1 个出站")).toBeVisible();
   await dialog.getByRole("button", { name: "确认添加" }).click();
   await expect(page.locator('[data-outbound-tag="E2E 自动选择"]')).toContainText("1 个出站 / 0 个订阅");
 }
