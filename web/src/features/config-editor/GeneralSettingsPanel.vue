@@ -5,7 +5,7 @@ import type { Draft } from "@/features/profiles/types";
 import { applyGeneralSettingEdits, type GeneralSettingEdit, type GeneralSettingsModule, type GeneralSettingsSave } from "./general-settings";
 import { isJsonObject } from "./json";
 
-const props = defineProps<{ draft: Draft; error?: string; experimentalError?: string }>();
+const props = defineProps<{ draft: Draft; defaultApiController?: string; defaultApiControllerError?: string; error?: string; experimentalError?: string }>();
 const emit = defineEmits<{
   save: [payload: GeneralSettingsSave];
   editJson: [];
@@ -22,9 +22,11 @@ type WorkMode = (typeof workModes)[number]["value"];
 const log = computed(() => isJsonObject(props.draft.config.log) ? props.draft.config.log : {});
 const experimental = computed(() => isJsonObject(props.draft.config.experimental) ? props.draft.config.experimental : {});
 const clashApi = computed(() => isJsonObject(experimental.value.clash_api) ? experimental.value.clash_api : {});
+const hasApiController = computed(() => typeof clashApi.value.external_controller === "string");
 const workMode = computed<WorkMode>(() => workModes.some((item) => item.value === clashApi.value.default_mode)
   ? clashApi.value.default_mode as WorkMode : "rule");
-const apiController = computed(() => typeof clashApi.value.external_controller === "string" ? clashApi.value.external_controller : "127.0.0.1:20124");
+const apiController = computed(() => hasApiController.value
+  ? clashApi.value.external_controller : props.defaultApiController ?? "");
 const apiSecret = computed(() => typeof clashApi.value.secret === "string" ? clashApi.value.secret : "");
 const logEnabled = computed(() => log.value.disabled !== true);
 const logLevel = computed(() => typeof log.value.level === "string" ? log.value.level : "info");
@@ -116,6 +118,7 @@ function generateApiSecret(): void {
               </span>
               <input :value="apiController" class="api-control" aria-label="API 监听地址" :disabled="Boolean(experimentalError)" spellcheck="false" @change="changeApiController" />
             </label>
+            <p v-if="!hasApiController && defaultApiControllerError" class="panel-error" role="alert">{{ defaultApiControllerError }}</p>
 
             <div class="api-setting-row">
               <span class="setting-icon orange"><AppIcon name="lock" :size="16" /></span>

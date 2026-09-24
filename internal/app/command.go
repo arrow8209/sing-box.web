@@ -32,7 +32,7 @@ const commandHelp = `SingBox Control
   -h, --help          显示帮助并退出
 
 数据与配置固定保存在启动工作目录下的 data/ 和 config/。
-服务设置位于 data/settings.json，默认 Web 端口为 50015，默认 Mixed 入站端口为 50016。
+服务设置位于 data/settings.json，默认 Web 端口为 50015，默认 Mixed 入站端口为 50016，默认 Clash API 端口为 50024。
 `
 
 func ParseCommand(args []string) (Command, error) {

@@ -15,7 +15,7 @@ import type { InboundConfig, InboundDetail, InboundInput } from "@/features/inbo
 import { restoreInboundEditorState, type InboundPanelSave, type InboundResourceBinding } from "./inbound";
 import { serializeInboundInput } from "./inbound-input";
 
-const props = defineProps<{ draft: Draft; profileName: string; error?: string; candidate?: CandidateView | null; serverResolution?: boolean }>();
+const props = defineProps<{ draft: Draft; profileName: string; defaultMixedPort: number | null; error?: string; candidate?: CandidateView | null; serverResolution?: boolean }>();
 const emit = defineEmits<{ editJson: []; save: [payload: InboundPanelSave]; freeze: [operation: FreezeOperation] }>();
 const resources = useInboundStore();
 const importOpen = ref(false);
@@ -95,6 +95,7 @@ function closeEditor(): void {
 }
 function openEditor(index: number, config: InboundConfig): void {
   if (props.serverResolution && bindingFor(config.tag)) { show("关联入站的生成结果只读；请先解除关联，才能编辑独立配置。", "error"); return; }
+  if (props.defaultMixedPort == null) { show("无法读取默认 Mixed 端口，请刷新页面后重试。", "error"); return; }
   editingIndex.value = index;
   editing.value = { id: `profile-inbound-${index}`, mode: resourceMode(config), config: cloneConfig(config), updatedAt: props.draft.savedAt };
   editorOpen.value = true;
@@ -200,7 +201,7 @@ function restoreSaved(config: InboundConfig): void {
     </div>
     <p v-if="error" class="panel-error" role="alert">{{ error }}</p>
     <InboundImportDialog :open="importOpen" :profile-name="profileName" :current-tags="tags" :target-tag="association?.tag" :busy="importing" @close="closeImport" @import="importSelected" />
-    <InboundEditorDialog :open="editorOpen" :resource="editing" :existing-tags="tags" :linked-source="bindingFor(editing?.config.tag ?? '')?.sourceTag" kind="profile" :allow-delete="false" @close="closeEditor" @submit="submitEdit" />
+    <InboundEditorDialog v-if="defaultMixedPort != null" :open="editorOpen" :resource="editing" :existing-tags="tags" :default-mixed-port="defaultMixedPort" :linked-source="bindingFor(editing?.config.tag ?? '')?.sourceTag" kind="profile" :allow-delete="false" @close="closeEditor" @submit="submitEdit" />
     <AppDialog :open="viewingCandidateTag !== null" title="候选入站 JSON" description="服务端生成结果只读；解除关联后可编辑独立配置" @close="viewingCandidateTag = null">
       <pre class="candidate-json">{{ candidateFor(viewingCandidateTag ?? '')?.text }}</pre>
       <template #footer><button type="button" @click="viewingCandidateTag = null">关闭</button></template>

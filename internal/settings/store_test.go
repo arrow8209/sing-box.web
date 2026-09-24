@@ -74,14 +74,14 @@ func TestOpenStoreKeepsLegacyCoreBehaviorDefaults(t *testing.T) {
 		t.Fatalf("value=%+v err=%v", value, err)
 	}
 	ports, err := store.GetServer()
-	if err != nil || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 {
+	if err != nil || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 || ports.DefaultAPIPort != 50024 || ports.DefaultAPIController != "127.0.0.1:50024" {
 		t.Fatalf("ports=%+v err=%v", ports, err)
 	}
 }
 
 func TestServerPortsSurviveOtherSettingsUpdates(t *testing.T) {
 	path := t.TempDir() + "/settings.json"
-	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":"","webPort":50018,"defaultMixedPort":50019}`), 0o600); err != nil {
+	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":"","webPort":50018,"defaultMixedPort":50019,"defaultApiPort":50017}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	store, err := OpenStore(path)
@@ -99,13 +99,13 @@ func TestServerPortsSurviveOtherSettingsUpdates(t *testing.T) {
 		t.Fatal(err)
 	}
 	ports, err := reopened.GetServer()
-	if err != nil || ports.WebPort != 50018 || ports.DefaultMixedPort != 50019 {
+	if err != nil || ports.WebPort != 50018 || ports.DefaultMixedPort != 50019 || ports.DefaultAPIPort != 50017 || ports.DefaultAPIController != "127.0.0.1:50017" {
 		t.Fatalf("ports=%+v err=%v", ports, err)
 	}
 }
 
 func TestOpenStoreRejectsInvalidServerPorts(t *testing.T) {
-	for _, field := range []string{"webPort", "defaultMixedPort"} {
+	for _, field := range []string{"webPort", "defaultMixedPort", "defaultApiPort"} {
 		for _, value := range []string{"0", "-1", "65536", "50018.5", `"50018"`, "true"} {
 			t.Run(field+"/"+value, func(t *testing.T) {
 				path := t.TempDir() + "/settings.json"
@@ -125,6 +125,12 @@ func TestOpenStoreRejectsInvalidServerPorts(t *testing.T) {
 	}
 	if _, err := OpenStore(path); err == nil || !strings.Contains(err.Error(), "不能相同") {
 		t.Fatalf("same ports err=%v", err)
+	}
+	if err := storage.WriteFile(path, []byte(`{"version":1,"proxyUrl":"","webPort":50018,"defaultMixedPort":50019,"defaultApiPort":50019}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := OpenStore(path); err == nil || !strings.Contains(err.Error(), "不能相同") {
+		t.Fatalf("same API and Mixed ports err=%v", err)
 	}
 }
 

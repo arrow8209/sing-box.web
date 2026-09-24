@@ -12,9 +12,9 @@ const props = withDefaults(defineProps<{
   busy?: boolean;
   kind?: "library" | "profile";
   allowDelete?: boolean;
-  defaultMixedPort?: number;
+  defaultMixedPort: number;
   linkedSource?: string;
-}>(), { busy: false, kind: "library", allowDelete: true, defaultMixedPort: 50016 });
+}>(), { busy: false, kind: "library", allowDelete: true });
 const emit = defineEmits<{ close: []; submit: [input: InboundInput]; delete: [] }>();
 
 interface EditorForm {

@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"singbox-web/internal/rules"
+	"singbox-web/internal/settings"
 )
 
 type BindingTemplate struct {
@@ -30,6 +31,7 @@ type Factory struct {
 	resources []rules.ResourceTemplate
 	bindings  []BindingTemplate
 	random    io.Reader
+	apiPort   int
 }
 
 func NewFactory(randomSource io.Reader) (*Factory, error) {
@@ -48,14 +50,17 @@ func NewFactory(randomSource io.Reader) (*Factory, error) {
 	if err := json.Unmarshal(defaultBindings, &bindings); err != nil {
 		return nil, fmt.Errorf("默认规则绑定模板无效: %w", err)
 	}
-	return &Factory{profile: profile, resources: resources, bindings: bindings, random: randomSource}, nil
+	return &Factory{profile: profile, resources: resources, bindings: bindings, random: randomSource, apiPort: settings.DefaultAPIPort}, nil
 }
 
-// NewFactoryWithMixedPort customizes only the initial Mixed listener. Imported
-// and saved profiles keep their own ports.
-func NewFactoryWithMixedPort(randomSource io.Reader, port int) (*Factory, error) {
-	if port < 1 || port > 65535 {
+// NewFactoryWithPorts customizes initial listeners. Imported and saved profiles
+// keep their own ports.
+func NewFactoryWithPorts(randomSource io.Reader, mixedPort, apiPort int) (*Factory, error) {
+	if mixedPort < 1 || mixedPort > 65535 {
 		return nil, fmt.Errorf("默认 Mixed 端口必须是 1 到 65535 的整数")
+	}
+	if apiPort < 1 || apiPort > 65535 {
+		return nil, fmt.Errorf("默认 API 端口必须是 1 到 65535 的整数")
 	}
 	factory, err := NewFactory(randomSource)
 	if err != nil {
@@ -67,11 +72,18 @@ func NewFactoryWithMixedPort(randomSource io.Reader, port int) (*Factory, error)
 	}
 	for _, inbound := range inbounds {
 		if string(inbound["type"]) == `"mixed"` {
-			inbound["listen_port"], _ = json.Marshal(port)
+			inbound["listen_port"], _ = json.Marshal(mixedPort)
 		}
 	}
 	factory.profile["inbounds"], err = json.Marshal(inbounds)
+	factory.apiPort = apiPort
 	return factory, err
+}
+
+// NewFactoryWithMixedPort retains the default API listener for callers that
+// only customize the initial Mixed listener.
+func NewFactoryWithMixedPort(randomSource io.Reader, mixedPort int) (*Factory, error) {
+	return NewFactoryWithPorts(randomSource, mixedPort, settings.DefaultAPIPort)
 }
 
 func (f *Factory) NewProfileSeed(now time.Time) (ProfileSeed, error) {
@@ -85,6 +97,9 @@ func (f *Factory) NewProfileSeed(now time.Time) (ProfileSeed, error) {
 		return ProfileSeed{}, err
 	}
 	cacheID := "ID_" + suffix
+	if err := setNestedString(config, []string{"experimental", "clash_api", "external_controller"}, settings.ClashAPIControllerAddress(f.apiPort)); err != nil {
+		return ProfileSeed{}, err
+	}
 	if err := setNestedString(config, []string{"experimental", "clash_api", "secret"}, secret); err != nil {
 		return ProfileSeed{}, err
 	}

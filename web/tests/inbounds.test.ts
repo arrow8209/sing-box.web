@@ -52,7 +52,7 @@ describe("入站配置", () => {
 
   it("结构化编辑器不显示或生成已移除的旧嗅探参数", async () => {
     const wrapper = mount(InboundEditorDialog, {
-      props: { open: true, resource: null, existingTags: [] }
+      props: { open: true, resource: null, existingTags: [], defaultMixedPort: 50019 }
     });
     expect(wrapper.findAll(".type-grid > label")).toHaveLength(6);
     await wrapper.get('input[type="radio"][value="http"]').setValue(true);
@@ -80,7 +80,7 @@ describe("入站配置", () => {
     };
     const structured = mount(InboundEditorDialog, {
       props: {
-        open: true, existingTags: [], kind: "profile",
+        open: true, existingTags: [], kind: "profile", defaultMixedPort: 50019,
         resource: { id: "profile-inbound-0", mode: "structured", config: legacy, updatedAt: "2026-08-25T00:00:00Z" }
       }
     });
@@ -93,7 +93,7 @@ describe("入站配置", () => {
       expect(migrated.config).not.toHaveProperty(field);
     }
 
-    const custom = mount(InboundEditorDialog, { props: { open: true, resource: null, existingTags: [] } });
+    const custom = mount(InboundEditorDialog, { props: { open: true, resource: null, existingTags: [], defaultMixedPort: 50019 } });
     await custom.get('input[type="radio"][value="custom"]').setValue(true);
     const source = JSON.stringify(legacy, null, 2);
     await custom.get('textarea[aria-label="入站 JSON"]').setValue(source);
@@ -102,7 +102,7 @@ describe("入站配置", () => {
   });
 
   it("结构化编辑器生成 TUN 地址、路由与开关", async () => {
-    const wrapper = mount(InboundEditorDialog, { props: { open: true, resource: null, existingTags: [] } });
+    const wrapper = mount(InboundEditorDialog, { props: { open: true, resource: null, existingTags: [], defaultMixedPort: 50019 } });
     await wrapper.get('input[type="radio"][value="tun"]').setValue(true);
     await wrapper.get('input[name="tag"]').setValue("tun-system");
     await wrapper.get('input[aria-label="TUN 地址 1"]').setValue("172.20.0.1/30");
@@ -130,7 +130,7 @@ describe("入站配置", () => {
     });
     vi.stubGlobal("fetch", fetchMock);
     const wrapper = mount(InboundConfigPanel, {
-      props: { draft: draft([{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7891 }]), profileName: "测试配置" },
+      props: { draft: draft([{ type: "mixed", tag: "mixed-in", listen: "127.0.0.1", listen_port: 7891 }]), profileName: "测试配置", defaultMixedPort: 50019 },
       global: { stubs: { RouterLink: { template: "<a><slot /></a>" } } }
     });
     await wrapper.get(".import-button").trigger("click");
@@ -159,7 +159,7 @@ describe("入站配置", () => {
     vi.stubGlobal("fetch", vi.fn(async (input: RequestInfo | URL) => new Response(JSON.stringify(String(input).endsWith(`/inbound-resources/${id}`)
       ? { ...summary, config: source } : [summary]), { headers: { "Content-Type": "application/json" } })));
     const original = draft([{ type: "mixed", tag: "local-in", listen_port: 19090 }]);
-    const wrapper = mount(InboundConfigPanel, { props: { draft: original, profileName: "测试配置" } });
+    const wrapper = mount(InboundConfigPanel, { props: { draft: original, profileName: "测试配置", defaultMixedPort: 50019 } });
     await wrapper.get('[aria-label="关联源资源 local-in"]').trigger("click");
     await flushPromises();
     const dialog = wrapper.findComponent(InboundImportDialog);

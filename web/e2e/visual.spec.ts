@@ -49,11 +49,21 @@ async function ensureVisualProfile(page: Page): Promise<void> {
     if (!id) return false;
     const response = await fetch(`/api/v1/profiles/${id}/draft`);
     const draft = await response.json() as { buffers: Record<string, string>; editorState: Record<string, unknown>; bindings: unknown[]; schemaVersion?: number; references?: unknown };
-    if (!draft.bindings.length) return false;
-    const dns = JSON.parse(draft.buffers.dns!) as Record<string, unknown>; dns.rules = [];
-    const route = JSON.parse(draft.buffers.route!) as Record<string, unknown>; route.rules = [];
+    const experimental = JSON.parse(draft.buffers.experimental!) as { clash_api: { external_controller: string } };
+    // Keep the synthetic visual profile stable across default-port changes.
+    const visualController = "127.0.0.1:20124";
+    if (!draft.bindings.length && experimental.clash_api.external_controller === visualController) return false;
+    const buffers = { ...draft.buffers };
+    if (draft.bindings.length) {
+      const dns = JSON.parse(draft.buffers.dns!) as Record<string, unknown>; dns.rules = [];
+      const route = JSON.parse(draft.buffers.route!) as Record<string, unknown>; route.rules = [];
+      buffers.dns = JSON.stringify(dns);
+      buffers.route = JSON.stringify(route);
+    }
+    experimental.clash_api.external_controller = visualController;
+    buffers.experimental = JSON.stringify(experimental);
     const saved = await fetch(`/api/v1/profiles/${id}/draft`, { method: "PUT", headers: { "Content-Type": "application/json", "X-CSRF-Token": session.csrfToken, "If-Match": response.headers.get("ETag")! },
-      body: JSON.stringify({ buffers: { ...draft.buffers, dns: JSON.stringify(dns), route: JSON.stringify(route) }, bindings: [], editorState: draft.editorState,
+      body: JSON.stringify({ buffers, bindings: [], editorState: draft.editorState,
         ...(draft.schemaVersion === 2 ? { schemaVersion: 2, references: draft.references } : {}) }) });
     if (!saved.ok) throw new Error(`visual profile setup failed: ${saved.status}`);
     return true;

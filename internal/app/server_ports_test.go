@@ -27,10 +27,10 @@ func TestConfiguredPortsReachServerAndNewProfilesWithoutRewritingExistingProfile
 	}
 	var existingID string
 	for _, ports := range []settings.ServerSettings{
-		{WebPort: 50018, DefaultMixedPort: 50019},
-		{WebPort: 50015, DefaultMixedPort: 50016},
+		{WebPort: 50018, DefaultMixedPort: 50019, DefaultAPIPort: 50017, DefaultAPIController: "127.0.0.1:50017"},
+		{WebPort: 50015, DefaultMixedPort: 50016, DefaultAPIPort: 50024, DefaultAPIController: "127.0.0.1:50024"},
 	} {
-		body := fmt.Sprintf(`{"version":1,"proxyUrl":"","autoStart":false,"webPort":%d,"defaultMixedPort":%d}`, ports.WebPort, ports.DefaultMixedPort)
+		body := fmt.Sprintf(`{"version":1,"proxyUrl":"","autoStart":false,"webPort":%d,"defaultMixedPort":%d,"defaultApiPort":%d}`, ports.WebPort, ports.DefaultMixedPort, ports.DefaultAPIPort)
 		if err := storage.WriteFile(layout.SettingsFile, []byte(body), 0o600); err != nil {
 			t.Fatal(err)
 		}
@@ -85,7 +85,7 @@ func TestConfiguredPortsReachServerAndNewProfilesWithoutRewritingExistingProfile
 		if err := json.Unmarshal(created.Body.Bytes(), &meta); err != nil {
 			t.Fatal(err)
 		}
-		assertPort := func(id string, want int) {
+		assertPorts := func(id string, wantMixedPort, wantAPIPort int) {
 			t.Helper()
 			response := send(http.MethodGet, "/api/v1/profiles/"+id+"/draft", "")
 			var draft profile.Draft
@@ -99,13 +99,24 @@ func TestConfiguredPortsReachServerAndNewProfilesWithoutRewritingExistingProfile
 			if err := json.Unmarshal(draft.Config["inbounds"], &inbounds); err != nil {
 				t.Fatal(err)
 			}
-			if len(inbounds) != 1 || inbounds[0].Type != "mixed" || inbounds[0].Port != want {
-				t.Fatalf("inbounds=%+v, want mixed port %d", inbounds, want)
+			if len(inbounds) != 1 || inbounds[0].Type != "mixed" || inbounds[0].Port != wantMixedPort {
+				t.Fatalf("inbounds=%+v, want mixed port %d", inbounds, wantMixedPort)
+			}
+			var experimental struct {
+				ClashAPI struct {
+					ExternalController string `json:"external_controller"`
+				} `json:"clash_api"`
+			}
+			if err := json.Unmarshal(draft.Config["experimental"], &experimental); err != nil {
+				t.Fatal(err)
+			}
+			if want := fmt.Sprintf("127.0.0.1:%d", wantAPIPort); experimental.ClashAPI.ExternalController != want {
+				t.Fatalf("API controller=%q, want %q", experimental.ClashAPI.ExternalController, want)
 			}
 		}
-		assertPort(meta.ID, ports.DefaultMixedPort)
+		assertPorts(meta.ID, ports.DefaultMixedPort, ports.DefaultAPIPort)
 		if existingID != "" {
-			assertPort(existingID, 50019)
+			assertPorts(existingID, 50019, 50017)
 		} else {
 			existingID = meta.ID
 		}

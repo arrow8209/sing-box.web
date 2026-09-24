@@ -114,7 +114,7 @@ async function confirmDelete(): Promise<void> {
       </div></article>
       <aside><article class="guide-card"><header><div><h2>导入规则</h2><p>关联来源，按需转为独立配置</p></div></header><div class="guide-list"><div><AppIcon name="plus" :size="17" /><span><strong>先新建</strong><small>在资源库维护常用入站参数</small></span></div><div><AppIcon name="copy" :size="17" /><span><strong>再导入</strong><small>档案记录来源并保留本地 tag</small></span></div><div><AppIcon name="shield" :size="17" /><span><strong>解除关联</strong><small>可固定当前候选为独立配置；源删除后需明确恢复旧副本</small></span></div></div></article><p class="info-callout"><AppIcon name="info" :size="15" /><span>导入时若 <code>tag</code> 与当前自定义配置重复，会自动生成不冲突的新名称。</span></p></aside>
     </div>
-    <InboundEditorDialog :open="editorOpen" :resource="editing" :existing-tags="tags" :busy="saving" :default-mixed-port="defaultMixedPort ?? 50016" @close="closeEditor" @submit="submit" @delete="requestDelete()" />
+    <InboundEditorDialog v-if="defaultMixedPort !== null" :open="editorOpen" :resource="editing" :existing-tags="tags" :busy="saving" :default-mixed-port="defaultMixedPort" @close="closeEditor" @submit="submit" @delete="requestDelete()" />
     <InboundDeleteDialog :open="deleteOpen" :tag="deleteTarget?.tag ?? ''" :busy="deleting" @close="closeDelete" @confirm="confirmDelete" />
     <AppToast v-if="notice" :message="notice" :tone="noticeTone" />
   </section>

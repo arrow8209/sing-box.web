@@ -85,6 +85,15 @@ describe("配置编辑器", () => {
     expect(wrapper.text()).not.toContain("启用 IPv6");
   });
 
+  it("草稿缺少 API 监听地址时显示接口返回的默认地址", () => {
+    const draft = generalSettingsDraft();
+    const experimental = draft.config.experimental as { clash_api: { external_controller?: string } };
+    delete experimental.clash_api.external_controller;
+    draft.buffers.experimental = JSON.stringify(experimental);
+    const wrapper = mount(GeneralSettingsPanel, { props: { draft, defaultApiController: "127.0.0.1:50017" } });
+    expect((wrapper.get('[aria-label="API 监听地址"]').element as HTMLInputElement).value).toBe("127.0.0.1:50017");
+  });
+
   it("工作模式、API 监听地址和密钥写入 experimental 草稿并保留未知整数", async () => {
     const mode = mount(GeneralSettingsPanel, { props: { draft: generalSettingsDraft() } });
     await mode.get('[role="radio"][aria-label="全局"]').trigger("click");

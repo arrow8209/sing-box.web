@@ -21,6 +21,7 @@ const (
 	defaultAutoStart = true
 	DefaultWebPort   = 50015
 	DefaultMixedPort = 50016
+	DefaultAPIPort   = 50024
 )
 
 var ErrInvalidProxyURL = errors.New("代理地址无效")
@@ -32,6 +33,7 @@ type document struct {
 	AutoReload       bool   `json:"autoReload"`
 	WebPort          int    `json:"webPort"`
 	DefaultMixedPort int    `json:"defaultMixedPort"`
+	DefaultAPIPort   int    `json:"defaultApiPort"`
 }
 
 // diskDocument keeps behavior and port fields optional so older settings files
@@ -43,14 +45,21 @@ type diskDocument struct {
 	AutoReload       *bool  `json:"autoReload,omitempty"`
 	WebPort          *int   `json:"webPort,omitempty"`
 	DefaultMixedPort *int   `json:"defaultMixedPort,omitempty"`
+	DefaultAPIPort   *int   `json:"defaultApiPort,omitempty"`
 }
 
-// ServerSettings is read at startup. DefaultMixedPort only seeds new profiles
-// and inbound resources; existing sing-box configurations remain independent.
+// ServerSettings is read at startup. DefaultMixedPort and DefaultAPIPort only
+// seed new profiles; existing sing-box configurations remain independent.
 type ServerSettings struct {
-	WebPort          int `json:"webPort"`
-	DefaultMixedPort int `json:"defaultMixedPort"`
+	WebPort              int    `json:"webPort"`
+	DefaultMixedPort     int    `json:"defaultMixedPort"`
+	DefaultAPIPort       int    `json:"defaultApiPort"`
+	DefaultAPIController string `json:"defaultApiController"`
 }
+
+// ClashAPIControllerAddress keeps the default bind address consistent between
+// new profiles and the server settings API.
+func ClashAPIControllerAddress(port int) string { return fmt.Sprintf("127.0.0.1:%d", port) }
 
 // ProxySettings is the public settings representation returned by the API.
 type ProxySettings struct {
@@ -78,7 +87,7 @@ func OpenStore(file string) (*Store, error) {
 	if file == "" {
 		return nil, fmt.Errorf("设置文件不能为空")
 	}
-	state := document{Version: settingsVersion, AutoStart: defaultAutoStart, WebPort: DefaultWebPort, DefaultMixedPort: DefaultMixedPort}
+	state := document{Version: settingsVersion, AutoStart: defaultAutoStart, WebPort: DefaultWebPort, DefaultMixedPort: DefaultMixedPort, DefaultAPIPort: DefaultAPIPort}
 	if loaded, err := storage.ReadJSON[diskDocument](file); err == nil {
 		state.Version = loaded.Version
 		state.ProxyURL = loaded.ProxyURL
@@ -93,6 +102,9 @@ func OpenStore(file string) (*Store, error) {
 		}
 		if loaded.DefaultMixedPort != nil {
 			state.DefaultMixedPort = *loaded.DefaultMixedPort
+		}
+		if loaded.DefaultAPIPort != nil {
+			state.DefaultAPIPort = *loaded.DefaultAPIPort
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
@@ -110,13 +122,13 @@ func OpenStore(file string) (*Store, error) {
 	for _, port := range []struct {
 		name  string
 		value int
-	}{{"webPort", state.WebPort}, {"defaultMixedPort", state.DefaultMixedPort}} {
+	}{{"webPort", state.WebPort}, {"defaultMixedPort", state.DefaultMixedPort}, {"defaultApiPort", state.DefaultAPIPort}} {
 		if port.value < 1 || port.value > 65535 {
 			return nil, &storage.CorruptFileError{Path: file, Err: fmt.Errorf("%s 必须是 1 到 65535 的整数", port.name)}
 		}
 	}
-	if state.WebPort == state.DefaultMixedPort {
-		return nil, &storage.CorruptFileError{Path: file, Err: fmt.Errorf("webPort 与 defaultMixedPort 不能相同")}
+	if state.WebPort == state.DefaultMixedPort || state.WebPort == state.DefaultAPIPort || state.DefaultMixedPort == state.DefaultAPIPort {
+		return nil, &storage.CorruptFileError{Path: file, Err: fmt.Errorf("webPort、defaultMixedPort 与 defaultApiPort 不能相同")}
 	}
 	return &Store{file: file, state: state, proxy: proxy}, nil
 }
@@ -127,7 +139,12 @@ func (s *Store) GetServer() (ServerSettings, error) {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return ServerSettings{WebPort: s.state.WebPort, DefaultMixedPort: s.state.DefaultMixedPort}, nil
+	return ServerSettings{
+		WebPort:              s.state.WebPort,
+		DefaultMixedPort:     s.state.DefaultMixedPort,
+		DefaultAPIPort:       s.state.DefaultAPIPort,
+		DefaultAPIController: ClashAPIControllerAddress(s.state.DefaultAPIPort),
+	}, nil
 }
 
 func (s *Store) Get() (ProxySettings, error) {

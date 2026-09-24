@@ -147,7 +147,7 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	}
 	factory := deps.TemplateFactory
 	if factory == nil {
-		factory, err = templates.NewFactoryWithMixedPort(randomSource, serverSettings.DefaultMixedPort)
+		factory, err = templates.NewFactoryWithPorts(randomSource, serverSettings.DefaultMixedPort, serverSettings.DefaultAPIPort)
 		if err != nil {
 			return nil, err
 		}

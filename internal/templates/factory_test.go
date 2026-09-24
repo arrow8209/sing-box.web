@@ -36,7 +36,7 @@ func TestFactoryCreatesUniqueSecretsAndCacheIDs(t *testing.T) {
 	}
 }
 
-func TestDefaultProfileUsesClashAPIPort20124(t *testing.T) {
+func TestDefaultProfileUsesClashAPIPort50024(t *testing.T) {
 	seed, err := newTestFactory(t).NewProfileSeed(time.Unix(1, 0))
 	if err != nil {
 		t.Fatal(err)
@@ -49,8 +49,8 @@ func TestDefaultProfileUsesClashAPIPort20124(t *testing.T) {
 	if err := json.Unmarshal(seed.Config["experimental"], &experimental); err != nil {
 		t.Fatal(err)
 	}
-	if experimental.ClashAPI.ExternalController != "127.0.0.1:20124" {
-		t.Fatalf("default Clash API controller=%q, want 127.0.0.1:20124", experimental.ClashAPI.ExternalController)
+	if experimental.ClashAPI.ExternalController != "127.0.0.1:50024" {
+		t.Fatalf("default Clash API controller=%q, want 127.0.0.1:50024", experimental.ClashAPI.ExternalController)
 	}
 }
 

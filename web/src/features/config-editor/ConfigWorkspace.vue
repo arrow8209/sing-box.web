@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref, watch } from "vue";
+import { computed, onMounted, ref, watch } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import { isApiError } from "@/features/profiles/api";
@@ -13,6 +13,7 @@ import PreviewDialog from "@/features/application/PreviewDialog.vue";
 import ValidationErrors from "@/features/application/ValidationErrors.vue";
 import { useApplicationStore } from "@/features/application/store";
 import { useCapabilitiesStore } from "@/features/capabilities/store";
+import { serverSettingsApi, type ServerSettings } from "@/features/settings/api";
 import type { CandidateView } from "@/features/application/types";
 import type { FreezeOperation } from "@/features/profiles/types";
 import { presentationEditorState } from "@/features/profiles/reference-input";
@@ -55,7 +56,13 @@ const requiresCoreDecision = ref(false);
 const profileBusy = ref(false);
 const profileError = ref("");
 const notice = ref("");
+const serverSettings = ref<ServerSettings | null>(null);
+const defaultApiControllerError = ref("");
 const draft = computed(() => store.draft.value);
+onMounted(async () => {
+  try { serverSettings.value = await serverSettingsApi.get(); }
+  catch { defaultApiControllerError.value = "无法读取默认 API 监听地址，请手动填写。"; }
+});
 const serverResolution = computed(() => capabilities.capabilities.value?.serverReferenceResolution === true);
 const candidate = computed<CandidateView | null>(() => {
   const value = application.previewResult.value?.candidate;
@@ -277,8 +284,8 @@ function jumpTo(path: string): void {
       >{{ store.autoReloadOutcome.value.message }}</p>
       <ConfigTabs :active="active" @select="active = $event" />
       <p v-if="serverResolution && (active === 'inbounds' || active === 'outbounds')" class="candidate-status" role="status">{{ candidate ? `服务端候选 · 草稿第 ${candidate.revision} 版` : '正在读取服务端候选或来源已失效' }} <button type="button" :disabled="application.requesting.value" @click="application.fetchCandidate()">刷新候选</button></p>
-      <GeneralSettingsPanel v-if="active === 'general'" :draft="draft" :error="errors.log" :experimental-error="errors.experimental" @save="fromGeneralSettings" @edit-json="dialogModule = 'log'" />
-      <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :candidate="candidate" :server-resolution="serverResolution" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" @freeze="freezeInbound" />
+      <GeneralSettingsPanel v-if="active === 'general'" :draft="draft" :default-api-controller="serverSettings?.defaultApiController ?? ''" :default-api-controller-error="defaultApiControllerError" :error="errors.log" :experimental-error="errors.experimental" @save="fromGeneralSettings" @edit-json="dialogModule = 'log'" />
+      <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :default-mixed-port="serverSettings?.defaultMixedPort ?? null" :candidate="candidate" :server-resolution="serverResolution" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" @freeze="freezeInbound" />
       <OutboundConfigPanel v-else-if="active === 'outbounds'" :draft="draft" :candidate="candidate" :server-resolution="serverResolution" :error="errors.outbounds" @edit-json="dialogModule = 'outbounds'" @save="saveOutbounds" />
       <RouteConfigPanel v-else-if="active === 'route'" :draft="draft" :error="errors.route" @edit-json="dialogModule = 'route'" @save="saveRoute" />
       <DnsConfigPanel v-else-if="active === 'dns'" :draft="draft" :error="errors.dns" @edit-json="dialogModule = 'dns'" @save="saveDns" />

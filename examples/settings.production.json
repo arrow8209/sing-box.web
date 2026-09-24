@@ -4,5 +4,6 @@
   "autoStart": true,
   "autoReload": false,
   "webPort": 50015,
-  "defaultMixedPort": 50016
+  "defaultMixedPort": 50016,
+  "defaultApiPort": 50024
 }

@@ -81,7 +81,7 @@ func TestServerSettingsAreReadOnly(t *testing.T) {
 		if err := json.Unmarshal(response.Body.Bytes(), &ports); err != nil {
 			t.Fatal(err)
 		}
-		if response.Code != http.StatusOK || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 {
+		if response.Code != http.StatusOK || ports.WebPort != 50015 || ports.DefaultMixedPort != 50016 || ports.DefaultAPIPort != 50024 || ports.DefaultAPIController != "127.0.0.1:50024" {
 			t.Fatalf("get=%d ports=%+v", response.Code, ports)
 		}
 	}

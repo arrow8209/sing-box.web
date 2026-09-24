@@ -3,6 +3,8 @@ import { request } from "@/api/client";
 export interface ServerSettings {
   webPort: number;
   defaultMixedPort: number;
+  defaultApiPort: number;
+  defaultApiController: string;
 }
 
 export const serverSettingsApi = {

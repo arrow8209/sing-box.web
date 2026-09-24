@@ -28,18 +28,18 @@ sh scripts/build.sh
 
 执行 `./dist/singbox-web-v0.1.7 -h` 或 `--help` 可查看命令帮助；显示帮助不需要设置密码，也不会启动服务或创建运行数据。
 
-Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPort` 配置访问端口，监听地址保持 `0.0.0.0`。缺省使用发布端口 `50015`。`defaultMixedPort` 控制新建档案和新建 Mixed 入站的默认端口，缺省为 `50016`；已有档案、入站资源及已应用配置保留各自的 `listen_port`。
+Web 服务启动时读取工作目录下的 `data/settings.json`，通过 `webPort` 配置访问端口，监听地址保持 `0.0.0.0`。缺省使用发布端口 `50015`。`defaultMixedPort` 控制新建档案和新建 Mixed 入站的默认端口，缺省为 `50016`；`defaultApiPort` 控制新建档案的 Clash API 默认监听地址 `127.0.0.1:<端口>`，缺省为 `50024`。服务设置接口返回端口及完整默认 API 监听地址，网页直接读取。已有档案、入站资源及已应用配置保留各自的监听地址和端口。
 
-| 环境 | `webPort` | `defaultMixedPort` |
-| --- | --- | --- |
-| 发布环境 | `50015` | `50016` |
-| 开发环境 | `50018` | `50019` |
+| 环境 | `webPort` | `defaultMixedPort` | `defaultApiPort` |
+| --- | --- | --- | --- |
+| 发布环境 | `50015` | `50016` | `50024` |
+| 测试/开发环境 | `50018` | `50019` | `50017` |
 
 执行 `serve` 后，终端会在 Web 端口成功监听后显示实际监听地址、本机访问 URL、进程 PID、工作目录、配置目录、默认 Mixed 入站端口，以及核心状态、已安装版本和运行 PID。默认 Mixed 端口用于新建入站，已有配置实际监听的端口以核心日志为准；端口占用导致启动失败时不会显示启动成功。
 
 核心写入标准输出和标准错误的日志会以 `[核心]` 前缀实时显示在当前终端，同时继续保存在 `data/logs/sing-box.log`，并保留原有的文件大小和单行长度限制。Web 启停信息使用 `[Web]` 前缀。退出服务时会停止受管核心、写出最后一条未换行日志并关闭日志文件。
 
-发布与开发配置示例分别见 [`examples/settings.production.json`](examples/settings.production.json) 和 [`examples/settings.development.json`](examples/settings.development.json)。已有 `data/settings.json` 时，在原文件中添加或修改这两个字段，保留下载代理和核心行为设置；修改前停止 Web 服务，重新启动后生效。端口必须是 `1` 到 `65535` 的整数，Web 与默认 Mixed 端口不能相同；配置错误会阻止启动并提示字段及文件路径。旧设置文件未包含这两个字段时继续兼容，读取后使用发布默认值。
+发布与开发配置示例分别见 [`examples/settings.production.json`](examples/settings.production.json) 和 [`examples/settings.development.json`](examples/settings.development.json)。已有 `data/settings.json` 时，在原文件中添加或修改这三个端口字段，保留下载代理和核心行为设置；修改前停止 Web 服务，重新启动后生效。端口必须是 `1` 到 `65535` 的整数，三个端口不能相同；配置错误会阻止启动并提示字段及文件路径。旧设置文件未包含端口字段时继续兼容，读取后使用发布默认值。仅添加 `defaultApiPort` 不会改写已有档案的 `experimental.clash_api.external_controller`；已有档案可以在“常规设置”中单独修改监听地址。
 
 完整开发服务使用开发配置示例中的端口，同样通过 `scripts/build.sh` 构建后执行 `./dist/singbox-web-v0.1.7 serve`（版本号以构建输出为准），从 `http://localhost:50018` 访问。开发和发布使用各自的工作目录保存 `data/`、`config/`。单独运行 `npm --prefix web run dev` 时，Vite 的前端开发端口也为 `50018`；它仅提供前端开发服务，请勿与完整 Web 服务同时占用该端口。端口被占用时 Vite 会报错，不会自动改用其他端口。
 
