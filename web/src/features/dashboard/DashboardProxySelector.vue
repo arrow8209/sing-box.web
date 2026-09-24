@@ -4,8 +4,9 @@ import AppIcon from "@/layout/AppIcon.vue";
 import { proxyGroupsApi, type ProxyGroupsApi, type RuntimeProxyGroup } from "./api";
 import { buildDashboardProxyGroups, buildRuntimeDashboardProxyGroups, type DashboardProxyGroup, type DashboardProxyMember } from "./proxy-groups";
 
-const props = withDefaults(defineProps<{ outbounds?: unknown[]; editorState?: unknown; loading?: boolean; running?: boolean; runtimeKey?: string; api?: ProxyGroupsApi }>(), {
+const props = withDefaults(defineProps<{ outbounds?: unknown[]; outboundOrder?: string[]; editorState?: unknown; loading?: boolean; running?: boolean; runtimeKey?: string; api?: ProxyGroupsApi }>(), {
   outbounds: () => [],
+  outboundOrder: () => [],
   loading: false,
   running: true,
   runtimeKey: "",
@@ -28,11 +29,11 @@ let reading = false;
 let pollTimer: ReturnType<typeof setInterval> | undefined;
 
 watch([() => props.outbounds, () => props.editorState], cancelTest);
-watch([() => props.outbounds, () => props.editorState, runtimeGroups], () => {
+watch([() => props.outbounds, () => props.outboundOrder, () => props.editorState, runtimeGroups], () => {
   const previous = new Map(groups.value.map((group) => [group.tag, group]));
   const next = runtimeGroups.value
-    ? buildRuntimeDashboardProxyGroups(runtimeGroups.value, props.outbounds, props.editorState)
-    : buildDashboardProxyGroups(props.outbounds, props.editorState).map((group) => ({ ...group, selected: "" }));
+    ? buildRuntimeDashboardProxyGroups(runtimeGroups.value, props.outbounds, props.editorState, props.outboundOrder)
+    : buildDashboardProxyGroups(props.outbounds, props.editorState, props.outboundOrder).map((group) => ({ ...group, selected: "" }));
   groups.value = next.map((group) => {
     const current = previous.get(group.tag);
     if (!current) return group;

@@ -2,6 +2,8 @@ import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DashboardProxySelector from "@/features/dashboard/DashboardProxySelector.vue";
 import type { ProxySelection, RuntimeProxyGroup } from "@/features/dashboard/api";
+import { outboundOrderFromDraft } from "@/features/dashboard/proxy-groups";
+import type { Draft } from "@/features/profiles/types";
 
 enableAutoUnmount(afterEach);
 afterEach(() => vi.useRealTimers());
@@ -30,6 +32,48 @@ function createApi() {
 }
 
 describe("仪表盘节点选择", () => {
+  it("按配置页的出站顺序显示策略组，同时保留核心的节点顺序和选择", async () => {
+    const outbounds = [
+      { type: "selector", tag: "备用组", outbounds: ["节点二", "节点一"] },
+      { type: "selector", tag: "主选择", outbounds: ["节点一", "节点二"] },
+      { type: "urltest", tag: "自动组", outbounds: ["节点一"] },
+      { type: "trojan", tag: "节点一" },
+      { type: "vless", tag: "节点二" }
+    ];
+    const draft: Draft = {
+      profileId: "a".repeat(32), revision: 2, schemaVersion: 2,
+      config: { outbounds }, buffers: {}, bindings: [], savedAt: "2026-09-24T00:00:00Z",
+      references: { version: 2, inbounds: [], outbounds: [
+        { id: "main", tag: "主选择", type: "selector", references: [] },
+        { id: "backup", tag: "备用组", type: "selector", references: [] },
+        { id: "auto", tag: "自动组", type: "urltest", references: [] }
+      ] }
+    };
+    const order = outboundOrderFromDraft(draft);
+    expect(order.slice(0, 3)).toEqual(["主选择", "备用组", "自动组"]);
+    expect(outboundOrderFromDraft({ ...draft, schemaVersion: 1 })).toEqual(outbounds.map((item) => item.tag));
+
+    const api = { list: vi.fn(async (): Promise<RuntimeProxyGroup[]> => [
+      { tag: "备用组", type: "Selector", selected: "节点二", members: [{ tag: "节点二", type: "Vless" }, { tag: "节点一", type: "Trojan" }] },
+      { tag: "自动组", type: "URLTest", selected: "节点一", members: [{ tag: "节点一", type: "Trojan" }] },
+      { tag: "主选择", type: "Selector", selected: "节点二", members: [{ tag: "节点二", type: "Vless" }, { tag: "节点一", type: "Trojan" }] }
+    ]), select: vi.fn(async (tag: string, selected: string) => ({ tag, selected })) };
+    const wrapper = mount(DashboardProxySelector, { props: { outbounds, outboundOrder: order, running: false, api } });
+    const groupTags = () => wrapper.findAll(".proxy-group").map((group) => group.attributes("data-proxy-group-tag"));
+    expect(groupTags()).toEqual(["主选择", "备用组", "自动组"]);
+
+    await wrapper.setProps({ running: true });
+    await flushPromises();
+    expect(groupTags()).toEqual(["主选择", "备用组", "自动组"]);
+    const main = wrapper.get('[data-proxy-group-tag="主选择"]');
+    expect(main.findAll(".proxy-node-card").map((member) => member.attributes("data-proxy-member-tag"))).toEqual(["节点二", "节点一"]);
+    expect(main.get('[data-proxy-member-tag="节点二"] .proxy-node-select').attributes("aria-pressed")).toBe("true");
+
+    await wrapper.setProps({ outboundOrder: ["备用组", "主选择", "自动组"] });
+    expect(groupTags()).toEqual(["备用组", "主选择", "自动组"]);
+    expect(wrapper.get('[data-proxy-group-tag="主选择"] [data-proxy-member-tag="节点二"] .proxy-node-select').attributes("aria-pressed")).toBe("true");
+  });
+
   it("按实际引用顺序显示整个订阅的全部节点和两个单独出站", () => {
     const subscriptionTags = ["🇭🇰 香港 01", "🇭🇰 香港 02", "🇭🇰 香港 03", "🇭🇰 香港 04"];
     const individualTags = ["新加坡 01", "日本 01"];

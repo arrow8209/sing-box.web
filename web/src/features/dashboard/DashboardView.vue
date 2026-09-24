@@ -10,6 +10,7 @@ import type { CandidateView } from "@/features/application/types";
 import type { ProfileSummary } from "@/features/profiles/types";
 import AppIcon from "@/layout/AppIcon.vue";
 import DashboardProxySelector from "./DashboardProxySelector.vue";
+import { outboundOrderFromDraft } from "./proxy-groups";
 
 type RouteMode = "rule" | "global" | "direct";
 interface DashboardMetric { icon: string; tone: string; label: string; value: string; unit: string; trend: string; neutral: boolean; href?: string }
@@ -67,6 +68,11 @@ const dashboardOutbounds = computed<unknown[]>(() => {
     .map((item) => ({ type: item.type, tag: item.tag, ...(item.members ? { outbounds: item.members } : {}) })) ?? [];
   const outbounds = profileStore.draft.value?.config.outbounds;
   return Array.isArray(outbounds) ? outbounds : [];
+});
+const dashboardOutboundOrder = computed(() => {
+  const draft = profileStore.draft.value;
+  if (!draft || (running.value && draft.profileId !== core.status.value?.currentProfileId)) return [];
+  return outboundOrderFromDraft(draft);
 });
 async function refreshStoppedCandidate(): Promise<void> {
   const generation = ++candidateGeneration;
@@ -301,7 +307,7 @@ onBeforeUnmount(() => {
         </div>
 
         <p v-if="!running && serverResolution" class="candidate-source" role="status">{{ candidateError || (stoppedCandidate ? '以下为选定档案的待运行候选；核心尚未运行' : '正在读取选定档案的待运行候选') }}</p>
-        <DashboardProxySelector ref="proxySelector" :outbounds="dashboardOutbounds" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
+        <DashboardProxySelector ref="proxySelector" :outbounds="dashboardOutbounds" :outbound-order="dashboardOutboundOrder" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
       </div>
     </div>
 
