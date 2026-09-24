@@ -18,7 +18,7 @@ The application is a Go local service plus a Vue SPA under `web/`. Go commands l
 - `npm --prefix web run test:e2e` runs Playwright against the isolated harness.
 - `go test -race ./...` and `go vet ./...` validate Go code.
 
-The Playwright harness serves assets embedded by Go. Run `npm --prefix web run build` before browser tests after SPA changes, so E2E exercises the current frontend rather than previously embedded assets. This development build does not replace the versioned release command `sh scripts/build.sh`.
+The Playwright harness serves assets embedded by Go. After SPA changes, browser tests require `npm --prefix web run build` so E2E exercises the current frontend rather than previously embedded assets. This development build does not replace the versioned release command `sh scripts/build.sh`. 未经用户明确要求编译时，不运行该构建及依赖它的 E2E，并说明未执行的验证项。
 
 用户指定的端口约定如下，后续开发、配置和发布以此为准：
 
@@ -33,6 +33,7 @@ The SPA has an npm install step and must be built through `scripts/build.sh` bef
 
 ## 发布与运行目录
 
+- 只有用户明确要求编译、发布新版本时，才更新版本号、运行构建命令并生成发布产物；日常开发、修复和验证不得主动编译或递增版本号。
 - 发布产物固定输出并保留在 `dist/`，文件名包含版本号：`dist/singbox-web-v<version>`。
 - `Release/` 是由用户自行维护的最终运行目录。本项目发布只负责更新版本并生成、验证 `dist/` 产物；发布时不操作 `Release/`，也不管理其中的运行服务。用户自行处理部署和运行，正式运行的 `data/` 和 `config/` 位于 `Release/` 下。
 - 每次发布前必须更新并递增版本号，不得复用上一发布版本号。任何代码修改后重新发布（包括小修复）都必须增加版本号，不得用修改后的代码覆盖已发布的同版本产物。用户未指定目标版本时，默认递增补丁版本号。
