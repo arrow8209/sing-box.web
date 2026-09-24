@@ -1,0 +1,62 @@
+[
+  {
+    "pattern": "",
+    "tag": "HK",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "",
+    "tag": "US",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "HK|JP",
+    "tag": "HK 01",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "HK|JP",
+    "tag": "US",
+    "match": false,
+    "code": ""
+  },
+  {
+    "pattern": "[",
+    "tag": "a[b",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "(?i)hk",
+    "tag": "HK",
+    "match": false,
+    "code": ""
+  },
+  {
+    "pattern": "(?i)hk",
+    "tag": "(?i)hk-node",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "(?=HK)HK",
+    "tag": "HK",
+    "match": false,
+    "code": "reference_filter_unsupported"
+  },
+  {
+    "pattern": "(HK)\\1",
+    "tag": "HKHK",
+    "match": false,
+    "code": "reference_filter_unsupported"
+  },
+  {
+    "pattern": "\\u0048K",
+    "tag": "HK",
+    "match": false,
+    "code": "reference_filter_unsupported"
+  }
+]

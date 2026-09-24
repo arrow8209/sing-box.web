@@ -1,0 +1,724 @@
+[
+  {
+    "name": "replace-generated-set",
+    "behavior": "保持",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "outbounds": [
+          {
+            "type": "selector",
+            "tag": "选择",
+            "outbounds": [
+              "old"
+            ],
+            "interrupt_exist_connections": true
+          },
+          {
+            "type": "ssh",
+            "tag": "old",
+            "server": "old.example.test",
+            "detour": "removed"
+          },
+          {
+            "type": "direct",
+            "tag": "direct",
+            "future": 9007199254740993
+          }
+        ]
+      },
+      "buffers": {
+        "outbounds": "[{\"type\":\"selector\",\"tag\":\"选择\",\"outbounds\":[\"old\"],\"interrupt_exist_connections\":true},{\"type\":\"ssh\",\"tag\":\"old\",\"server\":\"old.example.test\",\"detour\":\"removed\"},{\"type\":\"direct\",\"tag\":\"direct\",\"future\":9007199254740993}]"
+      },
+      "editorState": {
+        "outbounds": {
+          "version": 1,
+          "groups": [
+            {
+              "id": "group-a",
+              "tag": "选择",
+              "type": "selector",
+              "hidden": false,
+              "include": "",
+              "exclude": "",
+              "icon": "",
+              "references": [
+                {
+                  "kind": "subscription",
+                  "subscriptionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "tag": "测试订阅",
+                  "resolvedTags": [
+                    "old"
+                  ]
+                }
+              ],
+              "runtimeTags": [
+                "old"
+              ]
+            }
+          ],
+          "generatedTags": [
+            "old"
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [
+      {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "测试订阅",
+        "outbounds": [
+          {
+            "type": "ssh",
+            "tag": "new",
+            "server": "new.example.test",
+            "future": 9007199254740995
+          }
+        ]
+      }
+    ],
+    "inbounds": [],
+    "expected": {
+      "outbounds": [
+        {
+          "type": "selector",
+          "tag": "选择",
+          "outbounds": [
+            "new"
+          ],
+          "interrupt_exist_connections": true
+        },
+        {
+          "type": "direct",
+          "tag": "direct",
+          "future": 9007199254740993
+        },
+        {
+          "type": "ssh",
+          "tag": "new",
+          "server": "new.example.test",
+          "future": 9007199254740995
+        }
+      ]
+    },
+    "code": "",
+    "fieldPath": ""
+  },
+  {
+    "name": "source-missing",
+    "behavior": "明确报错",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "outbounds": [
+          {
+            "type": "selector",
+            "tag": "选择",
+            "outbounds": [
+              "old"
+            ],
+            "interrupt_exist_connections": true
+          },
+          {
+            "type": "ssh",
+            "tag": "old",
+            "server": "old.example.test",
+            "detour": "removed"
+          },
+          {
+            "type": "direct",
+            "tag": "direct",
+            "future": 9007199254740993
+          }
+        ]
+      },
+      "buffers": {
+        "outbounds": "[{\"type\":\"selector\",\"tag\":\"选择\",\"outbounds\":[\"old\"],\"interrupt_exist_connections\":true},{\"type\":\"ssh\",\"tag\":\"old\",\"server\":\"old.example.test\",\"detour\":\"removed\"},{\"type\":\"direct\",\"tag\":\"direct\",\"future\":9007199254740993}]"
+      },
+      "editorState": {
+        "outbounds": {
+          "version": 1,
+          "groups": [
+            {
+              "id": "group-a",
+              "tag": "选择",
+              "type": "selector",
+              "hidden": false,
+              "include": "",
+              "exclude": "",
+              "icon": "",
+              "references": [
+                {
+                  "kind": "subscription",
+                  "subscriptionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "tag": "测试订阅",
+                  "resolvedTags": [
+                    "old"
+                  ]
+                }
+              ],
+              "runtimeTags": [
+                "old"
+              ]
+            }
+          ],
+          "generatedTags": [
+            "old"
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [],
+    "inbounds": [],
+    "expected": {},
+    "code": "reference_source_missing",
+    "fieldPath": "editorState.outbounds.groups[0].references[0]"
+  },
+  {
+    "name": "node-missing",
+    "behavior": "明确报错",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "outbounds": [
+          {
+            "type": "selector",
+            "tag": "选择",
+            "outbounds": [
+              "old"
+            ],
+            "interrupt_exist_connections": true
+          },
+          {
+            "type": "ssh",
+            "tag": "old",
+            "server": "old.example.test",
+            "detour": "removed"
+          },
+          {
+            "type": "direct",
+            "tag": "direct",
+            "future": 9007199254740993
+          }
+        ]
+      },
+      "buffers": {
+        "outbounds": "[{\"type\":\"selector\",\"tag\":\"选择\",\"outbounds\":[\"old\"],\"interrupt_exist_connections\":true},{\"type\":\"ssh\",\"tag\":\"old\",\"server\":\"old.example.test\",\"detour\":\"removed\"},{\"type\":\"direct\",\"tag\":\"direct\",\"future\":9007199254740993}]"
+      },
+      "editorState": {
+        "outbounds": {
+          "version": 1,
+          "groups": [
+            {
+              "id": "group-a",
+              "tag": "选择",
+              "type": "selector",
+              "hidden": false,
+              "include": "",
+              "exclude": "",
+              "icon": "",
+              "references": [
+                {
+                  "kind": "subscription-node",
+                  "subscriptionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "nodeTag": "old",
+                  "resolvedTags": [
+                    "old"
+                  ]
+                }
+              ],
+              "runtimeTags": [
+                "old"
+              ]
+            }
+          ],
+          "generatedTags": [
+            "old"
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [
+      {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "测试订阅",
+        "outbounds": [
+          {
+            "type": "ssh",
+            "tag": "new",
+            "server": "new.example.test",
+            "future": 9007199254740995
+          }
+        ]
+      }
+    ],
+    "inbounds": [],
+    "expected": {},
+    "code": "reference_node_missing",
+    "fieldPath": "editorState.outbounds.groups[0].references[0]"
+  },
+  {
+    "name": "ownership-missing",
+    "behavior": "有意改变",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "outbounds": [
+          {
+            "type": "selector",
+            "tag": "选择",
+            "outbounds": [
+              "old"
+            ],
+            "interrupt_exist_connections": true
+          },
+          {
+            "type": "ssh",
+            "tag": "old",
+            "server": "old.example.test",
+            "detour": "removed"
+          },
+          {
+            "type": "direct",
+            "tag": "direct",
+            "future": 9007199254740993
+          }
+        ]
+      },
+      "buffers": {
+        "outbounds": "[{\"type\":\"selector\",\"tag\":\"选择\",\"outbounds\":[\"old\"],\"interrupt_exist_connections\":true},{\"type\":\"ssh\",\"tag\":\"old\",\"server\":\"old.example.test\",\"detour\":\"removed\"},{\"type\":\"direct\",\"tag\":\"direct\",\"future\":9007199254740993}]"
+      },
+      "editorState": {
+        "outbounds": {
+          "version": 1,
+          "groups": [
+            {
+              "id": "group-a",
+              "tag": "选择",
+              "type": "selector",
+              "hidden": false,
+              "include": "",
+              "exclude": "",
+              "icon": "",
+              "references": [
+                {
+                  "kind": "subscription",
+                  "subscriptionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "tag": "测试订阅",
+                  "resolvedTags": [
+                    "old"
+                  ]
+                }
+              ],
+              "runtimeTags": [
+                "old"
+              ]
+            }
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [
+      {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "测试订阅",
+        "outbounds": [
+          {
+            "type": "ssh",
+            "tag": "new",
+            "server": "new.example.test",
+            "future": 9007199254740995
+          }
+        ]
+      }
+    ],
+    "inbounds": [],
+    "expected": {},
+    "code": "reference_ownership_missing",
+    "fieldPath": "editorState.outbounds.generatedTags"
+  },
+  {
+    "name": "members-contradict",
+    "behavior": "明确报错",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "outbounds": [
+          {
+            "type": "selector",
+            "tag": "选择",
+            "outbounds": [
+              "old"
+            ],
+            "interrupt_exist_connections": true
+          },
+          {
+            "type": "ssh",
+            "tag": "old",
+            "server": "old.example.test",
+            "detour": "removed"
+          },
+          {
+            "type": "direct",
+            "tag": "direct",
+            "future": 9007199254740993
+          }
+        ]
+      },
+      "buffers": {
+        "outbounds": "[{\"type\":\"selector\",\"tag\":\"选择\",\"outbounds\":[\"direct\"],\"interrupt_exist_connections\":true},{\"type\":\"ssh\",\"tag\":\"old\",\"server\":\"old.example.test\",\"detour\":\"removed\"},{\"type\":\"direct\",\"tag\":\"direct\",\"future\":9007199254740993}]"
+      },
+      "editorState": {
+        "outbounds": {
+          "version": 1,
+          "groups": [
+            {
+              "id": "group-a",
+              "tag": "选择",
+              "type": "selector",
+              "hidden": false,
+              "include": "",
+              "exclude": "",
+              "icon": "",
+              "references": [
+                {
+                  "kind": "subscription",
+                  "subscriptionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "tag": "测试订阅",
+                  "resolvedTags": [
+                    "old"
+                  ]
+                }
+              ],
+              "runtimeTags": [
+                "old"
+              ]
+            }
+          ],
+          "generatedTags": [
+            "old"
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [
+      {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "测试订阅",
+        "outbounds": [
+          {
+            "type": "ssh",
+            "tag": "new",
+            "server": "new.example.test",
+            "future": 9007199254740995
+          }
+        ]
+      }
+    ],
+    "inbounds": [],
+    "expected": {},
+    "code": "reference_conflict",
+    "fieldPath": "outbounds[0].outbounds"
+  },
+  {
+    "name": "unsupported-version",
+    "behavior": "有意改变",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "outbounds": [
+          {
+            "type": "selector",
+            "tag": "选择",
+            "outbounds": [
+              "old"
+            ],
+            "interrupt_exist_connections": true
+          },
+          {
+            "type": "ssh",
+            "tag": "old",
+            "server": "old.example.test",
+            "detour": "removed"
+          },
+          {
+            "type": "direct",
+            "tag": "direct",
+            "future": 9007199254740993
+          }
+        ]
+      },
+      "buffers": {
+        "outbounds": "[{\"type\":\"selector\",\"tag\":\"选择\",\"outbounds\":[\"old\"],\"interrupt_exist_connections\":true},{\"type\":\"ssh\",\"tag\":\"old\",\"server\":\"old.example.test\",\"detour\":\"removed\"},{\"type\":\"direct\",\"tag\":\"direct\",\"future\":9007199254740993}]"
+      },
+      "editorState": {
+        "outbounds": {
+          "version": 9,
+          "groups": [
+            {
+              "id": "group-a",
+              "tag": "选择",
+              "type": "selector",
+              "hidden": false,
+              "include": "",
+              "exclude": "",
+              "icon": "",
+              "references": [
+                {
+                  "kind": "subscription",
+                  "subscriptionId": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+                  "tag": "测试订阅",
+                  "resolvedTags": [
+                    "old"
+                  ]
+                }
+              ],
+              "runtimeTags": [
+                "old"
+              ]
+            }
+          ],
+          "generatedTags": [
+            "old"
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [
+      {
+        "id": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "name": "测试订阅",
+        "outbounds": [
+          {
+            "type": "ssh",
+            "tag": "new",
+            "server": "new.example.test",
+            "future": 9007199254740995
+          }
+        ]
+      }
+    ],
+    "inbounds": [],
+    "expected": {},
+    "code": "reference_version_unsupported",
+    "fieldPath": "editorState.outbounds.version"
+  },
+  {
+    "name": "independent-legacy",
+    "behavior": "保持",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "inbounds": [
+          {
+            "type": "mixed",
+            "tag": "local",
+            "listen_port": 19090,
+            "future": 9007199254740993
+          }
+        ],
+        "route": {
+          "future": 9007199254740995,
+          "rules": [
+            {
+              "action": "route",
+              "outbound": "direct"
+            }
+          ]
+        }
+      },
+      "buffers": {
+        "inbounds": "[{\"type\":\"mixed\",\"tag\":\"local\",\"listen_port\":19090,\"future\":9007199254740993}]",
+        "route": "{\"future\":9007199254740995,\"rules\":[{\"action\":\"route\",\"outbound\":\"direct\"}]}"
+      },
+      "editorState": {},
+      "bindings": []
+    },
+    "subscriptions": [],
+    "inbounds": [],
+    "expected": {
+      "inbounds": [
+        {
+          "type": "mixed",
+          "tag": "local",
+          "listen_port": 19090,
+          "future": 9007199254740993
+        }
+      ],
+      "route": {
+        "future": 9007199254740995,
+        "rules": [
+          {
+            "action": "route",
+            "outbound": "direct"
+          }
+        ]
+      }
+    },
+    "code": "",
+    "fieldPath": ""
+  },
+  {
+    "name": "linked-inbound-sniff",
+    "behavior": "保持",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "inbounds": [
+          {
+            "type": "mixed",
+            "tag": "local",
+            "listen_port": 19090,
+            "future": 9007199254740993
+          }
+        ],
+        "route": {
+          "future": 9007199254740995,
+          "rules": [
+            {
+              "action": "route",
+              "outbound": "direct"
+            }
+          ]
+        }
+      },
+      "buffers": {
+        "inbounds": "[{\"type\":\"mixed\",\"tag\":\"local\",\"listen_port\":19090,\"future\":9007199254740993}]",
+        "route": "{\"future\":9007199254740995,\"rules\":[{\"action\":\"route\",\"outbound\":\"direct\"}]}"
+      },
+      "editorState": {
+        "inbounds": {
+          "version": 1,
+          "managedSniffRules": [],
+          "resourceBindings": [
+            {
+              "tag": "local",
+              "resourceId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "sourceTag": "old-source"
+            }
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [],
+    "inbounds": [
+      {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "mode": "structured",
+        "config": {
+          "type": "http",
+          "tag": "renamed-source",
+          "listen_port": 19091,
+          "sniff": true,
+          "sniff_timeout": "750ms",
+          "domain_strategy": "prefer_ipv4",
+          "future": 9007199254740997
+        }
+      }
+    ],
+    "expected": {
+      "inbounds": [
+        {
+          "type": "http",
+          "tag": "local",
+          "listen_port": 19091,
+          "future": 9007199254740997
+        }
+      ],
+      "route": {
+        "future": 9007199254740995,
+        "rules": [
+          {
+            "inbound": "local",
+            "action": "sniff",
+            "timeout": "750ms"
+          },
+          {
+            "action": "route",
+            "outbound": "direct"
+          }
+        ]
+      }
+    },
+    "code": "",
+    "fieldPath": ""
+  },
+  {
+    "name": "damaged-inbound",
+    "behavior": "有意改变",
+    "draft": {
+      "profileId": "cccccccccccccccccccccccccccccccc",
+      "revision": 4,
+      "config": {
+        "inbounds": [
+          {
+            "type": "mixed",
+            "tag": "local",
+            "listen_port": 19090,
+            "future": 9007199254740993
+          }
+        ],
+        "route": {
+          "future": 9007199254740995,
+          "rules": [
+            {
+              "action": "route",
+              "outbound": "direct"
+            }
+          ]
+        }
+      },
+      "buffers": {
+        "inbounds": "[{\"type\":\"mixed\",\"tag\":\"local\",\"listen_port\":19090,\"future\":9007199254740993}]",
+        "route": "{\"future\":9007199254740995,\"rules\":[{\"action\":\"route\",\"outbound\":\"direct\"}]}"
+      },
+      "editorState": {
+        "inbounds": {
+          "version": 1,
+          "resourceBindings": [
+            {
+              "tag": "local",
+              "resourceId": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+              "sourceTag": "old-source"
+            }
+          ]
+        }
+      },
+      "bindings": []
+    },
+    "subscriptions": [],
+    "inbounds": [
+      {
+        "id": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+        "mode": "structured",
+        "config": {
+          "type": "http",
+          "tag": "renamed-source",
+          "listen_port": 19091,
+          "sniff": true,
+          "sniff_timeout": "750ms",
+          "domain_strategy": "prefer_ipv4",
+          "future": 9007199254740997
+        }
+      }
+    ],
+    "expected": {},
+    "code": "reference_metadata_invalid",
+    "fieldPath": "editorState.inbounds"
+  }
+]
