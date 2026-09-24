@@ -35,6 +35,33 @@ function copy<T>(value: T): T {
   return Object.fromEntries(Object.entries(raw).map(([key, item]) => [key, copy(item)])) as T;
 }
 
+function unchanged(left: unknown, right: unknown): boolean {
+  return JSON.stringify(left) === JSON.stringify(right);
+}
+
+function mergeSavedModules<T>(sent: Record<string, T> = {}, local: Record<string, T> = {}, saved: Record<string, T> = {}): Record<string, T> {
+  const merged = copy(saved);
+  for (const key of new Set([...Object.keys(sent), ...Object.keys(local)])) {
+    if (unchanged(local[key], sent[key])) continue;
+    if (key in local) merged[key] = copy(local[key]!);
+    else delete merged[key];
+  }
+  return merged;
+}
+
+// A save may migrate the draft while the user continues editing. Accept the
+// server's new format and untouched modules without replacing newer input.
+function mergeSavedDraft(sent: Draft, local: Draft, saved: Draft): Draft {
+  return {
+    ...copy(saved),
+    buffers: mergeSavedModules(sent.buffers, local.buffers, saved.buffers),
+    config: mergeSavedModules(sent.config, local.config, saved.config),
+    editorState: mergeSavedModules(sent.editorState, local.editorState, saved.editorState),
+    bindings: copy(unchanged(local.bindings, sent.bindings) ? saved.bindings : local.bindings),
+    references: copy(unchanged(local.references, sent.references) ? saved.references : local.references)
+  };
+}
+
 export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
   const profiles = ref<ProfileSummary[]>([]);
   const activeProfileId = ref<string | null>(null);
@@ -123,6 +150,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
         saveState.value = "saved";
         await refresh();
       } else {
+        draft.value = mergeSavedDraft(payload, draft.value!, response.data);
         saveState.value = "dirty";
         scheduleSave(pendingGeneration);
       }
