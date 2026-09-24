@@ -2,7 +2,7 @@
 
 日期：2026-09-24。依据：[前后端职责与配置引用优化方案](../frontend-backend-responsibilities-and-migration.md)。代码基线为 `cb6b6d0`（v0.1.4）。
 
-状态：**计划已落盘，以下开发任务均未开始。** 本次只完善方案和计划，不代表已经修改应用代码或发布新版本。
+状态：**T1–T9 已完成，v0.1.7 产物已生成。** 实测结果见[阶段验收记录](2026-09-24-reference-resolution-acceptance.md)；本文保留原任务依赖、工作范围和回退要求。
 
 ## 1. 交付目标与顺序
 
@@ -37,7 +37,7 @@
 
 ### T1：固定旧格式解析契约与对照样例
 
-状态：待开始。依赖：无。完成后进入 T2。
+状态：已完成。依赖：无。完成后进入 T2。
 
 工作范围：
 
@@ -55,7 +55,7 @@
 
 ### T2：实现后端旧格式适配和纯解析
 
-状态：待开始。依赖：T1。
+状态：已完成。依赖：T1。
 
 主要文件：`internal/configgen/` 下新增职责明确的引用适配、解析及测试文件；参考现有 `web/src/features/application/references.ts`、`config-editor/outbound.ts`、`config-editor/inbound.ts`。此时不改前端操作入口。
 
@@ -76,7 +76,7 @@
 
 ### T3：接入所有配置操作入口
 
-状态：待开始。依赖：T2。
+状态：已完成。依赖：T2。
 
 主要文件：`internal/configgen/handler.go`、`semantic.go`、`generator.go`、`model.go`，`internal/application/coordinator.go`、`internal/app/server.go`、`internal/capabilities/`；验证位于 `internal/configgen/` 和 `internal/integration/`。
 
@@ -97,7 +97,7 @@
 
 ### T4：接入依赖变更和检测过期状态
 
-状态：待开始。依赖：T3。
+状态：已完成。依赖：T3。
 
 主要文件：`internal/profile/model.go`、`service.go`，`internal/inbounds/service.go`、`internal/subscriptions/service.go`、`internal/app/server.go`，以及对应服务、集成测试。
 
@@ -115,7 +115,7 @@
 
 ### T5：提供候选视图和保留当前内容的契约
 
-状态：待开始。依赖：T4。此任务在 T6 切换浏览器前完成。
+状态：已完成。依赖：T4。此任务在 T6 切换浏览器前完成。
 
 主要文件：`internal/configgen/handler.go`、`model.go`，`internal/profile/handler.go`、`service.go`，`web/src/features/application/types.ts`、`api.ts` 及 API 契约测试。
 
@@ -134,7 +134,7 @@
 
 ### T6：前端切换到后端候选
 
-状态：待开始。依赖：T5。完成后达到 M2 首个可用交付点。
+状态：已完成。依赖：T5。完成后达到 M2 首个可用交付点。
 
 主要文件：`web/src/features/application/`，`config-editor/ConfigWorkspace.vue`、`InboundConfigPanel.vue`、`OutboundConfigPanel.vue` 及相关 JSON 对话框，`features/capabilities/`、`features/inbounds/`、`features/dashboard/`；对应组件和 E2E 测试。
 
@@ -156,7 +156,7 @@
 
 ### T7：迁移业务引用的持久化模型
 
-状态：待开始。依赖：M2 验收通过。此前不实现本任务的新 schema 拒写机制。
+状态：已完成。依赖：M2 验收通过。此前不实现本任务的新 schema 拒写机制。
 
 主要文件：`internal/profile/model.go`、`service.go`、`store.go`，后端引用适配器，前端 `features/profiles/types.ts`、`api.ts` 和编辑器保存入口；迁移测试使用隔离数据。
 
@@ -174,7 +174,7 @@
 
 ### T8：删除前端旧生成逻辑并收敛依赖
 
-状态：待开始。依赖：T7。
+状态：已完成。依赖：T7。
 
 主要文件：`web/src/features/application/references.ts`，`config-editor/outbound.ts`、`inbound.ts`、`use-outbound-editor.ts`、编辑器保存入口，`dashboard/proxy-groups.ts` 及相关测试。
 
@@ -192,7 +192,7 @@
 
 ### T9：阶段验收与交付记录
 
-状态：待开始。依赖：M2 或 M3 对应任务完成。
+状态：已完成。依赖：M2 或 M3 对应任务完成。
 
 执行范围：
 

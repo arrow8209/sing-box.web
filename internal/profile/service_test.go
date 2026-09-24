@@ -458,6 +458,35 @@ func TestOlderApplyCannotClearNewSourceChange(t *testing.T) {
 	}
 }
 
+func TestRuleDigestChangedAfterCheckKeepsOlderApplyStale(t *testing.T) {
+	service, _ := newTestService(t)
+	ctx := context.Background()
+	meta, draft, err := service.Create(ctx, CreateInput{Name: "规则检查后变更"})
+	if err != nil {
+		t.Fatal(err)
+	}
+	key := "rule:resource-a"
+	if err := service.ReconcileAllResourceDigests(ctx, map[string]string{key: "old"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.RecordValidation(ctx, meta.ID, draft.Revision, ValidationSummary{Valid: true, Stage: "core_check", ConfigDigest: "checked-json", ResourceDigests: map[string]string{key: "old"}, CheckedAt: testClock()}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.ReconcileResourceDigests(ctx, map[string]string{"resource-a": "new"}); err != nil {
+		t.Fatal(err)
+	}
+	if err := service.MarkApplied(ctx, AppliedResult{ProfileID: meta.ID, Revision: draft.Revision, Digest: "checked-json", ResourceDigests: map[string]string{key: "old"}, AppliedAt: testClock(), Validation: ValidationSummary{Valid: true, CheckedAt: testClock()}}); err != nil {
+		t.Fatal(err)
+	}
+	metas, err := service.List(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !metas[0].NeedsApply || metas[0].AppliedDigest != "checked-json" || metas[0].LastValidation == nil || !metas[0].LastValidation.Stale {
+		t.Fatalf("rule update was cleared: %+v", metas[0])
+	}
+}
+
 func TestServiceReopensDraftAndQuarantineState(t *testing.T) {
 	service, layout := newTestService(t)
 	meta, _, err := service.Create(context.Background(), CreateInput{Name: "重启"})
