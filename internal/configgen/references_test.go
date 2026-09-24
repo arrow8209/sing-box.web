@@ -33,6 +33,15 @@ func TestReferenceSourceReadFailureDoesNotExposeResourceDetails(t *testing.T) {
 	}
 }
 
+func TestCandidateViewShowsStandalonePolicyMembers(t *testing.T) {
+	h := NewHandler(paths.Layout{}, nil, nil, nil, nil, nil, nil, WithReferenceSources(nil, nil))
+	draft := profile.Draft{ProfileID: strings.Repeat("c", 32), Revision: 3, Config: map[string]json.RawMessage{"outbounds": json.RawMessage(`[{"type":"selector","tag":"group","outbounds":["direct"]},{"type":"direct","tag":"direct"}]`)}, EditorState: map[string]json.RawMessage{}}
+	view := h.candidateView(draft, Output{Digest: "candidate", ResourceDigests: map[string]string{}})
+	if view == nil || len(view.Items) != 2 || !reflect.DeepEqual(view.Items[0].Members, []string{"direct"}) {
+		t.Fatalf("standalone members missing: %+v", view)
+	}
+}
+
 type referenceFixture struct {
 	Name          string                       `json:"name"`
 	Draft         profile.Draft                `json:"draft"`

@@ -114,6 +114,12 @@ func (h *Handler) candidateView(draft profile.Draft, output Output) *CandidateVi
 			} else if g, ok := groups[tag]; ok {
 				item.Members = slices.Clone(g.RuntimeTags)
 			}
+			if module == "outbounds" && item.Members == nil {
+				var members []string
+				if json.Unmarshal(fields["outbounds"], &members) == nil {
+					item.Members = members
+				}
+			}
 			if !item.Independent || item.Generated {
 				item.Token = h.candidateToken(view.ProfileID, view.Revision, view.Digest, view.ResourceDigests, item)
 			}
