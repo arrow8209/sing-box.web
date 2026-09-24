@@ -22,6 +22,7 @@ describe("入站配置", () => {
     const text = serializeInboundInput(saved, [saved.config.inbounds instanceof Array ? saved.config.inbounds[0] as { type: string; tag: string } : { type: "mixed", tag: "original" }, { type: "http", tag: "new" }]);
     expect(text).toContain("9007199254740993");
     expect(text).toContain('"tag":"new"');
+    expect(() => serializeInboundInput(saved, [{ type: "mixed", tag: "original", future: 9007199254740993, listen_port: 19090 }])).toThrow("完整 JSON 编辑器");
   });
   it("新建 Mixed 使用服务端默认端口，编辑既有入站保留原端口", async () => {
     const wrapper = mount(InboundEditorDialog, {
