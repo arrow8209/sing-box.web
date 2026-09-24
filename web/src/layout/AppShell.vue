@@ -3,9 +3,11 @@ import { onMounted, ref } from "vue";
 import { RouterView } from "vue-router";
 import AppSidebar from "./AppSidebar.vue";
 import AppTopbar from "./AppTopbar.vue";
+import { useCapabilitiesStore } from "@/features/capabilities/store";
 
 const menuOpen = ref(false);
 const collapsed = ref(false);
+const capabilities = useCapabilitiesStore();
 
 function applyTheme(theme: string | null): void {
   document.documentElement.dataset.theme = theme === "dark" ? "dark" : "";
@@ -23,6 +25,7 @@ function toggleCollapsed(): void {
 }
 
 onMounted(() => {
+	void capabilities.refresh().catch(() => undefined);
   collapsed.value = localStorage.getItem("singbox-sidebar-collapsed") === "true";
   applyTheme(localStorage.getItem("singbox-theme"));
 });

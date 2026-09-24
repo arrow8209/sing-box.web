@@ -28,7 +28,7 @@ async function openInboundTab(page: Page): Promise<void> {
   await expect(page.getByRole("heading", { name: "当前自定义配置的入站" })).toBeVisible();
 }
 
-test("入站引用在检测前同步，旧副本可关联且失效来源会阻止检测", async ({ page }) => {
+test("入站由服务端生成候选，关联转独立与旧副本恢复需明确操作", async ({ page }) => {
   test.setTimeout(90_000);
   await login(page);
   await createProfile(page);
@@ -72,11 +72,7 @@ test("入站引用在检测前同步，旧副本可关联且失效来源会阻�
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
 
   await page.getByRole("button", { name: "编辑 mixed-in-2" }).click();
-  const profileEditor = page.getByRole("dialog", { name: "编辑独立入站副本" });
-  await expect(profileEditor.getByText("协议嗅探", { exact: true })).toHaveCount(0);
-  await expect(profileEditor.getByText("覆盖目标地址", { exact: true })).toHaveCount(0);
-  await expect(profileEditor.getByRole("button", { name: "保存为独立入站" })).toBeVisible();
-  await profileEditor.getByRole("button", { name: "关闭对话框" }).click();
+  await expect(page.getByText("关联入站的生成结果只读；请先解除关联", { exact: false })).toBeVisible();
 
   const persisted = await page.evaluate(async () => {
     const resources = await (await fetch("/api/v1/inbound-resources")).json() as Array<{ id: string }>;
@@ -101,7 +97,7 @@ test("入站引用在检测前同步，旧副本可关联且失效来源会阻�
   await expect(page.locator(".resource-row")).toContainText("127.0.0.1:19091");
 
   await openInboundTab(page);
-  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19090");
+  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19091");
   await page.locator("[data-validate]").click();
   await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19091");
   await expect(page.locator(".errors")).toContainText("配置检查通过");
@@ -114,11 +110,11 @@ test("入站引用在检测前同步，旧副本可关联且失效来源会阻�
   await openInboundTab(page);
   await page.reload();
   await page.getByRole("tab", { name: "入站", exact: true }).click();
-  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("127.0.0.1:19091");
+  await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" })).toContainText("候选未就绪");
   await page.locator("[data-validate]").click();
-  await expect(page.locator(".errors")).toContainText("同步引用");
-  await expect(page.locator(".errors")).toContainText("请重新关联或解除关联");
-  await page.getByRole("button", { name: "解除关联 mixed-in-2", exact: true }).click();
+  await expect(page.locator(".errors")).toContainText("解析引用");
+  await expect(page.locator(".errors")).toContainText("请重新关联或明确恢复此前副本");
+  await page.getByRole("button", { name: "恢复此前副本 mixed-in-2", exact: true }).click();
   await expect(page.locator(".entry-row").filter({ hasText: "mixed-in-2" }).locator("em")).toHaveText("独立配置");
   await expect(page.locator(".save-status")).toContainText("草稿已保存");
   await page.locator("[data-validate]").click();

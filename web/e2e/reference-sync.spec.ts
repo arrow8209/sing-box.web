@@ -1,6 +1,6 @@
 import { expect, test } from "@playwright/test";
 
-test("修改订阅后直接检测会重建草稿，删除的 detour 不再残留", async ({ page }) => {
+test("修改订阅后直接检测生成新候选，草稿与 revision 不变", async ({ page }) => {
   await page.goto("/");
   await page.getByLabel("管理密码").fill("correct horse battery staple");
   await page.getByRole("button", { name: "登录", exact: true }).click();
@@ -41,12 +41,14 @@ test("修改订阅后直接检测会重建草稿，删除的 detour 不再残留
     return { revision: draft.revision, outbounds: draft.buffers.outbounds };
   }, fixture);
   expect(before.outbounds).toContain("removed-group");
+  const internalSaves: string[] = [];
+  page.on("request", (request) => { if (request.method() === "PUT" && request.url().endsWith(`/profiles/${fixture.profileId}/draft`)) internalSaves.push(request.url()); });
   await page.locator("[data-validate]").click();
   await expect(page.locator(".errors")).toContainText("配置检查通过");
   const after = await page.evaluate(async (id) => (await fetch(`/api/v1/profiles/${id}/draft`)).json(), fixture.profileId);
-  expect(after.revision).toBe(before.revision + 1);
-  expect(after.buffers.outbounds).not.toContain("removed-group");
-  expect(after.buffers.outbounds).toContain("updated.example.test");
+  expect(after.revision).toBe(before.revision);
+  expect(after.buffers.outbounds).toBe(before.outbounds);
+  expect(internalSaves).toEqual([]);
   await page.locator("[data-preview]").click();
   const preview = page.getByRole("dialog", { name: "模块预览" });
   await expect(preview).toContainText("updated.example.test");
@@ -54,6 +56,7 @@ test("修改订阅后直接检测会重建草稿，删除的 detour 不再残留
   await preview.getByRole("button", { name: "关闭", exact: true }).click();
   const revision = await page.evaluate(async (id) => (await (await fetch(`/api/v1/profiles/${id}/draft`)).json()).revision, fixture.profileId);
   expect(revision).toBe(after.revision);
+  expect(internalSaves).toEqual([]);
 
   await page.evaluate(async ({ profileId, subscriptionId }) => {
     const session = await (await fetch("/api/v1/auth/session")).json();

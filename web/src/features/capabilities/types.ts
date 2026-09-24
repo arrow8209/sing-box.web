@@ -1,4 +1,5 @@
 export interface Capabilities {
+	serverReferenceResolution?: boolean;
   configuration: boolean;
   inboundResources: boolean;
   subscriptions: boolean;

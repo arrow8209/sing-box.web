@@ -92,7 +92,7 @@ async function confirmDelete(): Promise<void> {
   try {
     await store.remove(target.id);
     closeDelete();
-    show(`${target.tag} 已删除；自定义配置中的已有副本不受影响。`, "success");
+    show(`${target.tag} 已删除；引用它的档案会显示来源失效，请重新关联或明确恢复旧副本。`, "success");
   } catch (cause) { show(cause instanceof Error ? cause.message : "删除入站配置失败", "error"); }
   finally { deleting.value = false; }
 }
@@ -100,19 +100,19 @@ async function confirmDelete(): Promise<void> {
 
 <template>
   <section class="inbound-resources-page">
-    <header class="page-intro"><div><h1>入站配置</h1><p>集中维护可复用的入站配置；自定义配置导入时只复制当前内容。</p></div><button class="primary-action" type="button" :disabled="defaultMixedPort === null" @click="openCreate"><AppIcon name="plus" :size="15" />新建入站配置</button></header>
+    <header class="page-intro"><div><h1>入站配置</h1><p>集中维护可复用的入站配置；关联档案生成时会读取最新来源。</p></div><button class="primary-action" type="button" :disabled="defaultMixedPort === null" @click="openCreate"><AppIcon name="plus" :size="15" />新建入站配置</button></header>
     <p v-if="loadError" class="page-error" role="alert">{{ loadError }} <button type="button" @click="refresh">重试</button></p>
     <div class="summary-grid">
       <article class="summary-card"><span class="summary-icon"><AppIcon name="inbound" /></span><div><strong>{{ store.resources.value.length }}</strong><span>入站配置 · 独立资源库</span></div></article>
       <article class="summary-card"><span class="summary-icon cyan"><AppIcon name="server" /></span><div><strong>{{ typeCount }}</strong><span>配置类型 · 常用类型与完整 JSON</span></div></article>
-      <article class="summary-card"><span class="summary-icon orange"><AppIcon name="copy" /></span><div><strong>{{ customCount }}</strong><span>JSON 配置 · 导入后生成独立副本</span></div></article>
+      <article class="summary-card"><span class="summary-icon orange"><AppIcon name="copy" /></span><div><strong>{{ customCount }}</strong><span>JSON 配置 · 可关联到档案</span></div></article>
     </div>
     <div class="resource-layout">
-      <article class="resource-card"><header><div><h2>可复用入站</h2><p>编辑这里的配置不会改变已导入的副本</p></div><span>{{ store.resources.value.length }} 项</span></header><div class="resource-list" :aria-busy="store.loading.value">
+      <article class="resource-card"><header><div><h2>可复用入站</h2><p>更新来源后，关联档案下次生成时会使用最新内容</p></div><span>{{ store.resources.value.length }} 项</span></header><div class="resource-list" :aria-busy="store.loading.value">
         <article v-for="item in store.resources.value" :key="item.id" class="resource-row" :class="{ opening: openingId === item.id }"><span class="entry-icon" :class="{ custom: item.mode === 'custom', tun: item.type === 'tun' }"><AppIcon :name="iconFor(item)" :size="18" /></span><div class="entry-copy"><div><strong>{{ item.tag }}</strong><b>{{ item.type }}</b><em :class="{ custom: item.mode === 'custom' }">{{ item.mode === "custom" ? "完整 JSON" : "可导入" }}</em></div><p><span>{{ item.endpoint }}</span><i />最后编辑 {{ updatedLabel(item.updatedAt) }}</p></div><div class="entry-actions"><button type="button" :disabled="openingId === item.id" :aria-label="`编辑 ${item.tag}`" title="编辑入站配置" @click="openEdit(item)"><AppIcon name="edit" :size="15" /></button><button type="button" :disabled="openingId === item.id" :aria-label="`复制 ${item.tag}`" title="复制入站配置" @click="duplicate(item)"><AppIcon name="copy" :size="15" /></button><button class="danger" type="button" :disabled="openingId === item.id" :aria-label="`删除 ${item.tag}`" title="删除入站配置" @click="requestDelete(item)"><AppIcon name="trash" :size="15" /></button></div></article>
         <button v-if="!store.loading.value && !store.resources.value.length" class="empty-state" type="button" :disabled="defaultMixedPort === null" @click="openCreate"><AppIcon name="inbound" :size="31" /><strong>尚未新建入站配置</strong><span>创建后即可在自定义配置中导入</span></button>
       </div></article>
-      <aside><article class="guide-card"><header><div><h2>导入规则</h2><p>复制，而不是引用</p></div></header><div class="guide-list"><div><AppIcon name="plus" :size="17" /><span><strong>先新建</strong><small>在资源库维护常用入站参数</small></span></div><div><AppIcon name="copy" :size="17" /><span><strong>再导入</strong><small>自定义配置获得完整内容副本</small></span></div><div><AppIcon name="shield" :size="17" /><span><strong>互不关联</strong><small>导入后任一侧修改或删除均不联动</small></span></div></div></article><p class="info-callout"><AppIcon name="info" :size="15" /><span>导入时若 <code>tag</code> 与当前自定义配置重复，会自动生成不冲突的新名称。</span></p></aside>
+      <aside><article class="guide-card"><header><div><h2>导入规则</h2><p>关联来源，按需转为独立配置</p></div></header><div class="guide-list"><div><AppIcon name="plus" :size="17" /><span><strong>先新建</strong><small>在资源库维护常用入站参数</small></span></div><div><AppIcon name="copy" :size="17" /><span><strong>再导入</strong><small>档案记录来源并保留本地 tag</small></span></div><div><AppIcon name="shield" :size="17" /><span><strong>解除关联</strong><small>可固定当前候选为独立配置；源删除后需明确恢复旧副本</small></span></div></div></article><p class="info-callout"><AppIcon name="info" :size="15" /><span>导入时若 <code>tag</code> 与当前自定义配置重复，会自动生成不冲突的新名称。</span></p></aside>
     </div>
     <InboundEditorDialog :open="editorOpen" :resource="editing" :existing-tags="tags" :busy="saving" :default-mixed-port="defaultMixedPort ?? 50016" @close="closeEditor" @submit="submit" @delete="requestDelete()" />
     <InboundDeleteDialog :open="deleteOpen" :tag="deleteTarget?.tag ?? ''" :busy="deleting" @close="closeDelete" @confirm="confirmDelete" />

@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, ref } from "vue";
+import { computed, ref, watch } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import { isApiError } from "@/features/profiles/api";
@@ -12,6 +12,9 @@ import ApplicationBar from "@/features/application/ApplicationBar.vue";
 import PreviewDialog from "@/features/application/PreviewDialog.vue";
 import ValidationErrors from "@/features/application/ValidationErrors.vue";
 import { useApplicationStore } from "@/features/application/store";
+import { useCapabilitiesStore } from "@/features/capabilities/store";
+import type { CandidateView } from "@/features/application/types";
+import type { FreezeOperation } from "@/features/profiles/types";
 import AdvancedPanel from "./AdvancedPanel.vue";
 import ConfigTabs from "./ConfigTabs.vue";
 import DnsConfigPanel from "./DnsConfigPanel.vue";
@@ -40,6 +43,7 @@ import { saveModuleBuffer } from "./paths";
 
 const store = useProfileStore();
 const application = useApplicationStore();
+const capabilities = useCapabilitiesStore();
 const active = ref<ConfigTabId>("general");
 const dialogModule = ref<ConfigModule | null>(null);
 const errors = ref<Record<string, string>>({});
@@ -51,16 +55,47 @@ const profileBusy = ref(false);
 const profileError = ref("");
 const notice = ref("");
 const draft = computed(() => store.draft.value);
+const serverResolution = computed(() => capabilities.capabilities.value?.serverReferenceResolution === true);
+const candidate = computed<CandidateView | null>(() => {
+  const value = application.previewResult.value?.candidate;
+  return value && value.profileId === draft.value?.profileId && value.revision === draft.value?.revision && store.saveState.value === "saved" ? value : null;
+});
+const hasLinkedInbound = computed(() => {
+  const state = draft.value?.editorState?.inbounds as { resourceBindings?: unknown[] } | undefined;
+  return Boolean(state?.resourceBindings?.length);
+});
+const hasLinkedOutbound = computed(() => {
+  const state = draft.value?.editorState?.outbounds as { groups?: Array<{ references?: Array<{ kind?: string }> }> } | undefined;
+  return Boolean(state?.groups?.some((group) => group.references?.some((item) => item.kind === "subscription" || item.kind === "subscription-node")));
+});
+const dialogReadOnly = computed(() => serverResolution.value && (dialogModule.value === "inbounds" && hasLinkedInbound.value || dialogModule.value === "outbounds" && hasLinkedOutbound.value));
 const profile = computed(() => store.profiles.value.find((item) => item.id === store.activeProfileId.value));
 const deleting = computed(() => store.profiles.value.find((item) => item.id === deletingId.value) ?? null);
 const activeModules = computed(() => configTabs.find((tab) => tab.id === active.value)?.modules ?? []);
 const applyDisabledReason = computed(() => {
-  if (application.preparing.value) return "正在同步配置引用";
+  if (application.preparing.value || application.requesting.value) return serverResolution.value ? "正在读取服务端候选" : "正在同步配置引用";
   if (profileBusy.value || application.applying.value) return "正在处理档案操作";
   if (store.saveState.value !== "saved") return "请先等待草稿保存完成";
   if (Object.keys(errors.value).length > 0) return "请先修正当前编辑错误";
   return "";
 });
+watch(() => draft.value?.profileId, (current, previous) => { if (current !== previous) application.clear(); });
+watch([active, serverResolution], () => { if (serverResolution.value && (active.value === "inbounds" || active.value === "outbounds")) application.clear(); }, { immediate: true });
+watch([active, () => draft.value?.profileId, () => draft.value?.revision, () => store.saveState.value, serverResolution, () => application.requesting.value], () => {
+  if (serverResolution.value && (active.value === "inbounds" || active.value === "outbounds") && draft.value && store.saveState.value === "saved"
+    && !application.requesting.value && !candidate.value && !application.previewResult.value && !application.error.value) void application.fetchCandidate();
+}, { immediate: true });
+async function freezeInbound(operation: FreezeOperation): Promise<void> {
+  profileBusy.value = true; profileError.value = "";
+  try {
+    if (!candidate.value && operation.action !== "restore_saved") throw new Error("候选已失效，请重新读取后再操作。");
+    await store.freeze(operation);
+    application.clear();
+    if (serverResolution.value) await application.fetchCandidate();
+    notice.value = operation.action === "restore_saved" ? "已明确恢复此前保存的旧副本，内容可能过期。" : operation.action === "copy" ? "已按所见候选复制为独立入站。" : "已按所见候选解除关联。";
+  } catch (cause) { profileError.value = cause instanceof Error ? cause.message : "固定候选失败"; }
+  finally { profileBusy.value = false; }
+}
 async function duplicateProfile(): Promise<void> {
   if (!profile.value) return;
   profileBusy.value = true; profileError.value = "";
@@ -89,6 +124,7 @@ async function deleteProfile(stopCurrent: boolean): Promise<void> {
 function applyResult(next: Draft, module: string, error?: string): void { store.mutate((current) => Object.assign(current, next)); if (error) errors.value = { ...errors.value, [module]: error }; else { const copy = { ...errors.value }; delete copy[module]; errors.value = copy; } }
 function persist(module: ConfigModule, text: string): boolean {
   if (!draft.value) return false;
+  if (serverResolution.value && (module === "inbounds" && hasLinkedInbound.value || module === "outbounds" && hasLinkedOutbound.value)) { errors.value = { ...errors.value, [module]: "关联生成内容只读；请先转为独立配置。" }; return false; }
   const prepared = module === "dns" ? ensureDefaultFakeIpDnsRuleText(text, draft.value.editorState?.dns) : text;
   const result = saveModuleBuffer(draft.value, module, prepared);
   const shapeError = validateModuleShape(prepared, module, configSectionFor(module).type);
@@ -227,7 +263,7 @@ function jumpTo(path: string): void {
         <div class="config-context-controls">
           <span class="save-status" :class="store.saveState.value"><AppIcon :name="store.saveState.value === 'saved' ? 'check' : 'rotate'" :size="14" />{{ store.saveState.value === "saving" ? "正在保存" : store.saveState.value === "saved" ? "草稿已保存" : "存在未保存更改" }}</span>
           <ProfileActions :busy="profileBusy" @duplicate="duplicateProfile" @rename="openRename" @remove="openDelete" />
-          <ApplicationBar :busy="profileBusy || application.applying.value || application.preparing.value" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后复制配置文件'" @preview="preview" @validate="validate" @apply="applyProfile" />
+          <ApplicationBar :busy="profileBusy || application.requesting.value || application.applying.value || application.preparing.value" :apply-disabled="Boolean(applyDisabledReason)" :apply-title="applyDisabledReason || '检测通过后复制配置文件'" @preview="preview" @validate="validate" @apply="applyProfile" />
         </div>
       </header>
       <p v-if="profileError" class="profile-error" role="alert">{{ profileError }}</p>
@@ -238,16 +274,17 @@ function jumpTo(path: string): void {
         :role="store.autoReloadOutcome.value.applied ? 'status' : 'alert'"
       >{{ store.autoReloadOutcome.value.message }}</p>
       <ConfigTabs :active="active" @select="active = $event" />
+      <p v-if="serverResolution && (active === 'inbounds' || active === 'outbounds')" class="candidate-status" role="status">{{ candidate ? `服务端候选 · 草稿第 ${candidate.revision} 版` : '正在读取服务端候选或来源已失效' }} <button type="button" :disabled="application.requesting.value" @click="application.fetchCandidate()">刷新候选</button></p>
       <GeneralSettingsPanel v-if="active === 'general'" :draft="draft" :error="errors.log" :experimental-error="errors.experimental" @save="fromGeneralSettings" @edit-json="dialogModule = 'log'" />
-      <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" />
-      <OutboundConfigPanel v-else-if="active === 'outbounds'" :draft="draft" :error="errors.outbounds" @edit-json="dialogModule = 'outbounds'" @save="saveOutbounds" />
+      <InboundConfigPanel v-else-if="active === 'inbounds'" :draft="draft" :profile-name="profile?.name ?? '当前配置'" :candidate="candidate" :server-resolution="serverResolution" :error="errors.inbounds" @edit-json="dialogModule = 'inbounds'" @save="saveInbounds" @freeze="freezeInbound" />
+      <OutboundConfigPanel v-else-if="active === 'outbounds'" :draft="draft" :candidate="candidate" :server-resolution="serverResolution" :error="errors.outbounds" @edit-json="dialogModule = 'outbounds'" @save="saveOutbounds" />
       <RouteConfigPanel v-else-if="active === 'route'" :draft="draft" :error="errors.route" @edit-json="dialogModule = 'route'" @save="saveRoute" />
       <DnsConfigPanel v-else-if="active === 'dns'" :draft="draft" :error="errors.dns" @edit-json="dialogModule = 'dns'" @save="saveDns" />
       <AdvancedPanel v-else-if="active === 'advanced'" :draft="draft" :errors="errors" @edit-json="dialogModule = $event" />
       <div v-else class="modules"><StructuredModulePanel v-for="module in activeModules" :key="module" :draft="draft" :module="module" :error="errors[module]" @edit-json="dialogModule = $event" /></div>
       <ReferenceErrors :errors="errors" />
       <ValidationErrors :validation="application.validation.value" :error="application.error.value" @jump="jumpTo" />
-      <ModuleJsonDialog v-if="dialogModule" :open="true" :module="dialogModule" :text="dialogText(dialogModule)" :configured="moduleConfigured(dialogModule)" :error="errors[dialogModule]" @close="dialogModule = null" @buffer="persist(dialogModule!, $event)" @save="save(dialogModule!, $event)" @clear="clearDialogModule" />
+      <ModuleJsonDialog v-if="dialogModule" :open="true" :module="dialogModule" :text="dialogText(dialogModule)" :configured="moduleConfigured(dialogModule)" :read-only="dialogReadOnly" :error="errors[dialogModule]" @close="dialogModule = null" @buffer="persist(dialogModule!, $event)" @save="save(dialogModule!, $event)" @clear="clearDialogModule" />
       <PreviewDialog :open="previewOpen" :preview="application.previewResult.value" @close="previewOpen = false" />
       <ProfileDialog :open="renameOpen" title="重命名档案" :initial-name="profile?.name" :busy="profileBusy" @close="renameOpen = false" @submit="renameProfile" />
       <ProfileDeleteDialog :open="deleting !== null" :name="deleting?.name ?? ''" :requires-core-decision="requiresCoreDecision" :busy="profileBusy" @close="deletingId = null; requiresCoreDecision = false" @submit="deleteProfile" />
@@ -270,6 +307,8 @@ function jumpTo(path: string): void {
 .profile-error { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
 .auto-reload-status { margin: 0 0 12px; padding: 10px 12px; border-radius: var(--radius-sm); color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
 .auto-reload-status.success { color: var(--green); background: var(--green-soft); }
+.candidate-status { display: flex; align-items: center; gap: 8px; margin: 0 0 10px; padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-sm); }
+.candidate-status button { padding: 3px 7px; color: var(--primary); background: transparent; }
 .modules { display: grid; gap: var(--section-gap); }
 .tabs + .panel, .tabs + .outbound-editor { margin-top: 0; }
 .empty { padding: 24px; border: 1px dashed var(--line-strong); border-radius: var(--radius); }

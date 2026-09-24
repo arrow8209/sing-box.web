@@ -1,5 +1,5 @@
 import { request, type ApiError } from "@/api/client";
-import type { AutoReloadOutcome, Draft, DraftInput, ProfileSummary } from "./types";
+import type { AutoReloadOutcome, Draft, DraftInput, FreezeOperation, ProfileSummary } from "./types";
 
 interface DraftSaveResponse extends Draft {
   autoReload?: AutoReloadOutcome;
@@ -13,6 +13,7 @@ export interface ProfileApi {
   remove(id: string, confirmName: string, stopCurrent: boolean): Promise<void>;
   getDraft(id: string): Promise<{ data: Draft; etag: string }>;
   saveDraft(id: string, etag: string, draft: Draft): Promise<{ data: Draft; etag: string; autoReload?: AutoReloadOutcome }>;
+  freeze?(id: string, etag: string, operation: FreezeOperation): Promise<{ data: Draft; etag: string; autoReload?: AutoReloadOutcome }>;
 }
 
 function requiredETag(etag: string | undefined): string {
@@ -46,6 +47,13 @@ export const profileApi: ProfileApi = {
       method: "PUT",
       headers: { "If-Match": etag },
       body: input
+    });
+    const { autoReload, ...data } = response.data;
+    return { data, etag: requiredETag(response.etag), autoReload };
+  },
+  async freeze(id, etag, operation) {
+    const response = await request<DraftSaveResponse>(`/profiles/${encodeURIComponent(id)}/draft`, {
+      method: "PUT", headers: { "If-Match": etag }, body: { freeze: operation }
     });
     const { autoReload, ...data } = response.data;
     return { data, etag: requiredETag(response.etag), autoReload };

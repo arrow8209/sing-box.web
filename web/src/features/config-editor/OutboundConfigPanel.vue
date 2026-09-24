@@ -3,6 +3,7 @@ import { computed, ref } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import type { Draft } from "@/features/profiles/types";
+import type { CandidateView } from "@/features/application/types";
 import OutboundEditorDialog from "./OutboundEditorDialog.vue";
 import { useOutboundEditor } from "./use-outbound-editor";
 import {
@@ -21,7 +22,7 @@ import {
   type OutboundPanelSave
 } from "./outbound";
 
-const props = defineProps<{ draft: Draft; error?: string }>();
+const props = defineProps<{ draft: Draft; error?: string; candidate?: CandidateView | null; serverResolution?: boolean }>();
 const emit = defineEmits<{ editJson: []; save: [payload: OutboundPanelSave] }>();
 const editorOpen = ref(false);
 const editingId = ref<string | null>(null);
@@ -131,6 +132,9 @@ function countLabel(group: OutboundEditorGroup): string {
   const outbounds = group.references.length - subscriptions;
   return `${outbounds} 个出站 / ${subscriptions} 个订阅`;
 }
+function generatedMembers(tag: string): string[] | undefined {
+  return props.candidate?.items.find((item) => item.module === "outbounds" && item.tag === tag)?.members;
+}
 
 function hasLost(group: OutboundEditorGroup): boolean {
   return group.references.some((reference) => reference.kind === "missing"
@@ -155,7 +159,7 @@ function tone(group: OutboundEditorGroup): string {
         <div class="outbound-grid">
           <article v-for="group in groups" :key="group.id" class="outbound-card" :data-outbound-tag="group.tag">
             <div class="outbound-head"><span class="entry-icon" :class="tone(group)"><img v-if="group.icon" :src="group.icon" alt="" /><AppIcon v-else :name="outboundIcon(group.config)" :size="18" /></span><div class="outbound-name"><strong>{{ group.tag }}</strong><span>{{ outboundDescription(group.config) }}</span></div><div class="outbound-actions"><button type="button" :aria-label="`编辑出站 ${group.tag}`" title="编辑出站" :disabled="preparing" @click="openEditor(group.id)"><AppIcon name="edit" :size="14" /></button><button class="danger" type="button" :aria-label="`删除出站 ${group.tag}`" title="删除出站" :disabled="preparing" @click="remove(group)"><AppIcon name="trash" :size="14" /></button></div></div>
-            <div class="outbound-summary"><div class="entry-meta"><b>{{ group.type }}</b><span>{{ countLabel(group) }}</span><em v-if="group.hidden">隐藏</em><em v-if="hasLost(group)" class="lost">引用失效</em><em v-else-if="isPolicyOutbound(group.config) && !group.references.length" class="lost">尚未引用</em></div></div>
+            <div class="outbound-summary"><div class="entry-meta"><b>{{ group.type }}</b><span>{{ serverResolution && generatedMembers(group.tag) ? `候选成员：${generatedMembers(group.tag)?.join('、') || '无'}` : countLabel(group) }}</span><em v-if="group.hidden">隐藏</em><em v-if="hasLost(group) && !serverResolution" class="lost">引用失效</em><em v-else-if="isPolicyOutbound(group.config) && !group.references.length" class="lost">尚未引用</em></div></div>
           </article>
           <button v-if="!groups.length" class="empty-state" type="button" :disabled="preparing" @click="openEditor(null)"><AppIcon name="outbound" :size="31" /><strong>尚未添加出站</strong><span>点击创建第一个出站或策略组</span></button>
         </div>

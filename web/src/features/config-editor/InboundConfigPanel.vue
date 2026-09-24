@@ -3,6 +3,8 @@ import { computed, ref, toRaw } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import AppIcon from "@/layout/AppIcon.vue";
 import type { Draft } from "@/features/profiles/types";
+import type { FreezeOperation } from "@/features/profiles/types";
+import type { CandidateItem, CandidateView } from "@/features/application/types";
 import InboundEditorDialog from "@/features/inbounds/InboundEditorDialog.vue";
 import InboundImportDialog from "@/features/inbounds/InboundImportDialog.vue";
 import { editorType, inboundEndpoint, inboundTypes, isInboundConfig, resourceMode, uniqueInboundTag, withoutLegacyInboundFields } from "@/features/inbounds/model";
@@ -10,8 +12,8 @@ import { useInboundStore } from "@/features/inbounds/store";
 import type { InboundConfig, InboundDetail, InboundInput } from "@/features/inbounds/types";
 import { applyInboundRouteIntents, managedInboundSniff, restoreInboundEditorState, type InboundPanelSave, type InboundResourceBinding, type InboundRouteIntent } from "./inbound";
 
-const props = defineProps<{ draft: Draft; profileName: string; error?: string }>();
-const emit = defineEmits<{ editJson: []; save: [payload: InboundPanelSave] }>();
+const props = defineProps<{ draft: Draft; profileName: string; error?: string; candidate?: CandidateView | null; serverResolution?: boolean }>();
+const emit = defineEmits<{ editJson: []; save: [payload: InboundPanelSave]; freeze: [operation: FreezeOperation] }>();
 const resources = useInboundStore();
 const importOpen = ref(false);
 const association = ref<{ index: number; tag: string } | null>(null);
@@ -29,6 +31,21 @@ const tags = computed(() => entries.value.map((item) => item.config.tag));
 const sourceBindings = computed(() => restoreInboundEditorState(props.draft.editorState?.inbounds).resourceBindings ?? []);
 
 function bindingFor(tag: string): InboundResourceBinding | undefined { return sourceBindings.value.find((item) => item.tag === tag); }
+function candidateFor(tag: string): CandidateItem | undefined { return props.candidate?.items.find((item) => item.module === "inbounds" && item.tag === tag); }
+function candidateEndpoint(tag: string, fallback: InboundConfig): string {
+  const item = candidateFor(tag);
+  return item?.listenPort !== undefined ? `${item.listen || "0.0.0.0"}:${item.listenPort}` : inboundEndpoint(fallback);
+}
+function freezeOperation(action: "detach" | "copy", tag: string, newTag?: string): FreezeOperation | null {
+  const item = candidateFor(tag);
+  if (!item?.token || !item.text || !item.inboundStateText || !props.candidate || props.candidate.profileId !== props.draft.profileId || props.candidate.revision !== props.draft.revision) {
+    show("候选尚不可用或已过期，请刷新后重试；源已删除时可明确恢复此前副本。", "error");
+    return null;
+  }
+  return { action, module: "inbounds", tag, ...(newTag ? { newTag } : {}), text: item.text,
+    routeText: item.routeText, inboundStateText: item.inboundStateText, digest: props.candidate.digest,
+    resourceDigests: props.candidate.resourceDigests, token: item.token };
+}
 function openImport(index?: number, tag?: string): void {
   association.value = index !== undefined && tag ? { index, tag } : null;
   importOpen.value = true;
@@ -65,6 +82,7 @@ function closeEditor(): void {
   editingIndex.value = null;
 }
 function openEditor(index: number, config: InboundConfig): void {
+  if (props.serverResolution && bindingFor(config.tag)) { show("关联入站的生成结果只读；请先解除关联，才能编辑独立配置。", "error"); return; }
   editingIndex.value = index;
   editing.value = { id: `profile-inbound-${index}`, mode: resourceMode(config), config: cloneConfig(config), updatedAt: props.draft.savedAt };
   editorOpen.value = true;
@@ -87,6 +105,11 @@ function submitEdit(input: InboundInput): void {
   show(`${tag} 已更新为当前自定义配置的独立副本。`, "success");
 }
 function duplicate(index: number, config: InboundConfig): void {
+  if (props.serverResolution && bindingFor(config.tag)) {
+    const operation = freezeOperation("copy", config.tag, uniqueInboundTag(`${config.tag}-copy`, tags.value));
+    if (operation) emit("freeze", operation);
+    return;
+  }
   const next = cloneItems();
   const copy = cloneConfig(config);
   copy.tag = uniqueInboundTag(`${copy.tag}-copy`, tags.value);
@@ -142,22 +165,27 @@ async function importSelected(ids: string[]): Promise<void> {
 }
 
 function unlink(config: InboundConfig): void {
+  if (props.serverResolution) { const operation = freezeOperation("detach", config.tag); if (operation) emit("freeze", operation); return; }
   if (saveItems(cloneItems(), [], sourceBindings.value.filter((item) => item.tag !== config.tag))) {
     show(`${config.tag} 已解除关联，保留当前内容作为独立入站。`, "success");
   }
+}
+function restoreSaved(config: InboundConfig): void {
+  emit("freeze", { action: "restore_saved", module: "inbounds", tag: config.tag });
 }
 </script>
 
 <template>
   <section class="inbound-panel">
     <div class="inbound-layout">
-      <article class="inbound-card"><header><div><h2>当前自定义配置的入站</h2><p>关联入站在预览、检测和应用前同步源资源；独立入站自行维护</p></div><div><button class="json-button" type="button" @click="emit('editJson')"><AppIcon name="code" :size="14" />编辑全部 JSON</button><button class="import-button" type="button" @click="openImport()"><AppIcon name="download" :size="14" />导入入站配置</button></div></header><div class="entry-list">
+      <article class="inbound-card"><header><div><h2>当前自定义配置的入站</h2><p>{{ serverResolution ? '关联入站由服务端生成候选；独立入站自行维护' : '关联入站在预览、检测和应用前同步源资源；独立入站自行维护' }}</p></div><div><button class="json-button" type="button" @click="emit('editJson')"><AppIcon name="code" :size="14" />{{ serverResolution && sourceBindings.length ? '查看已保存输入' : '编辑全部 JSON' }}</button><button class="import-button" type="button" @click="openImport()"><AppIcon name="download" :size="14" />导入入站配置</button></div></header><div class="entry-list">
         <article v-for="entry in entries" :key="entry.index" class="entry-row">
           <span class="entry-icon" :class="{ custom: editorType(entry.config) === 'custom', tun: entry.config.type === 'tun' }"><AppIcon :name="iconFor(entry.config)" :size="18" /></span>
-          <div class="entry-copy"><div><strong>{{ entry.config.tag }}</strong><b>{{ entry.config.type }}</b><em :title="bindingFor(entry.config.tag)?.sourceTag">{{ bindingFor(entry.config.tag) ? '已关联源资源' : '独立配置' }}</em></div><p><span>{{ inboundEndpoint(entry.config) }}</span><i />{{ bindingFor(entry.config.tag) ? `来源：${bindingFor(entry.config.tag)?.sourceTag}` : editorType(entry.config) === "custom" ? `完整配置 · ${Object.keys(entry.config).length} 个字段` : inboundTypes.find((item) => item.type === entry.config.type)?.description }}</p></div>
+          <div class="entry-copy"><div><strong>{{ entry.config.tag }}</strong><b>{{ candidateFor(entry.config.tag)?.type ?? entry.config.type }}</b><em :title="candidateFor(entry.config.tag)?.sourceName ?? bindingFor(entry.config.tag)?.sourceTag">{{ bindingFor(entry.config.tag) ? '已关联源资源' : '独立配置' }}</em></div><p><span>{{ candidateEndpoint(entry.config.tag, entry.config) }}</span><i />{{ bindingFor(entry.config.tag) ? `来源：${candidateFor(entry.config.tag)?.sourceName ?? bindingFor(entry.config.tag)?.sourceTag}` : editorType(entry.config) === "custom" ? `完整配置 · ${Object.keys(entry.config).length} 个字段` : inboundTypes.find((item) => item.type === entry.config.type)?.description }}</p><small v-if="serverResolution && bindingFor(entry.config.tag)">{{ candidateFor(entry.config.tag) ? `服务端候选${candidateFor(entry.config.tag)?.sniff ? ' · 已生成嗅探规则' : ''}` : '候选未就绪；源失效时可恢复此前已保存副本' }}</small></div>
           <div class="entry-actions">
             <button type="button" :aria-label="`关联源资源 ${entry.config.tag}`" title="选择关联的源资源" @click="openImport(entry.index, entry.config.tag)"><AppIcon name="link" :size="15" /></button>
-            <button v-if="bindingFor(entry.config.tag)" type="button" :aria-label="`解除关联 ${entry.config.tag}`" title="解除关联并保留为独立入站" @click="unlink(entry.config)"><AppIcon name="x" :size="15" /></button>
+            <button v-if="bindingFor(entry.config.tag) && (!serverResolution || candidateFor(entry.config.tag))" type="button" :aria-label="`解除关联 ${entry.config.tag}`" title="解除关联并固定当前候选" @click="unlink(entry.config)"><AppIcon name="x" :size="15" /></button>
+            <button v-if="serverResolution && bindingFor(entry.config.tag) && !candidateFor(entry.config.tag)" type="button" :aria-label="`恢复此前副本 ${entry.config.tag}`" title="源不可用时明确恢复此前已保存副本，内容可能过期" @click="restoreSaved(entry.config)"><AppIcon name="rotate" :size="15" /></button>
             <button type="button" :aria-label="`编辑 ${entry.config.tag}`" title="编辑为独立入站" @click="openEditor(entry.index, entry.config)"><AppIcon name="edit" :size="15" /></button>
             <button type="button" :aria-label="`复制 ${entry.config.tag}`" title="复制为独立入站" @click="duplicate(entry.index, entry.config)"><AppIcon name="copy" :size="15" /></button>
             <button class="danger" type="button" :aria-label="`删除 ${entry.config.tag}`" title="删除入站" @click="remove(entry.index, entry.config)"><AppIcon name="trash" :size="15" /></button>
@@ -166,7 +194,7 @@ function unlink(config: InboundConfig): void {
         <button v-if="!rawItems.length" class="empty-state" type="button" @click="openImport()"><AppIcon name="inbound" :size="31" /><strong>尚未导入入站</strong><span>从入站配置资源库选择一个或多个项目</span></button>
         <p v-if="invalidCount" class="invalid-items" role="alert"><AppIcon name="info" :size="14" />还有 {{ invalidCount }} 个无法结构化显示的数组项，请使用“编辑全部 JSON”处理。</p>
       </div></article>
-      <aside><article class="options-card"><header><div><h2>来源与同步</h2><p>关联资源或独立维护</p></div></header><div><p><AppIcon name="link" :size="16" /><span><strong>关联源资源</strong><small>新导入的入站自动关联；旧副本可点击链接按钮选择来源</small></span></p><p><AppIcon name="rotate" :size="16" /><span><strong>检测前同步</strong><small>预览、检测和应用前读取最新配置，并保留本地 tag</small></span></p><p><AppIcon name="edit" :size="16" /><span><strong>独立维护</strong><small>解除关联或保存本地修改后，只维护当前档案</small></span></p></div></article><p class="info-callout"><AppIcon name="info" :size="15" /><span>源资源已删除或读取失败时会停止同步并提示。可重新关联或解除关联，保留当前入站内容。</span></p><p class="info-callout"><AppIcon name="shield" :size="15" /><span>TUN 模式需要系统网络管理权限；应用前仍会由 sing-box 核心执行真实配置检查。</span></p></aside>
+      <aside><article class="options-card"><header><div><h2>来源与同步</h2><p>关联资源或独立维护</p></div></header><div><p><AppIcon name="link" :size="16" /><span><strong>关联源资源</strong><small>新导入的入站自动关联；旧副本可点击链接按钮选择来源</small></span></p><p><AppIcon name="rotate" :size="16" /><span><strong>服务端候选</strong><small>预览、检测和应用由服务端读取最新来源，并保留本地 tag</small></span></p><p><AppIcon name="edit" :size="16" /><span><strong>独立维护</strong><small>解除关联后固定所见候选，再维护本档案</small></span></p></div></article><p class="info-callout"><AppIcon name="info" :size="15" /><span>源资源已删除或读取失败时会停止生成并提示。可重新关联，或明确恢复此前已保存的旧副本；旧内容可能过期。</span></p><p class="info-callout"><AppIcon name="shield" :size="15" /><span>TUN 模式需要系统网络管理权限；应用前仍会由 sing-box 核心执行真实配置检查。</span></p></aside>
     </div>
     <p v-if="error" class="panel-error" role="alert">{{ error }}</p>
     <InboundImportDialog :open="importOpen" :profile-name="profileName" :current-tags="tags" :target-tag="association?.tag" :busy="importing" @close="closeImport" @import="importSelected" />

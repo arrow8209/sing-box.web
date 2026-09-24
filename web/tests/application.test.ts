@@ -1,10 +1,12 @@
 import { flushPromises, mount } from "@vue/test-utils";
+import { ref } from "vue";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApiError } from "@/api/client";
 import ApplicationBar from "@/features/application/ApplicationBar.vue";
 import ValidationErrors from "@/features/application/ValidationErrors.vue";
 import { createApplicationStore } from "@/features/application/store";
 import type { ApplicationApi } from "@/features/application/api";
+import type { PreviewResult } from "@/features/application/types";
 import { createProfileStore } from "@/features/profiles/store";
 import type { ProfileApi } from "@/features/profiles/api";
 import type { Draft, ProfileSummary } from "@/features/profiles/types";
@@ -44,6 +46,33 @@ function linkedProfiles() {
 describe("配置应用", () => {
   const stores: ReturnType<typeof createProfileStore>[] = [];
   afterEach(() => stores.splice(0).forEach((store) => store.dispose()));
+  it.each(["preview", "validate", "apply"] as const)("服务端解析时 %s 不同步保存引用", async (action) => {
+    const env = linkedProfiles(); stores.push(env.profiles);
+    await env.profiles.refresh(); await env.profiles.open(profileId);
+    const success = { revision: 4, files: [], digest: "a".repeat(64), valid: true, stage: "core_check", exitCode: 0 };
+    const api: ApplicationApi = { preview: vi.fn(async () => success), validate: vi.fn(async () => success), apply: vi.fn(async () => ({ applied: true, profileId, revision: 4, digest: success.digest, validation: success })) };
+    const store = createApplicationStore(env.profiles, api, env.sources, ref(true));
+    await store[action]();
+    expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
+    expect(env.sources.subscription).not.toHaveBeenCalled();
+    expect(env.profiles.draft.value?.revision).toBe(4);
+    expect(api[action]).toHaveBeenCalledWith(profileId, action === "apply" ? { revision: 4 } : 4);
+  });
+
+  it("服务端解析时未保存编辑阻止操作，迟到候选不覆盖新输入", async () => {
+    const env = linkedProfiles(); stores.push(env.profiles);
+    await env.profiles.refresh(); await env.profiles.open(profileId);
+    let finish: (result: { revision: number; files: []; digest: string }) => void = () => undefined;
+    const api: ApplicationApi = { preview: vi.fn(() => new Promise<PreviewResult>((resolve) => { finish = resolve; })), validate: vi.fn(), apply: vi.fn() };
+    const store = createApplicationStore(env.profiles, api, env.sources, ref(true));
+    const pending = store.preview(); await flushPromises();
+    env.profiles.mutate((current) => { current.buffers.log = '{"level":"debug"}'; });
+    finish({ revision: 4, files: [], digest: "late" }); await pending;
+    expect(store.previewResult.value).toBeNull();
+    await store.validate();
+    expect(api.validate).not.toHaveBeenCalled();
+    expect(env.profileApi.saveDraft).not.toHaveBeenCalled();
+  });
   it.each(["preview", "validate", "apply"] as const)("%s 前读取最新订阅并保存草稿，随后使用新修订执行", async (action) => {
     const env = linkedProfiles(); stores.push(env.profiles);
     await env.profiles.refresh(); await env.profiles.open(profileId);

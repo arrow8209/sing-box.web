@@ -13,8 +13,8 @@ const (
 	ModeCustom     Mode = "custom"
 )
 
-// Inbound is a reusable source object. Profiles never retain its ID: importing
-// copies Config into the profile draft and deliberately severs this relation.
+// Inbound is a reusable source object. Linked profile entries keep its ID in
+// their reference metadata and resolve current Config when generating.
 type Inbound struct {
 	ID        string          `json:"id"`
 	Mode      Mode            `json:"mode"`

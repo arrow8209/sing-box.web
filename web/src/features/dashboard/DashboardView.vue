@@ -1,9 +1,12 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref } from "vue";
+import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import { useCoreStore } from "@/features/core/store";
 import { profileApi } from "@/features/profiles/api";
 import { useProfileStore } from "@/features/profiles/store";
+import { useCapabilitiesStore } from "@/features/capabilities/store";
+import { applicationApi } from "@/features/application/api";
+import type { CandidateView } from "@/features/application/types";
 import type { ProfileSummary } from "@/features/profiles/types";
 import AppIcon from "@/layout/AppIcon.vue";
 import DashboardProxySelector from "./DashboardProxySelector.vue";
@@ -13,6 +16,11 @@ interface DashboardMetric { icon: string; tone: string; label: string; value: st
 
 const core = useCoreStore();
 const profileStore = useProfileStore();
+const capabilities = useCapabilitiesStore();
+const serverResolution = computed(() => capabilities.capabilities.value?.serverReferenceResolution === true);
+const stoppedCandidate = ref<CandidateView | null>(null);
+const candidateError = ref("");
+let candidateGeneration = 0;
 const profiles = ref<ProfileSummary[]>([]);
 const error = ref("");
 const refreshing = ref(false);
@@ -49,15 +57,33 @@ const draftStats = computed(() => {
   const config = draft.config;
   const route = config.route as Record<string, unknown> | undefined;
   return {
-    inbounds: Array.isArray(config.inbounds) ? config.inbounds.length : 0,
-    outbounds: Array.isArray(config.outbounds) ? config.outbounds.length : 0,
+    inbounds: !running.value && stoppedCandidate.value ? stoppedCandidate.value.items.filter((item) => item.module === "inbounds").length : Array.isArray(config.inbounds) ? config.inbounds.length : 0,
+    outbounds: !running.value && stoppedCandidate.value ? stoppedCandidate.value.items.filter((item) => item.module === "outbounds").length : Array.isArray(config.outbounds) ? config.outbounds.length : 0,
     routeRules: Array.isArray(route?.rules) ? route.rules.length : 0
   };
 });
 const dashboardOutbounds = computed<unknown[]>(() => {
+  if (!running.value && serverResolution.value) return stoppedCandidate.value?.items.filter((item) => item.module === "outbounds")
+    .map((item) => ({ type: item.type, tag: item.tag, ...(item.members ? { outbounds: item.members } : {}) })) ?? [];
   const outbounds = profileStore.draft.value?.config.outbounds;
   return Array.isArray(outbounds) ? outbounds : [];
 });
+async function refreshStoppedCandidate(): Promise<void> {
+  const generation = ++candidateGeneration;
+  stoppedCandidate.value = null; candidateError.value = "";
+  if (running.value || !serverResolution.value) return;
+  const id = profileStore.activeProfileId.value ?? activeProfile.value?.id;
+  if (!id) return;
+  try {
+    const revision = profileStore.draft.value?.profileId === id && profileStore.saveState.value === "saved"
+      ? profileStore.draft.value.revision : (await profileApi.getDraft(id)).data.revision;
+    const result = await applicationApi.preview(id, revision);
+    if (generation !== candidateGeneration || running.value || id !== (profileStore.activeProfileId.value ?? activeProfile.value?.id)) return;
+    if (result.candidate?.profileId === id && result.candidate.revision === revision) stoppedCandidate.value = result.candidate;
+    else candidateError.value = result.errors?.[0]?.message ?? "无法读取待运行候选";
+  } catch (cause) { if (generation === candidateGeneration) candidateError.value = cause instanceof Error ? cause.message : "无法读取待运行候选"; }
+}
+watch([running, serverResolution, () => profileStore.activeProfileId.value, () => profileStore.draft.value?.revision], () => { void refreshStoppedCandidate(); });
 const dashboardOutboundEditorState = computed(() => !running.value || profileStore.draft.value?.profileId === core.status.value?.currentProfileId
   ? profileStore.draft.value?.editorState?.outbounds : undefined);
 const proxyRuntimeKey = computed(() => [core.status.value?.currentProfileId, core.status.value?.pid, core.status.value?.appliedRevision].join(":"));
@@ -102,6 +128,7 @@ async function refresh(): Promise<void> {
   refreshing.value = true;
   try {
     await Promise.all([core.refresh(), refreshProfiles()]);
+    await refreshStoppedCandidate();
     await proxySelector.value?.refresh();
     showNotice("状态已刷新，流量、连接与核心状态均已更新。");
   } finally {
@@ -159,6 +186,7 @@ onMounted(() => {
 });
 
 onBeforeUnmount(() => {
+  candidateGeneration++;
   core.stopPolling();
   if (clockTimer) clearInterval(clockTimer);
 });
@@ -272,7 +300,8 @@ onBeforeUnmount(() => {
           </article>
         </div>
 
-        <DashboardProxySelector ref="proxySelector" :outbounds="dashboardOutbounds" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
+        <p v-if="!running && serverResolution" class="candidate-source" role="status">{{ candidateError || (stoppedCandidate ? '以下为选定档案的待运行候选；核心尚未运行' : '正在读取选定档案的待运行候选') }}</p>
+        <DashboardProxySelector ref="proxySelector" :outbounds="dashboardOutbounds" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
       </div>
     </div>
 
@@ -281,6 +310,7 @@ onBeforeUnmount(() => {
 </template>
 
 <style scoped>
+.candidate-source { grid-column: 1 / -1; margin: 0; padding: 8px 12px; border-radius: var(--radius-sm); color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-sm); }
 .page-intro { display: flex; align-items: flex-end; justify-content: space-between; gap: var(--section-gap); margin: 0 0 var(--section-gap); }
 .page-intro-copy h2 { margin: 0; color: var(--text); font-size: 22px; font-weight: 750; letter-spacing: -.6px; }
 .page-intro-copy p { max-width: 680px; margin: 3px 0 0; color: var(--text-soft); font-size: var(--font-size-base); }

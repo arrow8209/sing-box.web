@@ -47,7 +47,7 @@ func main() {
 	if err != nil {
 		panic(err)
 	}
-	appServer, err := app.NewServer(workDir, app.Dependencies{Listener: appListener, RuleHTTPTransport: rulesetFixtureTransport()})
+	appServer, err := app.NewServer(workDir, app.Dependencies{Listener: appListener, RuleHTTPTransport: rulesetFixtureTransport(), EnableServerReferenceResolution: true})
 	if err != nil {
 		_ = appListener.Close()
 		panic(err)

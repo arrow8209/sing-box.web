@@ -1,6 +1,6 @@
 import { computed, ref, toRaw, type Ref } from "vue";
 import { isApiError, profileApi, type ProfileApi } from "./api";
-import type { AutoReloadOutcome, Draft, DraftConflict, ProfileSummary, SaveState } from "./types";
+import type { AutoReloadOutcome, Draft, DraftConflict, FreezeOperation, ProfileSummary, SaveState } from "./types";
 
 const SAVE_DELAY = 600;
 
@@ -17,6 +17,8 @@ export interface ProfileStore {
   open(id: string): Promise<boolean>;
   mutate(change: (draft: Draft) => void): void;
   flush(): Promise<void>;
+  waitForSave(): Promise<void>;
+  freeze(operation: FreezeOperation): Promise<void>;
   loadServerVersion(): Promise<void>;
   overwriteServerVersion(): Promise<void>;
   create(name: string): Promise<ProfileSummary>;
@@ -141,6 +143,34 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
     }
   }
 
+  async function waitForSave(): Promise<void> {
+    if (saveInFlight) await saveInFlight;
+  }
+
+  async function freeze(operation: FreezeOperation): Promise<void> {
+    if (!api.freeze || !activeProfileId.value || !draft.value || !etag.value || saveState.value !== "saved") throw new Error("请先等待草稿保存完成，再固定候选内容。");
+    const id = activeProfileId.value;
+    const revision = draft.value.revision;
+    saveState.value = "saving";
+    const task = (async () => {
+      try {
+        const response = await api.freeze!(id, etag.value!, operation);
+        if (activeProfileId.value !== id || draft.value?.revision !== revision) throw new Error("档案已切换，请重新读取候选。");
+        etag.value = response.etag;
+        serverRevision.value = response.data.revision;
+        draft.value = response.data;
+        autoReloadOutcome.value = response.autoReload ?? null;
+        saveState.value = "saved";
+        await refresh();
+      } catch (cause) {
+        classifySaveFailure(cause);
+        throw cause;
+      }
+    })();
+    saveInFlight = task.catch(() => undefined);
+    try { await task; } finally { saveInFlight = undefined; }
+  }
+
   async function loadServerVersion(): Promise<void> {
     if (!activeProfileId.value) return;
     const response = await api.getDraft(activeProfileId.value);
@@ -209,7 +239,7 @@ export function createProfileStore(api: ProfileApi = profileApi): ProfileStore {
   window.addEventListener("online", onOnline);
   window.addEventListener("beforeunload", onBeforeUnload);
 
-  return { profiles, activeProfileId, draft, etag, saveState, conflict, autoReloadOutcome, hasPendingChanges, refresh, open, mutate, flush, loadServerVersion, overwriteServerVersion, create, duplicate, rename, remove, dispose: () => { cancelTimer(); window.removeEventListener("online", onOnline); window.removeEventListener("beforeunload", onBeforeUnload); } };
+  return { profiles, activeProfileId, draft, etag, saveState, conflict, autoReloadOutcome, hasPendingChanges, refresh, open, mutate, flush, waitForSave, freeze, loadServerVersion, overwriteServerVersion, create, duplicate, rename, remove, dispose: () => { cancelTimer(); window.removeEventListener("online", onOnline); window.removeEventListener("beforeunload", onBeforeUnload); } };
 }
 
 const defaultStore = createProfileStore();

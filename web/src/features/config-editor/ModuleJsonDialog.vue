@@ -13,6 +13,7 @@ const props = defineProps<{
   text: string;
   configured: boolean;
   error?: string;
+  readOnly?: boolean;
 }>();
 const emit = defineEmits<{ close: []; save: [text: string]; buffer: [text: string]; clear: [] }>();
 const buffer = ref(props.text);
@@ -36,22 +37,22 @@ function save(): void {
 </script>
 
 <template>
-  <AppDialog :open="open" :title="`编辑${section.label}`" :description="`完整维护 config.${section.key}`" initial-focus="textarea" @close="emit('close')">
+  <AppDialog :open="open" :title="`${readOnly ? '查看' : '编辑'}${section.label}`" :description="readOnly ? '关联生成内容只读；先将关联条目转为独立配置' : `完整维护 config.${section.key}`" initial-focus="textarea" @close="emit('close')">
     <div class="module-meta">
       <span class="module-meta-icon"><AppIcon :name="section.icon" :size="15" /></span>
       <div><strong>{{ section.label }}</strong><code>{{ section.key }}</code><small>{{ section.description }}</small></div>
       <span class="type-badge">{{ section.type }}</span>
     </div>
     <div class="editor-shell">
-      <div class="editor-toolbar"><div><strong>JSON</strong><span>顶层配置片段</span></div><button type="button" class="format-button" :disabled="Boolean(validation) || !buffer.trim()" @click="pretty"><AppIcon name="sparkles" :size="13" />格式化</button></div>
-      <JsonEditor v-model="buffer" :label="`${section.label} JSON`" :error="displayedError" @update:model-value="emit('buffer', buffer)" />
+      <div class="editor-toolbar"><div><strong>JSON</strong><span>{{ readOnly ? '已保存的输入；关联内容以服务端候选为准' : '顶层配置片段' }}</span></div><button v-if="!readOnly" type="button" class="format-button" :disabled="Boolean(validation) || !buffer.trim()" @click="pretty"><AppIcon name="sparkles" :size="13" />格式化</button></div>
+      <JsonEditor v-model="buffer" :label="`${section.label} JSON`" :read-only="readOnly" :error="displayedError" @update:model-value="emit('buffer', buffer)" />
     </div>
     <div class="info-callout"><AppIcon name="shield" :size="15" /><span>编辑器只检查 JSON 容器类型；字段、平台与版本兼容性请在部署前使用目标核心执行 <code>sing-box check</code>。</span></div>
     <template #footer>
-      <button v-if="configured" type="button" class="clear-button" @click="emit('clear')"><AppIcon name="trash" :size="14" />清空模块</button>
+      <button v-if="configured && !readOnly" type="button" class="clear-button" @click="emit('clear')"><AppIcon name="trash" :size="14" />清空模块</button>
       <span class="footer-spacer" />
       <button type="button" class="secondary" @click="emit('close')">取消</button>
-      <button type="button" data-save-module :disabled="Boolean(validation)" @click="save"><AppIcon name="save" :size="14" />保存片段</button>
+      <button v-if="!readOnly" type="button" data-save-module :disabled="Boolean(validation)" @click="save"><AppIcon name="save" :size="14" />保存片段</button>
     </template>
   </AppDialog>
 </template>
