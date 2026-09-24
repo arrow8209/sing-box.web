@@ -15,6 +15,19 @@ func referenceFilter(pattern, path string) (func(string) (bool, error), error) {
 	if pattern == "" {
 		return func(string) (bool, error) { return true, nil }, nil
 	}
+	// Literal alternatives have the same substring semantics in JS and Go,
+	// including when a subscription tag contains supplementary Unicode runes.
+	if !strings.ContainsAny(pattern, `\.*+?^${}()[]`) {
+		alternatives := strings.Split(pattern, "|")
+		return func(tag string) (bool, error) {
+			for _, alternative := range alternatives {
+				if strings.Contains(tag, alternative) {
+					return true, nil
+				}
+			}
+			return false, nil
+		}, nil
+	}
 	unsupported := func() error {
 		return configref.Error("reference_filter_unsupported", path, "过滤表达式不能等价处理，请改用普通文字或基础字符集合")
 	}

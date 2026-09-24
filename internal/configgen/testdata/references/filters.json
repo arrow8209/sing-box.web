@@ -24,6 +24,42 @@
     "code": ""
   },
   {
+    "pattern": "H",
+    "tag": "🇭🇰 HK 01",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "香港",
+    "tag": "🇭🇰 HK 01",
+    "match": false,
+    "code": ""
+  },
+  {
+    "pattern": "HK|JP",
+    "tag": "🇯🇵 JP 01",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "🇭🇰|🇯🇵",
+    "tag": "香港 🇭🇰 01",
+    "match": true,
+    "code": ""
+  },
+  {
+    "pattern": "HK|JP",
+    "tag": "🇺🇸 US 01",
+    "match": false,
+    "code": ""
+  },
+  {
+    "pattern": "^.$",
+    "tag": "🇭",
+    "match": false,
+    "code": "reference_filter_unsupported"
+  },
+  {
     "pattern": "[",
     "tag": "a[b",
     "match": true,

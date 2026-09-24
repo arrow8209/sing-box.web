@@ -151,6 +151,31 @@ func TestReferenceFilterCompatibility(t *testing.T) {
 	}
 }
 
+func TestReferenceFilterResolvesUnicodeSubscriptionTags(t *testing.T) {
+	f := referenceFixtures(t)[0]
+	var state configref.Outbounds
+	if err := json.Unmarshal(f.Draft.EditorState["outbounds"], &state); err != nil {
+		t.Fatal(err)
+	}
+	state.Groups[0].Include = "HK|香港"
+	f.Draft.EditorState["outbounds"] = rawValue(state)
+	snapshot := fixtureSnapshot(f)
+	source := f.Subscriptions[0]
+	source.Outbounds = []json.RawMessage{
+		json.RawMessage(`{"type":"ssh","tag":"🇭🇰 HK 01","server":"hk.example.test"}`),
+		json.RawMessage(`{"type":"ssh","tag":"🇺🇸 US 01","server":"us.example.test"}`),
+	}
+	snapshot.Subscriptions[source.ID] = source
+	result, err := ResolveReferences(f.Draft, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"🇭🇰 HK 01"}
+	if !reflect.DeepEqual(result.Model.Outbounds.Groups[0].RuntimeTags, want) || !reflect.DeepEqual(result.Model.Outbounds.GeneratedTags, want) {
+		t.Fatalf("filtered tags = %v, generated tags = %v, want %v", result.Model.Outbounds.Groups[0].RuntimeTags, result.Model.Outbounds.GeneratedTags, want)
+	}
+}
+
 func TestReferenceSharedAliasesAndSourceOrder(t *testing.T) {
 	f := referenceFixtures(t)[0]
 	state := configref.Outbounds{}
