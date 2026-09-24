@@ -114,7 +114,8 @@ for (const scenario of scenarios) {
     await page.goto("/");
     await setTheme(page, scenario.theme);
     await expect(page.getByRole("heading", { name: "早上好，管理员" })).toBeVisible();
-    await expect(page.locator(".traffic-card")).toBeVisible();
+    await expect(page.locator(".hero-metrics .hero-metric")).toHaveCount(4);
+    await expect(page.locator(".hero-status .hero-profile")).toBeVisible();
     await expect(page.locator(".proxy-selector-card")).toBeVisible();
     await expect(page.locator("body")).not.toHaveCSS("overflow-x", "scroll");
     await expect(page).toHaveScreenshot(`${scenario.name}-dashboard.png`, { fullPage: true });

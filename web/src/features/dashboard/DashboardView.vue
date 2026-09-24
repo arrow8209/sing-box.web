@@ -13,7 +13,7 @@ import DashboardProxySelector from "./DashboardProxySelector.vue";
 import { outboundOrderFromDraft } from "./proxy-groups";
 
 type RouteMode = "rule" | "global" | "direct";
-interface DashboardMetric { icon: string; tone: string; label: string; value: string; unit: string; trend: string; neutral: boolean; href?: string }
+interface DashboardMetric { icon: string; tone: string; label: string; value: string; unit: string; href?: string }
 
 const core = useCoreStore();
 const profileStore = useProfileStore();
@@ -35,10 +35,10 @@ const quickControls = reactive({ systemProxy: false, tunMode: false, allowLan: f
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 
 const metrics: DashboardMetric[] = [
-  { icon: "upload", tone: "", label: "实时上传", value: "2.48", unit: "MB/s", trend: "较 1 小时前 +12.4%", neutral: false },
-  { icon: "download", tone: "cyan", label: "实时下载", value: "8.72", unit: "MB/s", trend: "较 1 小时前 +6.8%", neutral: false },
-  { icon: "link", tone: "green", label: "活动连接", value: "128", unit: "条", trend: "峰值 246", neutral: true, href: "/connections" },
-  { icon: "memory", tone: "orange", label: "内存占用", value: "86.4", unit: "MB", trend: "稳定运行", neutral: true }
+  { icon: "upload", tone: "", label: "实时上传", value: "2.48", unit: "MB/s" },
+  { icon: "download", tone: "cyan", label: "实时下载", value: "8.72", unit: "MB/s" },
+  { icon: "memory", tone: "orange", label: "内存占用", value: "86.4", unit: "MB" },
+  { icon: "link", tone: "green", label: "活动连接", value: "128", unit: "条", href: "/connections" }
 ];
 
 const serviceRunning = computed(() => ["running", "starting", "stopping"].includes(core.status.value?.state ?? ""));
@@ -136,7 +136,7 @@ async function refresh(): Promise<void> {
     await Promise.all([core.refresh(), refreshProfiles()]);
     await refreshStoppedCandidate();
     await proxySelector.value?.refresh();
-    showNotice("状态已刷新，流量、连接与核心状态均已更新。");
+    showNotice("状态已刷新。");
   } finally {
     refreshing.value = false;
   }
@@ -218,24 +218,40 @@ onBeforeUnmount(() => {
     <div class="dashboard-grid">
       <article class="card hero-status">
         <div class="hero-content">
-          <div class="hero-eyebrow"><span class="pulse-dot" :class="{ stopped: !running }" />系统实时状态</div>
-          <div class="hero-main">
-            <h2>{{ running ? "sing-box 正在运行" : "sing-box 已停止" }}</h2>
-            <p>{{ running ? "核心服务稳定，控制 API 与入站监听均可用。" : "当前不会转发任何流量，点击启动恢复服务。" }}</p>
-          </div>
-          <div class="hero-footer">
-            <div class="hero-meta">
-              <div class="hero-meta-item"><span>运行时间</span><strong>{{ uptime }}</strong></div>
-              <div class="hero-meta-item"><span>核心版本</span><strong>{{ core.status.value?.installedVersion || "1.11.11" }}</strong></div>
-              <div class="hero-meta-item"><span>活动配置</span><strong>{{ activeProfile?.name || "自定义配置 A" }}</strong></div>
-              <div class="hero-meta-item"><span>进程 ID</span><strong>{{ core.status.value?.pid || "--" }}</strong></div>
+          <div class="hero-header">
+            <div class="hero-state">
+              <div class="hero-eyebrow"><span class="pulse-dot" :class="{ stopped: !running }" />系统实时状态</div>
+              <h2>{{ running ? "sing-box 正在运行" : "sing-box 已停止" }}</h2>
             </div>
             <div class="hero-actions">
               <button class="hero-btn" data-core-restart type="button" :disabled="coreTransitioning || !running" @click="restartCore"><AppIcon name="rotate" :size="14" />{{ restartLabel }}</button>
               <button class="hero-btn" :class="{ 'hero-btn-danger': running }" data-core-toggle type="button" :disabled="coreTransitioning" @click="toggleCore"><AppIcon :name="coreAction ? 'rotate' : 'power'" :size="14" />{{ coreActionLabel }}</button>
             </div>
           </div>
+          <div class="hero-metrics" aria-label="实时运行数据">
+            <component :is="metric.href ? 'a' : 'div'" v-for="metric in metrics" :key="metric.label" class="hero-metric" :class="{ 'hero-metric-link': metric.href }" :href="metric.href">
+              <span class="hero-metric-icon" :class="metric.tone"><AppIcon :name="metric.icon" :size="14" /></span>
+              <span class="hero-metric-copy"><span>{{ metric.label }}</span><strong>{{ metric.value }} <small>{{ metric.unit }}</small></strong></span>
+              <AppIcon v-if="metric.href" class="hero-metric-arrow" name="chevron" :size="12" />
+            </component>
+          </div>
+          <div class="hero-profile">
+            <span class="hero-profile-label">活动配置</span>
+            <strong class="hero-profile-name" :title="activeProfile?.name || '自定义配置 A'">{{ activeProfile?.name || "自定义配置 A" }}</strong>
+            <span class="hero-profile-applied">最后应用于{{ appliedLabel }}</span>
+            <div class="hero-profile-stats"><span>入站 <strong>{{ draftStats.inbounds }}</strong></span><span>出站 <strong>{{ draftStats.outbounds }}</strong></span><span>路由规则 <strong>{{ draftStats.routeRules }}</strong></span></div>
+          </div>
+          <div class="hero-meta">
+            <div class="hero-meta-item"><span>运行时间</span><strong>{{ uptime }}</strong></div>
+            <div class="hero-meta-item"><span>核心版本</span><strong>{{ core.status.value?.installedVersion || "1.11.11" }}</strong></div>
+            <div class="hero-meta-item"><span>进程 ID</span><strong>{{ core.status.value?.pid || "--" }}</strong></div>
+          </div>
         </div>
+      </article>
+
+      <article class="card route-mode-card">
+        <div class="mode-title-row"><h2 class="card-title">路由模式</h2><span>即时生效</span></div>
+        <div class="mode-options"><button v-for="item in ([['rule', '规则'], ['global', '全局'], ['direct', '直连']] as const)" :key="item[0]" class="mode-option" :class="{ active: routeMode === item[0] }" type="button" :aria-pressed="routeMode === item[0]" @click="setRouteMode(item[0])">{{ item[1] }}</button></div>
       </article>
 
       <article class="card control-card">
@@ -262,53 +278,8 @@ onBeforeUnmount(() => {
         </div>
       </article>
 
-      <div class="metric-grid">
-        <component :is="metric.href ? 'a' : 'article'" v-for="metric in metrics" :key="metric.label" class="card metric-card" :class="{ 'metric-card-link': metric.href }" :href="metric.href">
-          <span class="metric-icon" :class="metric.tone"><AppIcon :name="metric.icon" :size="20" /></span>
-          <span class="metric-copy">
-            <span class="metric-label">{{ metric.label }}</span>
-            <span class="metric-value">{{ metric.value }}<small>{{ metric.unit }}</small></span>
-            <span class="metric-trend" :class="{ neutral: metric.neutral }"><AppIcon :name="metric.neutral ? 'clock' : 'arrow-up'" :size="10" /><span>{{ metric.trend }}</span></span>
-          </span>
-        </component>
-      </div>
-
-      <div class="dashboard-lower">
-        <article class="card traffic-card">
-          <header class="card-head">
-            <div><h2 class="card-title">实时流量</h2><p class="card-subtitle">最近 30 分钟网络吞吐</p></div>
-            <div class="chart-legend"><span><i />下载</span><span><i class="cyan" />上传</span></div>
-          </header>
-          <div class="traffic-chart-wrap">
-            <svg class="traffic-chart" viewBox="0 0 760 220" preserveAspectRatio="none" role="img" aria-label="实时流量折线图">
-              <defs><linearGradient id="dashboard-traffic-gradient" x1="0" y1="0" x2="0" y2="1"><stop offset="0%" stop-color="#4f6ff8" stop-opacity=".24" /><stop offset="100%" stop-color="#4f6ff8" stop-opacity="0" /></linearGradient></defs>
-              <line class="chart-grid-line" x1="52" y1="32" x2="744" y2="32" /><line class="chart-grid-line" x1="52" y1="76" x2="744" y2="76" /><line class="chart-grid-line" x1="52" y1="120" x2="744" y2="120" /><line class="chart-grid-line" x1="52" y1="164" x2="744" y2="164" />
-              <text class="chart-label" x="8" y="35">12 MB/s</text><text class="chart-label" x="14" y="79">8 MB/s</text><text class="chart-label" x="14" y="123">4 MB/s</text><text class="chart-label" x="30" y="167">0</text>
-              <path class="chart-area" d="M52 164 L52 152 C72 148 84 130 102 138 S134 112 151 122 S181 148 201 131 S229 94 249 108 S276 142 297 128 S326 83 348 98 S378 129 399 117 S428 48 450 69 S479 131 501 115 S531 89 553 101 S581 146 604 129 S634 58 657 82 S686 118 708 97 S729 73 744 78 L744 164 Z" />
-              <path class="chart-line" d="M52 152 C72 148 84 130 102 138 S134 112 151 122 S181 148 201 131 S229 94 249 108 S276 142 297 128 S326 83 348 98 S378 129 399 117 S428 48 450 69 S479 131 501 115 S531 89 553 101 S581 146 604 129 S634 58 657 82 S686 118 708 97 S729 73 744 78" />
-              <path class="chart-line-secondary" d="M52 159 C82 155 96 146 120 151 S162 139 189 148 S229 153 254 144 S302 130 328 142 S371 151 398 146 S444 123 470 137 S516 151 545 143 S586 125 613 137 S656 143 682 132 S721 121 744 126" />
-              <circle class="chart-now" cx="744" cy="78" r="4" />
-              <text class="chart-label" x="52" y="196">30 分钟前</text><text class="chart-label" x="374" y="196">15 分钟前</text><text class="chart-label" x="723" y="196">现在</text>
-            </svg>
-          </div>
-        </article>
-
-        <div class="overview-stack">
-          <article class="card active-profile">
-            <div class="profile-top"><span class="profile-icon"><AppIcon name="config" :size="20" /></span><span class="badge" :class="activeProfile ? 'badge-success' : 'badge-orange'">{{ activeProfile ? "使用中" : "未应用" }}</span></div>
-            <h2 class="profile-name">{{ activeProfile?.name || "自定义配置 A" }}</h2>
-            <p class="profile-description">规则模式 · 最后应用于{{ appliedLabel }}</p>
-            <div class="profile-stats"><div><strong>{{ draftStats.inbounds }}</strong><span>入站</span></div><div><strong>{{ draftStats.outbounds }}</strong><span>出站</span></div><div><strong>{{ draftStats.routeRules }}</strong><span>路由规则</span></div></div>
-          </article>
-          <article class="card route-mode-card">
-            <div class="mode-title-row"><h2 class="card-title">路由模式</h2><span>即时生效</span></div>
-            <div class="mode-options"><button v-for="item in ([['rule', '规则'], ['global', '全局'], ['direct', '直连']] as const)" :key="item[0]" class="mode-option" :class="{ active: routeMode === item[0] }" type="button" :aria-pressed="routeMode === item[0]" @click="setRouteMode(item[0])">{{ item[1] }}</button></div>
-          </article>
-        </div>
-
-        <p v-if="!running && serverResolution" class="candidate-source" role="status">{{ candidateError || (stoppedCandidate ? '以下为选定档案的待运行候选；核心尚未运行' : '正在读取选定档案的待运行候选') }}</p>
-        <DashboardProxySelector ref="proxySelector" :outbounds="dashboardOutbounds" :outbound-order="dashboardOutboundOrder" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
-      </div>
+      <p v-if="!running && serverResolution" class="candidate-source" role="status">{{ candidateError || (stoppedCandidate ? '以下为选定档案的待运行候选；核心尚未运行' : '正在读取选定档案的待运行候选') }}</p>
+      <DashboardProxySelector ref="proxySelector" class="dashboard-proxy" :outbounds="dashboardOutbounds" :outbound-order="dashboardOutboundOrder" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
     </div>
 
     <AppToast v-if="notice" :message="notice" :tone="noticeTone" />
@@ -326,7 +297,8 @@ onBeforeUnmount(() => {
 .btn-primary { color: #fff; border-color: var(--primary); background: linear-gradient(135deg, var(--primary), var(--primary-strong)); box-shadow: 0 10px 22px -10px color-mix(in srgb, var(--primary) 65%, transparent); }
 .btn-primary:hover { color: #fff; border-color: var(--primary-strong); background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 88%, #fff), var(--primary-strong)); box-shadow: 0 13px 26px -11px color-mix(in srgb, var(--primary) 76%, transparent); }
 .page-error { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 9px; color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
-.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.7fr) minmax(260px, .8fr); gap: var(--section-gap); }
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(160px, .6fr) minmax(240px, 1fr); gap: var(--section-gap); }
+.dashboard-proxy { grid-column: 1 / -1; min-width: 0; }
 .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
 .card-head { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }
 .card-title { margin: 0; color: var(--text); font-size: var(--font-size-heading); font-weight: 710; letter-spacing: -.15px; }
@@ -335,113 +307,90 @@ onBeforeUnmount(() => {
 .badge::before { width: 5px; height: 5px; border-radius: 50%; content: ""; background: currentColor; }
 .badge-success { color: var(--green); background: var(--green-soft); }
 .badge-orange { color: var(--orange); background: var(--orange-soft); }
-.hero-status { position: relative; min-height: 164px; overflow: hidden; border: 0; color: #fff; background: linear-gradient(124deg, #2d45ab 0%, #4a6cf2 54%, #6480ff 100%); box-shadow: 0 22px 48px -22px rgb(57 81 184 / 60%); }
+.hero-status { position: relative; min-width: 0; overflow: hidden; border: 0; color: #fff; background: linear-gradient(124deg, #2d45ab 0%, #4a6cf2 54%, #6480ff 100%); box-shadow: 0 22px 48px -22px rgb(57 81 184 / 60%); }
 .hero-status::before { position: absolute; top: -110px; right: -50px; width: 330px; height: 330px; border: 1px solid rgb(255 255 255 / 11%); border-radius: 50%; content: ""; box-shadow: 0 0 0 42px rgb(255 255 255 / 4%), 0 0 0 92px rgb(255 255 255 / 3%); }
 .hero-status::after { position: absolute; right: 74px; bottom: -94px; width: 190px; height: 190px; border-radius: 50%; content: ""; background: radial-gradient(circle at 32% 28%, rgb(255 255 255 / 26%), rgb(255 255 255 / 2%) 62%); }
-.hero-content { position: relative; z-index: 2; display: flex; min-height: 164px; flex-direction: column; justify-content: space-between; gap: var(--section-gap); padding: var(--card-padding) 16px; }
-.hero-eyebrow { display: flex; align-items: center; gap: 8px; color: rgb(255 255 255 / 70%); font-size: var(--font-size-sm); font-weight: 740; letter-spacing: 1.25px; text-transform: uppercase; }
+.hero-content { position: relative; z-index: 2; display: grid; align-content: start; gap: 5px; padding: 8px 11px; }
+.hero-header { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.hero-state { min-width: 0; }
+.hero-eyebrow { display: flex; align-items: center; gap: 8px; color: rgb(255 255 255 / 78%); font-size: var(--font-size-xs); font-weight: 740; letter-spacing: .5px; line-height: 1.15; }
+.hero-state h2 { overflow: hidden; margin: 2px 0 0; color: #fff; font-size: 17px; font-weight: 730; letter-spacing: -.35px; line-height: 1.15; text-overflow: ellipsis; white-space: nowrap; }
 .pulse-dot { position: relative; width: 7px; height: 7px; border-radius: 50%; background: #6cf0bb; box-shadow: 0 0 0 5px rgb(108 240 187 / 15%); }
 .pulse-dot::after { position: absolute; inset: -6px; border: 1px solid #6cf0bb; border-radius: 50%; content: ""; animation: pulse 1.8s ease-out infinite; }
 .pulse-dot.stopped { background: #ffd084; box-shadow: 0 0 0 5px rgb(255 208 132 / 15%); }
 .pulse-dot.stopped::after { border-color: #ffd084; }
-.hero-main { max-width: 560px; padding: 0; }
-.hero-main h2 { margin: 0; color: #fff; font-size: 22px; font-weight: 730; letter-spacing: -.55px; }
-.hero-main p { margin: 6px 0 0; color: rgb(255 255 255 / 72%); font-size: var(--font-size-base); }
-.hero-footer { display: flex; align-items: flex-end; justify-content: space-between; flex-wrap: wrap; gap: var(--section-gap); }
-.hero-meta { display: flex; flex-wrap: wrap; gap: 8px 16px; }
-.hero-meta-item span { display: block; color: rgb(255 255 255 / 55%); font-size: var(--font-size-xs); font-weight: 680; letter-spacing: .7px; text-transform: uppercase; }
-.hero-meta-item strong { display: block; max-width: 150px; overflow: hidden; margin-top: 2px; color: #fff; font-size: var(--font-size-base); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.hero-actions { display: flex; flex: 0 0 auto; gap: 8px; }
-.hero-btn { display: inline-flex; min-height: 35px; align-items: center; gap: 7px; padding: 7px 11px; border: 1px solid rgb(255 255 255 / 20%); border-radius: 9px; color: #fff; background: rgb(255 255 255 / 10%); font-size: var(--font-size-sm); font-weight: 650; backdrop-filter: blur(8px); transition: background 150ms ease, transform 150ms ease; }
+.hero-actions { display: flex; flex: 0 0 auto; gap: 5px; }
+.hero-btn { display: inline-flex; min-height: 31px; align-items: center; gap: 5px; padding: 5px 8px; border: 1px solid rgb(255 255 255 / 20%); border-radius: 8px; color: #fff; background: rgb(255 255 255 / 10%); font-size: var(--font-size-xs); font-weight: 650; backdrop-filter: blur(8px); transition: background 150ms ease, transform 150ms ease; }
 .hero-btn:hover { background: rgb(255 255 255 / 18%); transform: translateY(-1px); }
 .hero-btn-danger { color: #ffeff0; border-color: rgb(255 225 228 / 20%); background: rgb(107 20 35 / 22%); }
-.control-card { display: flex; min-height: 164px; flex-direction: column; }
-.control-card .card-head { min-height: auto; padding: 10px var(--card-padding) 6px; border-bottom: 0; }
+.hero-metrics { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 5px 6px; }
+.hero-metric { display: flex; min-width: 0; min-height: 34px; align-items: center; gap: 5px; padding: 4px 6px; border: 1px solid rgb(255 255 255 / 13%); border-radius: 8px; color: #fff; background: rgb(255 255 255 / 10%); text-decoration: none; }
+.hero-metric-link { transition: background 150ms ease, border-color 150ms ease; }
+.hero-metric-link:hover { border-color: rgb(255 255 255 / 40%); background: rgb(255 255 255 / 20%); }
+.hero-metric-link:focus-visible { outline: 2px solid #fff; outline-offset: 2px; }
+.hero-metric-arrow { flex: 0 0 auto; opacity: .8; }
+.hero-metric-icon { display: grid; width: 24px; height: 24px; flex: 0 0 auto; place-items: center; border-radius: 7px; color: #dce5ff; background: rgb(255 255 255 / 13%); }
+.hero-metric-icon.cyan { color: #a4f4ff; }
+.hero-metric-icon.orange { color: #ffe0ad; }
+.hero-metric-icon.green { color: #aaf3d0; }
+.hero-metric-copy { display: flex; min-width: 0; flex: 1; align-items: baseline; justify-content: space-between; gap: 4px; }
+.hero-metric-copy > span { color: rgb(255 255 255 / 76%); font-size: var(--font-size-xs); white-space: nowrap; }
+.hero-metric-copy strong { overflow: hidden; color: #fff; font-size: 15px; font-weight: 730; line-height: 1.2; text-overflow: ellipsis; white-space: nowrap; }
+.hero-metric-copy small { font-size: var(--font-size-xs); font-weight: 550; }
+.hero-profile { display: flex; min-width: 0; align-items: baseline; flex-wrap: wrap; gap: 3px 8px; padding-top: 5px; border-top: 1px solid rgb(255 255 255 / 18%); font-size: var(--font-size-xs); line-height: 1.2; }
+.hero-profile-label, .hero-profile-applied { color: rgb(255 255 255 / 75%); white-space: nowrap; }
+.hero-profile-name { max-width: 135px; overflow: hidden; color: #fff; text-overflow: ellipsis; white-space: nowrap; }
+.hero-profile-stats { display: flex; flex-wrap: wrap; gap: 4px 9px; margin-left: auto; color: rgb(255 255 255 / 75%); white-space: nowrap; }
+.hero-profile-stats strong { color: #fff; font-weight: 700; }
+.hero-meta { display: flex; align-items: baseline; flex-wrap: wrap; gap: 4px 12px; padding-top: 5px; border-top: 1px solid rgb(255 255 255 / 18%); line-height: 1.2; }
+.hero-meta-item { display: flex; min-width: 0; align-items: baseline; gap: 4px; }
+.hero-meta-item span { color: rgb(255 255 255 / 65%); font-size: var(--font-size-xs); white-space: nowrap; }
+.hero-meta-item strong { overflow: hidden; color: #fff; font-size: var(--font-size-xs); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
+.route-mode-card { display: flex; min-width: 0; flex-direction: column; padding: 10px; }
+.mode-title-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px; }
+.mode-title-row > span { color: var(--text-faint); font-size: var(--font-size-xs); white-space: nowrap; }
+.mode-options { display: grid; flex: 1; grid-template-rows: repeat(3, minmax(35px, 1fr)); gap: 5px; margin-top: 9px; padding: 4px; border-radius: 10px; background: var(--surface-soft); }
+.mode-option { min-height: 35px; border-radius: 7px; color: var(--text-faint); background: transparent; font-size: var(--font-size-sm); font-weight: 650; transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
+.mode-option:hover { color: var(--text); }
+.mode-option.active { color: var(--primary); background: var(--surface); box-shadow: 0 2px 8px rgb(32 47 79 / 8%); }
+.control-card { display: flex; min-width: 0; flex-direction: column; }
+.control-card .card-head { min-height: auto; padding: 8px var(--card-padding) 4px; border-bottom: 0; }
 .control-list { display: grid; gap: 2px; padding: 0 6px 6px; }
-.control-row { display: flex; min-height: 41px; align-items: center; gap: 8px; padding: 4px 6px; border-radius: 10px; }
+.control-row { display: flex; min-height: 36px; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 10px; }
 .control-row:hover { background: var(--surface-soft); }
-.control-icon { display: grid; width: 31px; height: 31px; flex: 0 0 auto; place-items: center; border-radius: 9px; color: var(--primary); background: var(--primary-soft); }
+.control-icon { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: var(--primary); background: var(--primary-soft); }
 .control-icon.cyan { color: var(--cyan); background: var(--cyan-soft); }
 .control-icon.orange { color: var(--orange); background: var(--orange-soft); }
 .control-copy { min-width: 0; flex: 1; }
-.control-copy strong, .control-copy small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.control-copy strong, .control-copy small { display: block; overflow: hidden; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
 .control-copy strong { color: var(--text); font-size: var(--font-size-base); font-weight: 670; }
 .control-copy small { margin-top: 1px; color: var(--text-faint); font-size: var(--font-size-xs); }
 .switch { position: relative; display: inline-flex; width: 36px; height: 21px; min-height: 21px; flex: 0 0 auto; align-items: center; padding: 2px; border-radius: 999px; background: var(--line-strong); transition: background 180ms ease; }
 .switch::after { width: 17px; height: 17px; border-radius: 50%; content: ""; background: #fff; box-shadow: 0 1px 4px rgb(24 32 51 / 20%); transition: transform 180ms ease; }
 .switch.on { background: var(--primary); }
 .switch.on::after { transform: translateX(15px); }
-.metric-grid { display: grid; grid-column: 1 / -1; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 9px; }
-.metric-card { display: flex; min-height: 72px; align-items: center; gap: 10px; padding: 10px var(--card-padding); }
-.metric-card-link { color: inherit; text-decoration: none; transition: border-color 150ms ease, transform 150ms ease, box-shadow 150ms ease; }.metric-card-link:hover { border-color: color-mix(in srgb, var(--primary) 32%, var(--line)); box-shadow: var(--shadow-md); transform: translateY(-1px); }
-.metric-icon { display: grid; width: 34px; height: 34px; flex: 0 0 auto; place-items: center; border-radius: 12px; color: var(--primary); background: var(--primary-soft); }
-.metric-icon.green { color: var(--green); background: var(--green-soft); }
-.metric-icon.cyan { color: var(--cyan); background: var(--cyan-soft); }
-.metric-icon.orange { color: var(--orange); background: var(--orange-soft); }
-.metric-copy { min-width: 0; flex: 1; }
-.metric-label, .metric-value, .metric-trend { display: flex; }
-.metric-label { color: var(--text-faint); font-size: var(--font-size-base); font-weight: 620; }
-.metric-value { align-items: baseline; margin-top: 2px; color: var(--text); font-size: 20px; font-weight: 740; letter-spacing: -.5px; white-space: nowrap; }
-.metric-value small { margin-left: 2px; color: var(--text-soft); font-size: var(--font-size-sm); font-weight: 600; }
-.metric-trend { align-items: center; gap: 3px; margin-top: 2px; color: var(--green); font-size: var(--font-size-xs); font-weight: 640; }
-.metric-trend.neutral { color: var(--text-faint); }
-.dashboard-lower { display: grid; grid-column: 1 / -1; grid-template-columns: minmax(0, 1.7fr) minmax(260px, .8fr); gap: var(--section-gap); }
-.traffic-card { min-width: 0; }
-.chart-legend { display: flex; align-items: center; gap: 14px; color: var(--text-soft); font-size: var(--font-size-sm); }
-.chart-legend span { display: flex; align-items: center; gap: 5px; }
-.chart-legend i { width: 7px; height: 7px; border-radius: 50%; background: var(--primary); }
-.chart-legend i.cyan { background: var(--cyan); }
-.traffic-chart-wrap { padding: 2px 13px 12px; }
-.traffic-chart { width: 100%; height: 180px; overflow: visible; }
-.chart-grid-line { stroke: var(--line); stroke-width: 1; stroke-dasharray: 3 5; }
-.chart-label { fill: var(--text-faint); font-family: var(--font); font-size: var(--font-size-base); }
-.chart-area { fill: url(#dashboard-traffic-gradient); }
-.chart-line { fill: none; stroke: var(--primary); stroke-linecap: round; stroke-linejoin: round; stroke-width: 2.5; filter: drop-shadow(0 4px 5px rgb(79 111 248 / 18%)); }
-.chart-line-secondary { fill: none; stroke: var(--cyan); stroke-linecap: round; stroke-linejoin: round; stroke-width: 1.8; opacity: .8; }
-.chart-now { fill: var(--surface); stroke: var(--primary); stroke-width: 2.5; }
-.overview-stack { display: grid; gap: var(--section-gap); }
-.active-profile { padding: var(--card-padding); }
-.profile-top { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
-.profile-icon { display: grid; width: 30px; height: 30px; place-items: center; border: 1px solid color-mix(in srgb, var(--primary) 12%, var(--line)); border-radius: 12px; color: var(--primary); background: linear-gradient(145deg, var(--primary-soft), var(--surface)); }
-.profile-name { overflow: hidden; margin: 6px 0 0; color: var(--text); font-size: 15px; font-weight: 710; text-overflow: ellipsis; white-space: nowrap; }
-.profile-description { margin: 3px 0 0; color: var(--text-soft); font-size: var(--font-size-sm); }
-.profile-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 8px; }
-.profile-stats div { padding: 6px; border-radius: 9px; background: var(--surface-soft); text-align: center; }
-.profile-stats strong, .profile-stats span { display: block; }
-.profile-stats strong { color: var(--text); font-size: var(--font-size-base); }
-.profile-stats span { margin-top: 1px; color: var(--text-faint); font-size: var(--font-size-sm); }
-.route-mode-card { padding: var(--card-padding); }
-.mode-title-row { display: flex; align-items: center; justify-content: space-between; }
-.mode-title-row > span { color: var(--text-faint); font-size: var(--font-size-xs); }
-.mode-options { display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px; margin-top: 8px; padding: 4px; border-radius: 10px; background: var(--surface-soft); }
-.mode-option { min-height: 32px; border-radius: 7px; color: var(--text-faint); background: transparent; font-size: var(--font-size-sm); font-weight: 650; transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
-.mode-option:hover { color: var(--text); }
-.mode-option.active { color: var(--primary); background: var(--surface); box-shadow: 0 2px 8px rgb(32 47 79 / 8%); }
 @keyframes pulse { from { opacity: .7; transform: scale(.45); } to { opacity: 0; transform: scale(1.45); } }
+@media (max-width: 980px) {
+  .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
+  .mode-options { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; }
+}
 @media (max-width: 760px) {
   .page-intro { align-items: flex-start; flex-direction: column; }
   .page-intro-copy h2 { font-size: 21px; }
   .page-actions { width: 100%; flex-wrap: wrap; }
   .page-actions .btn { flex: 1; }
-  .dashboard-grid, .dashboard-lower { grid-template-columns: minmax(0, 1fr); }
-  .control-card { min-height: 0; }
-  .hero-content { min-height: 0; padding: var(--card-padding); }
-  .hero-main h2 { font-size: 22px; }
-  .hero-footer { align-items: flex-start; flex-direction: column; }
-  .hero-actions { width: 100%; }
-  .hero-btn { flex: 1; justify-content: center; }
-  .metric-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
-  .metric-card { gap: 8px; padding: 10px; }
-  .metric-icon { width: 28px; height: 28px; border-radius: 8px; }
-  .metric-value { font-size: 18px; }
 }
 @media (max-width: 430px) {
   .card-head { align-items: flex-start; }
-  .chart-legend { gap: 8px; }
-  .hero-meta { gap: 8px 15px; }
+  .hero-header { align-items: flex-start; flex-wrap: wrap; }
+  .hero-actions { width: 100%; }
+  .hero-btn { flex: 1; justify-content: center; }
+  .hero-metric-copy { display: block; }
+  .hero-metric-copy > span, .hero-metric-copy strong { display: block; }
+  .hero-profile-stats { width: 100%; margin-left: 0; }
 }
 @media (max-width: 359px) {
-  .metric-icon { display: none; }
+  .hero-metric-icon { display: none; }
 }
 @media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; transition-duration: .01ms !important; } }
 </style>

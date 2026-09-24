@@ -46,7 +46,7 @@ test("查看、筛选并关闭活动连接", async ({ page }) => {
   });
 
   await login(page);
-  await page.locator('a.metric-card-link[href="/connections"]').click();
+  await page.locator('a.hero-metric-link[href="/connections"]').click();
   await expect(page.getByRole("heading", { name: "活动连接", exact: true })).toBeVisible();
   await expect(page.getByText("api.example.test", { exact: true })).toBeVisible();
   await expect(page.getByText("GeoLocation-!CN", { exact: false })).toBeVisible();
@@ -86,7 +86,7 @@ test("历史按配置时间过期，且只在活动连接页面打开期间记�
   await page.clock.install();
   await page.clock.fastForward(2500);
   expect(requests).toBe(0);
-  await page.locator('a.metric-card-link[href="/connections"]').click();
+  await page.locator('a.hero-metric-link[href="/connections"]').click();
   await expect(page.getByRole("tab", { name: /^全部/ })).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".connection-state")).toHaveText("活动");
   active = [];
