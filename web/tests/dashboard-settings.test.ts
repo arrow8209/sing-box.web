@@ -163,7 +163,7 @@ describe("仪表盘与设置", () => {
     };
     const fetchMock = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
       const path = String(input);
-      const data = path.endsWith("/runtime/proxy-groups")
+      const data = path.endsWith("/runtime/mode") ? { mode: "global", availableModes: ["rule", "global", "direct"] } : path.endsWith("/runtime/proxy-groups")
         ? outbounds.filter((outbound): outbound is { type: string; tag: string; outbounds: string[] } => "outbounds" in outbound).map((outbound) => ({ tag: outbound.tag, type: outbound.type === "urltest" ? "URLTest" : "Selector", selected: outbound.outbounds[0], members: outbound.outbounds.map((tag) => ({ tag, type: "AnyTLS" })) }))
         : path.endsWith("/core") && init?.method === "DELETE"
         ? { ...core, state: "stopped", pid: 0, expectedRunning: false }
@@ -189,21 +189,17 @@ describe("仪表盘与设置", () => {
     expect(wrapper.get(".hero-status .hero-profile-stats").text()).toContain("路由规则 11");
     expect(wrapper.get('a.hero-metric-link[href="/connections"]').text()).toContain("活动连接");
     expect(wrapper.find(".dashboard-grid > .route-mode-card").exists()).toBe(true);
-    expect(wrapper.find(".dashboard-grid > .control-card").exists()).toBe(true);
+    expect(wrapper.find(".dashboard-grid > .control-card").exists()).toBe(false);
+    expect(wrapper.text()).not.toContain("快速控制");
+    expect(wrapper.findAll('.mode-option[aria-pressed="true"]').map((button) => button.text())).toEqual(["全局"]);
     expect(wrapper.findAll(".proxy-group")).toHaveLength(6);
     expect(wrapper.get('[data-proxy-group-tag="🚀 节点选择"]').findAll(".proxy-node-card")).toHaveLength(6);
-    const systemProxy = wrapper.get('[aria-label="切换系统代理"]');
-    const tunMode = wrapper.get('[aria-label="切换 TUN 模式"]');
-    expect(systemProxy.attributes("aria-checked")).toBe("false");
-    expect(tunMode.attributes("aria-checked")).toBe("false");
-    await systemProxy.trigger("click");
-    expect(systemProxy.attributes("aria-checked")).toBe("true");
-    await wrapper.findAll(".mode-option")[2].trigger("click");
-    expect(wrapper.findAll(".mode-option")[2].classes()).toContain("active");
     await wrapper.get("[data-core-toggle]").trigger("click");
     await flushPromises();
     expect(fetchMock).toHaveBeenCalledWith("/api/v1/core", expect.objectContaining({ method: "DELETE" }));
     expect(wrapper.text()).toContain("sing-box 已停止");
+    expect(wrapper.findAll('.mode-option[aria-pressed="true"]')).toHaveLength(0);
+    expect(wrapper.findAll(".mode-option").every((button) => button.attributes("disabled") !== undefined)).toBe(true);
     expect(wrapper.text()).toContain("sing-box 进程已结束");
     wrapper.unmount();
   });

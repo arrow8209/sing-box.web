@@ -2,7 +2,7 @@ import { createServer } from "node:http";
 import type { AddressInfo } from "node:net";
 import { expect, test } from "./fixtures";
 
-test("节点切换经服务端送达核心，刷新保持选择且失败不会假报成功", async ({ page }, testInfo) => {
+test("节点与模式切换经服务端送达核心，刷新保持选择且失败不会假报成功", async ({ page }, testInfo) => {
   test.setTimeout(90000);
   const tag = "🚀 节点/选择 #%";
   const first = "🇭🇰 香港 01";
@@ -10,6 +10,8 @@ test("节点切换经服务端送达核心，刷新保持选择且失败不会�
   let selected = first;
   let failWrite = false;
   let writes = 0;
+  let mode = "rule";
+  let failModeWrite = false;
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   const controller = createServer(async (request, response) => {
@@ -18,6 +20,19 @@ test("节点切换经服务端送达核心，刷新保持选择且失败不会�
       return;
     }
     const path = new URL(request.url!, "http://127.0.0.1").pathname;
+    if (path === "/configs") {
+      if (request.method === "PATCH") {
+        if (failModeWrite) { response.writeHead(400).end(); return; }
+        const chunks: Buffer[] = [];
+        for await (const chunk of request) chunks.push(Buffer.from(chunk));
+        mode = (JSON.parse(Buffer.concat(chunks).toString()) as { mode: string }).mode;
+        response.writeHead(204).end();
+      } else {
+        response.setHeader("Content-Type", "application/json");
+        response.end(JSON.stringify({ mode, "mode-list": ["rule", "global", "direct"] }));
+      }
+      return;
+    }
     if (path !== "/proxies" && decodeURIComponent(path.slice("/proxies/".length)) !== tag) {
       response.writeHead(404).end();
       return;
@@ -76,6 +91,29 @@ test("节点切换经服务端送达核心，刷新保持选择且失败不会�
     expect(applied.ok(), await applied.text()).toBe(true);
     expect((await page.request.post("/api/v1/core", { headers })).ok()).toBe(true);
     await page.goto("/");
+    await expect(page.getByText("快速控制", { exact: true })).toHaveCount(0);
+    const modeControls = page.getByRole("group", { name: "路由模式", exact: true });
+    const globalMode = modeControls.getByRole("button", { name: "全局", exact: true });
+    const directMode = modeControls.getByRole("button", { name: "直连", exact: true });
+    expect((await page.request.put("/api/v1/runtime/mode", { data: { mode: "global" } })).status()).toBe(403);
+    expect(mode).toBe("rule");
+    for (const [name, value] of [["全局", "global"], ["直连", "direct"], ["规则", "rule"]]) {
+      const button = modeControls.getByRole("button", { name, exact: true });
+      await button.click();
+      await expect(button).toHaveAttribute("aria-pressed", "true");
+      expect(mode).toBe(value);
+    }
+    await globalMode.click();
+    await expect(globalMode).toHaveAttribute("aria-pressed", "true");
+    await page.reload();
+    await expect(globalMode).toHaveAttribute("aria-pressed", "true");
+    failModeWrite = true;
+    await directMode.click();
+    await expect(page.locator(".mode-error")).toContainText("核心未确认模式切换");
+    await expect(globalMode).toHaveAttribute("aria-pressed", "true");
+    expect(mode).toBe("global");
+    failModeWrite = false;
+    await page.reload();
     const main = page.locator(".proxy-group").filter({ has: page.locator(".proxy-group-copy strong", { hasText: "节点/选择 #%" }) });
     const firstButton = main.getByRole("button", { name: `选择 ${first}`, exact: true });
     const targetButton = main.getByRole("button", { name: `选择 ${target}`, exact: true });

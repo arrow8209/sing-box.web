@@ -11,6 +11,7 @@ import (
 
 const connectionsPath = "/api/v1/runtime/connections"
 const proxyGroupsPath = "/api/v1/runtime/proxy-groups"
+const modePath = "/api/v1/runtime/mode"
 
 type Handler struct {
 	service *Service
@@ -21,6 +22,10 @@ func NewHandler(service *Service) *Handler { return &Handler{service: service} }
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if h == nil || h.service == nil {
 		apierror.Write(w, http.StatusInternalServerError, apierror.Error{Code: "runtime_unavailable", Message: "运行数据服务不可用"})
+		return
+	}
+	if r.URL.Path == modePath {
+		h.mode(w, r)
 		return
 	}
 	if r.URL.Path == proxyGroupsPath {
@@ -93,6 +98,30 @@ func (h *Handler) proxyGroups(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func (h *Handler) mode(w http.ResponseWriter, r *http.Request) {
+	var snapshot ModeSnapshot
+	var err error
+	switch r.Method {
+	case http.MethodGet:
+		snapshot, err = h.service.Mode(r.Context())
+	case http.MethodPut:
+		var input ModeSelection
+		if err := httpapi.DecodeJSON(w, r, &input, 1024); err != nil {
+			apierror.WriteError(w, err)
+			return
+		}
+		snapshot, err = h.service.SetMode(r.Context(), input)
+	default:
+		httpapi.MethodNotAllowed(w, http.MethodGet, http.MethodPut)
+		return
+	}
+	if err != nil {
+		writeServiceError(w, err)
+		return
+	}
+	httpapi.WriteJSON(w, http.StatusOK, snapshot)
+}
+
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
 	case errors.Is(err, ErrCoreNotRunning):
@@ -113,6 +142,12 @@ func writeServiceError(w http.ResponseWriter, err error) {
 		apierror.Write(w, http.StatusBadRequest, apierror.Error{Code: "proxy_node_not_found", Message: "此节点不在策略组的当前运行配置中"})
 	case errors.Is(err, ErrProxySelectionFailed):
 		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "proxy_selection_failed", Message: "核心未确认节点切换，请刷新后重试"})
+	case errors.Is(err, ErrInvalidMode):
+		apierror.Write(w, http.StatusBadRequest, apierror.Error{Code: "invalid_runtime_mode", Message: "仅支持规则、全局和直连模式"})
+	case errors.Is(err, ErrModeDisabled):
+		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "runtime_mode_unavailable", Message: "当前运行配置未启用此模式，请先配置对应的模式规则"})
+	case errors.Is(err, ErrModeChange):
+		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "runtime_mode_change_failed", Message: "核心未确认模式切换，请刷新后重试"})
 	default:
 		apierror.Write(w, http.StatusBadGateway, apierror.Error{Code: "clash_api_unavailable", Message: "无法访问 sing-box 运行数据"})
 	}

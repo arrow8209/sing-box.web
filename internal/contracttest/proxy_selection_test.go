@@ -27,7 +27,7 @@ func (runningContractCore) Status(context.Context) core.Status {
 	return core.Status{State: core.ProcessRunning}
 }
 
-func TestProxySelectionChangesActualTrafficAndRefreshReadsCore(t *testing.T) {
+func TestProxyAndModeChangesRouteActualTrafficAndRefreshReadsCore(t *testing.T) {
 	binary := os.Getenv("SINGBOX_CONTRACT_BINARY")
 	selected := readSelection(t)
 	if binary == "" || sha256File(t, binary) != selected.BinarySHA256 {
@@ -70,7 +70,7 @@ func TestProxySelectionChangesActualTrafficAndRefreshReadsCore(t *testing.T) {
 		}
 	}
 	writeConfig("99-experimental.json", map[string]any{"experimental": map[string]any{
-		"clash_api":  map[string]any{"external_controller": controllerAddress, "secret": "contract-controller-only"},
+		"clash_api":  map[string]any{"external_controller": controllerAddress, "secret": "contract-controller-only", "default_mode": "rule"},
 		"cache_file": map[string]any{"enabled": true, "path": filepath.Join(workDir, "cache.db")},
 	}})
 	writeConfig("01-routing.json", map[string]any{
@@ -80,8 +80,13 @@ func TestProxySelectionChangesActualTrafficAndRefreshReadsCore(t *testing.T) {
 			map[string]any{"type": "selector", "tag": groupTag, "outbounds": []string{"出口一", "出口二"}, "default": "出口一"},
 			map[string]any{"type": "direct", "tag": "出口一", "inet4_bind_address": "127.0.0.1"},
 			map[string]any{"type": "direct", "tag": "出口二", "inet4_bind_address": "127.0.0.2"},
+			map[string]any{"type": "direct", "tag": "直连出口", "inet4_bind_address": "127.0.0.3"},
+			map[string]any{"type": "direct", "tag": "全局出口", "inet4_bind_address": "127.0.0.4"},
 		},
-		"route": map[string]any{"final": groupTag},
+		"route": map[string]any{"final": groupTag, "rules": []any{
+			map[string]any{"clash_mode": "direct", "action": "route", "outbound": "直连出口"},
+			map[string]any{"clash_mode": "global", "action": "route", "outbound": "全局出口"},
+		}},
 	})
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
@@ -144,5 +149,20 @@ func TestProxySelectionChangesActualTrafficAndRefreshReadsCore(t *testing.T) {
 	if err != nil || len(groups) != 1 || groups[0].Selected != "出口二" {
 		t.Fatalf("refreshed groups=%+v error=%v", groups, err)
 	}
-	t.Logf("sing-box %s: selected outbound changed the actual traffic source; fresh runtime service retained the selection", selected.Version)
+	for _, test := range []struct{ mode, source string }{
+		{mode: "direct", source: "127.0.0.3"},
+		{mode: "global", source: "127.0.0.4"},
+		{mode: "rule", source: "127.0.0.2"},
+	} {
+		result, err := service.SetMode(ctx, runtimeapi.ModeSelection{Mode: test.mode})
+		if err != nil || result.Mode != test.mode {
+			t.Fatalf("mode=%+v want=%s error=%v", result, test.mode, err)
+		}
+		checkSource(test.source)
+		refreshed, err := runtimeapi.NewService(layout, runningContractCore{}).Mode(ctx)
+		if err != nil || refreshed.Mode != test.mode {
+			t.Fatalf("refreshed mode=%+v error=%v", refreshed, err)
+		}
+	}
+	t.Logf("sing-box %s: node selection and rule/global/direct modes changed actual traffic sources; fresh runtime services read the confirmed choices", selected.Version)
 }

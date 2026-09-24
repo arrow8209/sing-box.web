@@ -1,5 +1,17 @@
 import { request } from "@/api/client";
 
+export type RouteMode = "rule" | "global" | "direct";
+export interface RuntimeMode { mode: string; availableModes: RouteMode[]; }
+export interface RuntimeModeApi {
+  get(): Promise<RuntimeMode>;
+  set(mode: RouteMode): Promise<RuntimeMode>;
+}
+
+export const runtimeModeApi: RuntimeModeApi = {
+  async get() { return (await request<RuntimeMode>("/runtime/mode")).data; },
+  async set(mode) { return (await request<RuntimeMode>("/runtime/mode", { method: "PUT", body: { mode } })).data; }
+};
+
 export interface RuntimeProxyGroup {
   tag: string;
   type: "Selector" | "URLTest";

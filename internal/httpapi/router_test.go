@@ -277,7 +277,7 @@ func TestRouterAuthenticatesRuntimeAndRequiresCSRFWrites(t *testing.T) {
 		{method: http.MethodPut, session: "ok", want: http.StatusForbidden},
 		{method: http.MethodPut, session: "ok", csrf: "ok", want: http.StatusNoContent},
 	} {
-		for _, path := range []string{"/api/v1/runtime/connections/connection-1", "/api/v1/runtime/proxy-groups"} {
+		for _, path := range []string{"/api/v1/runtime/connections/connection-1", "/api/v1/runtime/proxy-groups", "/api/v1/runtime/mode"} {
 			request := httptest.NewRequest(test.method, path, nil)
 			request.Header.Set("X-Test-Session", test.session)
 			request.Header.Set("X-Test-CSRF", test.csrf)

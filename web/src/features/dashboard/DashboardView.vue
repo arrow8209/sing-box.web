@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
+import { computed, onBeforeUnmount, onMounted, ref, watch } from "vue";
 import AppToast from "@/components/AppToast.vue";
 import { useCoreStore } from "@/features/core/store";
 import { profileApi } from "@/features/profiles/api";
@@ -10,9 +10,9 @@ import type { CandidateView } from "@/features/application/types";
 import type { ProfileSummary } from "@/features/profiles/types";
 import AppIcon from "@/layout/AppIcon.vue";
 import DashboardProxySelector from "./DashboardProxySelector.vue";
+import DashboardRouteMode from "./DashboardRouteMode.vue";
 import { outboundOrderFromDraft } from "./proxy-groups";
 
-type RouteMode = "rule" | "global" | "direct";
 interface DashboardMetric { icon: string; tone: string; label: string; value: string; unit: string; href?: string }
 
 const core = useCoreStore();
@@ -29,9 +29,8 @@ const coreAction = ref<"start" | "stop" | "restart" | null>(null);
 const notice = ref("");
 const noticeTone = ref<"info" | "error">("info");
 const proxySelector = ref<InstanceType<typeof DashboardProxySelector> | null>(null);
+const routeModeControl = ref<InstanceType<typeof DashboardRouteMode> | null>(null);
 const now = ref(Date.now());
-const routeMode = ref<RouteMode>("rule");
-const quickControls = reactive({ systemProxy: false, tunMode: false, allowLan: false });
 let clockTimer: ReturnType<typeof setInterval> | undefined;
 
 const metrics: DashboardMetric[] = [
@@ -135,7 +134,7 @@ async function refresh(): Promise<void> {
   try {
     await Promise.all([core.refresh(), refreshProfiles()]);
     await refreshStoppedCandidate();
-    await proxySelector.value?.refresh();
+    await Promise.all([proxySelector.value?.refresh(), routeModeControl.value?.refresh()]);
     showNotice("状态已刷新。");
   } finally {
     refreshing.value = false;
@@ -172,17 +171,6 @@ async function toggleCore(): Promise<void> {
   } finally {
     coreAction.value = null;
   }
-}
-
-function toggleQuickControl(key: keyof typeof quickControls, label: string): void {
-  quickControls[key] = !quickControls[key];
-  showNotice(`${label}已${quickControls[key] ? "开启" : "关闭"}。`);
-}
-
-function setRouteMode(mode: RouteMode): void {
-  routeMode.value = mode;
-  const labels: Record<RouteMode, string> = { rule: "规则", global: "全局", direct: "直连" };
-  showNotice(`当前使用${labels[mode]}模式。`);
 }
 
 onMounted(() => {
@@ -249,34 +237,7 @@ onBeforeUnmount(() => {
         </div>
       </article>
 
-      <article class="card route-mode-card">
-        <div class="mode-title-row"><h2 class="card-title">路由模式</h2><span>即时生效</span></div>
-        <div class="mode-options"><button v-for="item in ([['rule', '规则'], ['global', '全局'], ['direct', '直连']] as const)" :key="item[0]" class="mode-option" :class="{ active: routeMode === item[0] }" type="button" :aria-pressed="routeMode === item[0]" @click="setRouteMode(item[0])">{{ item[1] }}</button></div>
-      </article>
-
-      <article class="card control-card">
-        <header class="card-head">
-          <div><h2 class="card-title">快速控制</h2><p class="card-subtitle">常用网络功能开关</p></div>
-          <span class="badge" :class="running ? 'badge-success' : 'badge-orange'">{{ running ? "已连接" : "未连接" }}</span>
-        </header>
-        <div class="control-list">
-          <div class="control-row">
-            <span class="control-icon"><AppIcon name="globe" :size="15" /></span>
-            <span class="control-copy"><strong>系统代理</strong><small>127.0.0.1:7890</small></span>
-            <button class="switch" :class="{ on: quickControls.systemProxy }" type="button" role="switch" aria-label="切换系统代理" :aria-checked="quickControls.systemProxy" @click="toggleQuickControl('systemProxy', '系统代理')" />
-          </div>
-          <div class="control-row">
-            <span class="control-icon cyan"><AppIcon name="shield" :size="15" /></span>
-            <span class="control-copy"><strong>TUN 模式</strong><small>自动路由 · Strict Route</small></span>
-            <button class="switch" :class="{ on: quickControls.tunMode }" type="button" role="switch" aria-label="切换 TUN 模式" :aria-checked="quickControls.tunMode" @click="toggleQuickControl('tunMode', 'TUN 模式')" />
-          </div>
-          <div class="control-row">
-            <span class="control-icon orange"><AppIcon name="users" :size="15" /></span>
-            <span class="control-copy"><strong>局域网访问</strong><small>监听 0.0.0.0</small></span>
-            <button class="switch" :class="{ on: quickControls.allowLan }" type="button" role="switch" aria-label="切换局域网访问" :aria-checked="quickControls.allowLan" @click="toggleQuickControl('allowLan', '局域网访问')" />
-          </div>
-        </div>
-      </article>
+      <DashboardRouteMode ref="routeModeControl" :running="core.status.value?.state === 'running' && !core.error.value" :busy="Boolean(coreTransitioning)" :runtime-key="proxyRuntimeKey" @notice="showNotice" />
 
       <p v-if="!running && serverResolution" class="candidate-source" role="status">{{ candidateError || (stoppedCandidate ? '以下为选定档案的待运行候选；核心尚未运行' : '正在读取选定档案的待运行候选') }}</p>
       <DashboardProxySelector ref="proxySelector" class="dashboard-proxy" :outbounds="dashboardOutbounds" :outbound-order="dashboardOutboundOrder" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
@@ -297,16 +258,9 @@ onBeforeUnmount(() => {
 .btn-primary { color: #fff; border-color: var(--primary); background: linear-gradient(135deg, var(--primary), var(--primary-strong)); box-shadow: 0 10px 22px -10px color-mix(in srgb, var(--primary) 65%, transparent); }
 .btn-primary:hover { color: #fff; border-color: var(--primary-strong); background: linear-gradient(135deg, color-mix(in srgb, var(--primary) 88%, #fff), var(--primary-strong)); box-shadow: 0 13px 26px -11px color-mix(in srgb, var(--primary) 76%, transparent); }
 .page-error { display: flex; align-items: center; gap: 8px; margin: 0 0 12px; padding: 10px 12px; border-radius: 9px; color: var(--red); background: var(--red-soft); font-size: var(--font-size-sm); }
-.dashboard-grid { display: grid; grid-template-columns: minmax(0, 1.6fr) minmax(160px, .6fr) minmax(240px, 1fr); gap: var(--section-gap); }
+.dashboard-grid { display: grid; grid-template-columns: minmax(0, 2fr) minmax(180px, 1fr); gap: var(--section-gap); }
 .dashboard-proxy { grid-column: 1 / -1; min-width: 0; }
 .card { border: 1px solid var(--line); border-radius: var(--radius); background: var(--surface); box-shadow: var(--shadow-sm); }
-.card-head { display: flex; min-height: 46px; align-items: center; justify-content: space-between; gap: var(--section-gap); padding: 8px var(--card-padding); border-bottom: 1px solid var(--line); }
-.card-title { margin: 0; color: var(--text); font-size: var(--font-size-heading); font-weight: 710; letter-spacing: -.15px; }
-.card-subtitle { margin: 2px 0 0; color: var(--text-faint); font-size: var(--font-size-sm); }
-.badge { display: inline-flex; min-height: 22px; align-items: center; gap: 5px; padding: 3px 8px; border-radius: 999px; color: var(--text-soft); background: var(--surface-soft); font-size: var(--font-size-sm); font-weight: 660; line-height: 1; white-space: nowrap; }
-.badge::before { width: 5px; height: 5px; border-radius: 50%; content: ""; background: currentColor; }
-.badge-success { color: var(--green); background: var(--green-soft); }
-.badge-orange { color: var(--orange); background: var(--orange-soft); }
 .hero-status { position: relative; min-width: 0; overflow: hidden; border: 0; color: #fff; background: linear-gradient(124deg, #2d45ab 0%, #4a6cf2 54%, #6480ff 100%); box-shadow: 0 22px 48px -22px rgb(57 81 184 / 60%); }
 .hero-status::before { position: absolute; top: -110px; right: -50px; width: 330px; height: 330px; border: 1px solid rgb(255 255 255 / 11%); border-radius: 50%; content: ""; box-shadow: 0 0 0 42px rgb(255 255 255 / 4%), 0 0 0 92px rgb(255 255 255 / 3%); }
 .hero-status::after { position: absolute; right: 74px; bottom: -94px; width: 190px; height: 190px; border-radius: 50%; content: ""; background: radial-gradient(circle at 32% 28%, rgb(255 255 255 / 26%), rgb(255 255 255 / 2%) 62%); }
@@ -346,33 +300,9 @@ onBeforeUnmount(() => {
 .hero-meta-item { display: flex; min-width: 0; align-items: baseline; gap: 4px; }
 .hero-meta-item span { color: rgb(255 255 255 / 65%); font-size: var(--font-size-xs); white-space: nowrap; }
 .hero-meta-item strong { overflow: hidden; color: #fff; font-size: var(--font-size-xs); font-weight: 650; text-overflow: ellipsis; white-space: nowrap; }
-.route-mode-card { display: flex; min-width: 0; flex-direction: column; padding: 10px; }
-.mode-title-row { display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 3px; }
-.mode-title-row > span { color: var(--text-faint); font-size: var(--font-size-xs); white-space: nowrap; }
-.mode-options { display: grid; flex: 1; grid-template-rows: repeat(3, minmax(35px, 1fr)); gap: 5px; margin-top: 9px; padding: 4px; border-radius: 10px; background: var(--surface-soft); }
-.mode-option { min-height: 35px; border-radius: 7px; color: var(--text-faint); background: transparent; font-size: var(--font-size-sm); font-weight: 650; transition: color 150ms ease, background 150ms ease, box-shadow 150ms ease; }
-.mode-option:hover { color: var(--text); }
-.mode-option.active { color: var(--primary); background: var(--surface); box-shadow: 0 2px 8px rgb(32 47 79 / 8%); }
-.control-card { display: flex; min-width: 0; flex-direction: column; }
-.control-card .card-head { min-height: auto; padding: 8px var(--card-padding) 4px; border-bottom: 0; }
-.control-list { display: grid; gap: 2px; padding: 0 6px 6px; }
-.control-row { display: flex; min-height: 36px; align-items: center; gap: 8px; padding: 3px 6px; border-radius: 10px; }
-.control-row:hover { background: var(--surface-soft); }
-.control-icon { display: grid; width: 28px; height: 28px; flex: 0 0 auto; place-items: center; border-radius: 8px; color: var(--primary); background: var(--primary-soft); }
-.control-icon.cyan { color: var(--cyan); background: var(--cyan-soft); }
-.control-icon.orange { color: var(--orange); background: var(--orange-soft); }
-.control-copy { min-width: 0; flex: 1; }
-.control-copy strong, .control-copy small { display: block; overflow: hidden; line-height: 1.1; text-overflow: ellipsis; white-space: nowrap; }
-.control-copy strong { color: var(--text); font-size: var(--font-size-base); font-weight: 670; }
-.control-copy small { margin-top: 1px; color: var(--text-faint); font-size: var(--font-size-xs); }
-.switch { position: relative; display: inline-flex; width: 36px; height: 21px; min-height: 21px; flex: 0 0 auto; align-items: center; padding: 2px; border-radius: 999px; background: var(--line-strong); transition: background 180ms ease; }
-.switch::after { width: 17px; height: 17px; border-radius: 50%; content: ""; background: #fff; box-shadow: 0 1px 4px rgb(24 32 51 / 20%); transition: transform 180ms ease; }
-.switch.on { background: var(--primary); }
-.switch.on::after { transform: translateX(15px); }
 @keyframes pulse { from { opacity: .7; transform: scale(.45); } to { opacity: 0; transform: scale(1.45); } }
 @media (max-width: 980px) {
   .dashboard-grid { grid-template-columns: minmax(0, 1fr); }
-  .mode-options { grid-template-columns: repeat(3, minmax(0, 1fr)); grid-template-rows: none; }
 }
 @media (max-width: 760px) {
   .page-intro { align-items: flex-start; flex-direction: column; }
@@ -381,7 +311,6 @@ onBeforeUnmount(() => {
   .page-actions .btn { flex: 1; }
 }
 @media (max-width: 430px) {
-  .card-head { align-items: flex-start; }
   .hero-header { align-items: flex-start; flex-wrap: wrap; }
   .hero-actions { width: 100%; }
   .hero-btn { flex: 1; justify-content: center; }
