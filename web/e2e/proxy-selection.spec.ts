@@ -15,6 +15,8 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
   let timeoutDelay = false;
   const delayCalls: string[] = [];
   const history = new Map<string, Array<{ time: string; delay: number }>>();
+  let delayGate: Promise<void> | undefined;
+  let releaseDelay: (() => void) | undefined;
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   const controller = createServer(async (request, response) => {
@@ -51,6 +53,7 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
         expect(requestURL.searchParams.get("url")).toBe("https://www.gstatic.com/generate_204");
         expect(requestURL.searchParams.get("timeout")).toBe("5000");
         delayCalls.push(node);
+        await delayGate;
         if (timeoutDelay && node === target) {
           history.delete(node);
           response.writeHead(504).end(JSON.stringify({ message: "Timeout" }));
@@ -118,6 +121,14 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
     const revision = (await saved.json() as { revision: number }).revision;
     const applied = await page.request.post(`/api/v1/profiles/${profileId}/apply`, { headers, data: { revision } });
     expect(applied.ok(), await applied.text()).toBe(true);
+    await page.goto("/");
+    const stoppedDelay = page.getByRole("button", { name: `测试 ${target} 延迟`, exact: true }).first();
+    await expect(page.locator(".proxy-test-status")).toHaveText("启动核心后可测速");
+    await expect(stoppedDelay).toBeDisabled();
+    await expect(stoppedDelay).toHaveAttribute("aria-busy", "false");
+    await expect(stoppedDelay).toHaveAttribute("title", "启动核心后可测速");
+    await stoppedDelay.hover();
+    await expect(stoppedDelay).toHaveCSS("cursor", "not-allowed");
     expect((await page.request.post("/api/v1/core", { headers })).ok()).toBe(true);
     await page.goto("/");
     await expect(page.getByText("快速控制", { exact: true })).toHaveCount(0);
@@ -168,11 +179,28 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
     expect((await page.request.post("/api/v1/runtime/proxies/delay", { data: { tag: target, runtimeKey: runtimeGroups[0]!.runtimeKey } })).status()).toBe(403);
     expect(delayCalls).toHaveLength(0);
     const targetDelay = main.getByRole("button", { name: `测试 ${target} 延迟`, exact: true });
+    await expect(targetDelay).toBeEnabled();
+    await targetDelay.hover();
+    await expect(targetDelay).toHaveCSS("cursor", "pointer");
+    delayGate = new Promise<void>((resolve) => { releaseDelay = resolve; });
     await targetDelay.click();
+    await expect(targetDelay).toHaveText("测速中");
+    await expect(targetDelay).toBeDisabled();
+    await expect(targetDelay).toHaveCSS("cursor", "wait");
+    await expect(main.getByRole("button", { name: `测试 ${first} 延迟`, exact: true })).toHaveCSS("cursor", "not-allowed");
+    releaseDelay!();
+    delayGate = undefined;
     await expect(targetDelay).toHaveText("217 ms");
+    await expect(targetDelay).toBeEnabled();
+    await expect(targetDelay).toHaveCSS("cursor", "pointer");
     await expect(page.locator('[data-proxy-group-tag="自动选择"]').getByRole("button", { name: `测试 ${target} 延迟`, exact: true })).toHaveText("217 ms");
     expect(delayCalls).toEqual([target]);
     expect(writes).toBe(1);
+    await targetDelay.focus();
+    await page.keyboard.press("Space");
+    await expect.poll(() => delayCalls.length).toBe(2);
+    await expect(targetDelay).toHaveText("217 ms");
+    await expect(targetButton).toHaveAttribute("aria-pressed", "true");
     await page.reload();
     await expect(targetDelay).toHaveText("217 ms");
     timeoutDelay = true;
@@ -219,6 +247,7 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
     }
     expect(browserErrors).toEqual([]);
   } finally {
+    releaseDelay?.();
     if (profileId) {
       await page.request.delete("/api/v1/core", { headers });
       await page.request.delete(`/api/v1/profiles/${profileId}`, { headers, data: { confirmName: "E2E 节点切换", stopCurrent: true } });
