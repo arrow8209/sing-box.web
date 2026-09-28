@@ -187,6 +187,11 @@ func TestUnexpectedCleanExitClearsRestartIntent(t *testing.T) {
 	}
 	factory.LastProcess().Exit(ProcessResult{})
 	await(t, func() bool { return manager.Status(context.Background()).State == ProcessExited })
+	// finishExit publishes the process state before persisting restart intent.
+	await(t, func() bool {
+		state, err := store.Load()
+		return err == nil && !state.ExpectedRunning && state.LastStartError != ""
+	})
 	state, err := store.Load()
 	if err != nil || state.ExpectedRunning || state.LastStartError == "" {
 		t.Fatalf("state=%+v err=%v", state, err)
