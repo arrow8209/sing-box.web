@@ -39,11 +39,23 @@ The SPA has an npm install step and must be built through `scripts/build.sh` bef
 - 每次发布前必须更新并递增版本号，不得复用上一发布版本号。任何代码修改后重新发布（包括小修复）都必须增加版本号，不得用修改后的代码覆盖已发布的同版本产物。用户未指定目标版本时，默认递增补丁版本号。
 - 本项目同步更新 `web/package.json` 和 `web/package-lock.json` 中的版本，并保持产物文件名一致。可用 `npm --prefix web version patch --no-git-tag-version` 更新版本后再构建；正式发布使用 `VERSION` 时也必须与版本文件保持一致。
 
+## 任务范围与发布完成条件
+
+- 开始任务时用一句话说明本次交付物，执行中不自行扩大范围。非阻塞的额外发现只简要记录，不顺手开发、重构或修复。
+- 纯发布默认流程固定为：递增版本及锁文件、同步现有文档中的版本引用、运行正式构建、做最小产物检查、提交并交付 `dist/` 路径。优先使用现有命令，不为一次发布另写验证脚本或搭建测试体系。
+- 复用当前代码已经通过且仍然有效的验证结果。仅更新版本或文档时，不重跑源码测试；当前改动确实缺少验证时，只补与该改动直接相关的检查，不自动扩大为全量 Go、全量前端或全站浏览器回归。
+- 每类检查默认一轮。只有实际失败、后续代码修改或新的具体风险，才重跑直接受影响的检查；不得以“更保险”为由重复全量验证。
+- 发布请求不自动包含维护历史测试、更新视觉基线、新增功能或清理旧问题。仅处理构建失败、产物无法启动、当前变更引入的关键功能回归等交付阻塞；其他事项留待独立任务。
+- 版本一致、构建成功、产物检查通过后，即提交交付并停止。产物检查以文件、版本和校验值为主，按需选择帮助命令或一次隔离启动，不默认叠加完整验收流程。未执行的验证如实说明。
+- 排查与验证使用专用测试环境及合成数据。未经用户明确授权，不访问正式端口 `50022` / `50023` / `50024` 或 `Release/` 运行数据，包括只读检查；不为腾出测试端口而停止现有服务。
+
 ## Coding Style & Naming Conventions
 
 Use two-space indentation in HTML, CSS, TypeScript, JavaScript, and JSON. Follow the existing JavaScript/TypeScript style: semicolons, double-quoted strings, `const` by default, and `camelCase` for functions and variables. Go code follows standard `gofmt`. Use `kebab-case` CSS class names and define reusable colors, spacing, and dimensions as custom properties in `:root`. Preserve Chinese UI copy and responsive behavior.
 
 ## Testing Guidelines
+
+以下清单适用于开发阶段的相关代码变更；纯发布任务遵循上面的范围与完成条件，不把清单当作每次发布必须完整重跑的流程。
 
 Run `go test -race ./...`, `go vet ./...`, `npm --prefix web run typecheck`, and `npm --prefix web run test:unit` for relevant changes. UI work also requires `npm --prefix web run test:e2e` and manual desktop/tablet/mobile, light/dark, navigation, dialog, keyboard-focus checks. Contract tests are run with `sh scripts/contract-test.sh` only when its checked-in official binary selection is current and available.
 
