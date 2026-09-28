@@ -57,6 +57,19 @@ const visibleTestTags = computed(() => delay.targets(groups.value.flatMap((group
 const hasTestedNodes = computed(() => visibleTestTags.value.some((tag) => delay.result(tag).status !== "untested"));
 const onlineNodes = computed(() => visibleTestTags.value.filter((tag) => delay.result(tag).status === "ok").length);
 const nodeSummary = computed(() => hasTestedNodes.value ? `最近测速成功 ${onlineNodes.value} 个` : `${runtimeGroups.value ? visibleTestTags.value.length : configuredNodes.value} 个节点已配置`);
+const testUnavailableReason = computed(() => {
+  if (props.busy) return "核心状态变更中，请稍后测速";
+  if (!props.running) return "启动核心后可测速";
+  if (loadingRuntime.value) return "正在读取核心当前节点，请稍后测速";
+  if (runtimeError.value) return runtimeError.value;
+  if (runtimeGroups.value === null) return "尚未读取核心当前节点，请刷新后重试";
+  if (runtimeGroups.value.length && !canTest.value) return "当前服务未提供完整的测速信息，请更新服务程序并刷新页面";
+  return "";
+});
+const testActionHint = computed(() => testUnavailableReason.value || (testing.value ? "请等待本次测速完成" : ""));
+const testStatus = computed(() => testUnavailableReason.value || (testing.value
+  ? `测速进度 ${testsCompleted.value} / ${testsTotal.value}`
+  : "测试到 www.gstatic.com 的延迟 · 单节点最长 5 秒"));
 
 function selectedLabel(group: DashboardProxyGroup): string {
   const selected = group.members.find((member) => member.id === group.selected);
@@ -88,7 +101,8 @@ function latencyLabel(member: DashboardProxyMember): string {
 
 function latencyTitle(member: DashboardProxyMember): string {
   const value = delayState(member);
-  const prefix = member.groupId ? "当前出口的延迟" : "点击测试到 www.gstatic.com 的延迟";
+  const prefix = member.groupId ? "当前出口的延迟" : testActionHint.value
+    || (value.status === "unavailable" ? "此出站不支持延迟测速" : "点击测试到 www.gstatic.com 的延迟");
   return value.testedAt ? `${prefix} · 最近测试：${new Date(value.testedAt).toLocaleString()}` : prefix;
 }
 
@@ -186,11 +200,11 @@ defineExpose({ refresh: refreshRuntime });
       <div><h3 class="card-title">节点选择</h3><p class="card-subtitle">{{ running ? "选择策略组当前使用的出站节点" : "启动核心后可切换节点" }}</p></div>
       <div class="proxy-selector-actions">
         <span class="proxy-online-summary"><i />{{ nodeSummary }}</span>
-        <button class="btn btn-sm" type="button" :disabled="testing || !canTest || !visibleTestTags.length" @click="delay.start(visibleTestTags, '全部节点')"><AppIcon name="gauge" :size="14" />{{ testing ? "测速中" : "全部测速" }}</button>
+        <button class="btn btn-sm proxy-test-button" type="button" :disabled="testing || !canTest || !visibleTestTags.length" :aria-busy="testing" :title="testActionHint || '测试全部节点延迟'" @click="delay.start(visibleTestTags, '全部节点')"><AppIcon name="gauge" :size="14" />{{ testing ? "测速中" : "全部测速" }}</button>
       </div>
     </header>
 
-    <p class="proxy-test-status" role="status">{{ testing ? `测速进度 ${testsCompleted} / ${testsTotal}` : '测试到 www.gstatic.com 的延迟 · 单节点最长 5 秒' }}</p>
+    <p class="proxy-test-status" role="status">{{ testStatus }}</p>
     <p v-if="runtimeError" class="proxy-runtime-error" role="alert">{{ runtimeError }}<button type="button" :disabled="loadingRuntime" @click="refreshRuntime">重试</button></p>
 
     <div class="proxy-group-list">
@@ -201,7 +215,7 @@ defineExpose({ refresh: refreshRuntime });
             <span class="proxy-group-copy"><strong>{{ group.name }}</strong><small><b>{{ group.type }}</b><i />{{ selectedLabel(group) }}</small></span>
           </button>
           <div class="proxy-group-actions">
-            <button class="proxy-icon-button" type="button" :aria-label="`测试 ${group.name} 延迟`" :title="`测试 ${group.name} 延迟`" :disabled="testing || !canTest || !delay.targets([group.tag]).length" @click="delay.start([group.tag], group.name)"><AppIcon name="gauge" :size="14" /></button>
+            <button class="proxy-icon-button proxy-test-button" type="button" :aria-label="`测试 ${group.name} 延迟`" :title="testActionHint || `测试 ${group.name} 延迟`" :disabled="testing || !canTest || !delay.targets([group.tag]).length" :aria-busy="testing && delay.targets([group.tag]).some((tag) => delay.state(tag).status === 'testing')" @click="delay.start([group.tag], group.name)"><AppIcon name="gauge" :size="14" /></button>
             <button class="proxy-icon-button proxy-expand-button" type="button" :aria-label="group.expanded ? `收起 ${group.name}` : `展开 ${group.name}`" :aria-expanded="group.expanded" @click="toggleGroup(group)"><AppIcon name="chevron" :size="14" /></button>
           </div>
         </div>
@@ -213,7 +227,7 @@ defineExpose({ refresh: refreshRuntime });
               <span class="proxy-node-check" aria-hidden="true"><AppIcon v-if="member.id === group.selected" name="check" :size="12" /></span>
             </button>
             <div class="proxy-node-meta">
-              <button v-if="member.latency !== null && !member.groupId" class="proxy-latency" :class="latencyTone(member)" type="button" :disabled="testing || !canTest || delayState(member).status === 'unavailable'" :aria-label="`测试 ${member.name} 延迟`" :aria-busy="delayState(member).status === 'testing'" :title="latencyTitle(member)" @click="delay.start([member.tag], member.name)">
+              <button v-if="member.latency !== null && !member.groupId" class="proxy-latency proxy-test-button" :class="latencyTone(member)" type="button" :disabled="testing || !canTest || delayState(member).status === 'unavailable'" :aria-label="`测试 ${member.name} 延迟`" :aria-busy="delayState(member).status === 'testing'" :title="latencyTitle(member)" @click="delay.start([member.tag], member.name)">
                 <AppIcon v-if="delayState(member).status === 'testing'" name="rotate" :size="10" />{{ latencyLabel(member) }}
               </button>
               <span v-else class="proxy-latency" :class="latencyTone(member)" :title="latencyTitle(member)">{{ latencyLabel(member) }}</span>
@@ -242,6 +256,8 @@ defineExpose({ refresh: refreshRuntime });
 .proxy-selector-card { grid-column: 1 / -1; overflow: hidden; }
 .proxy-selector-head { min-height: 48px; }
 .proxy-test-status { margin: 0; padding: 6px var(--card-padding); color: var(--text-faint); font-size: var(--font-size-xs); }
+.proxy-test-button:disabled { cursor: not-allowed; }
+.proxy-test-button[aria-busy="true"]:disabled { cursor: wait; }
 .proxy-selector-actions, .proxy-online-summary { display: flex; align-items: center; }
 .proxy-selector-actions { gap: 12px; }
 .proxy-online-summary { gap: 6px; color: var(--text-soft); font-size: var(--font-size-xs); font-weight: 640; }

@@ -27,6 +27,50 @@ function deferred<T>() {
 }
 
 describe("真实节点延迟", () => {
+  it("正常节点可以连续点击测速，只有请求执行期间显示忙碌", async () => {
+    const { api } = fixture(2);
+    const pending = deferred<ProxyDelayResult>();
+    api.testDelay.mockImplementationOnce(() => pending.promise);
+    const wrapper = mount(DashboardProxySelector, { props: { api } });
+    await flushPromises();
+    const target = wrapper.get('[data-proxy-member-tag="节点 1"] .proxy-latency');
+    const other = wrapper.get('[data-proxy-member-tag="节点 2"] .proxy-latency');
+    expect(target.attributes("disabled")).toBeUndefined();
+    await target.trigger("click");
+    expect(target.attributes("aria-busy")).toBe("true");
+    expect(other.attributes("aria-busy")).toBe("false");
+    expect(other.attributes("title")).toContain("等待本次测速完成");
+    pending.resolve({ tag: "节点 1", runtimeKey: "run-1", status: "ok", delay: 218, testedAt: "2026-09-28T01:00:00Z" });
+    await flushPromises();
+    expect(target.attributes("disabled")).toBeUndefined();
+    expect(target.attributes("aria-busy")).toBe("false");
+    await target.trigger("click");
+    await flushPromises();
+    expect(api.testDelay).toHaveBeenCalledTimes(2);
+    expect(target.text()).toBe("182 ms");
+  });
+
+  it("运行信息缺失时明确解释测速不可用，恢复后允许点击", async () => {
+    const { api, groups } = fixture(1);
+    Reflect.deleteProperty(groups[0]!, "runtimeKey");
+    const wrapper = mount(DashboardProxySelector, { props: { api } });
+    await flushPromises();
+    const target = wrapper.get("button.proxy-latency");
+    expect(target.attributes("disabled")).toBeDefined();
+    expect(target.attributes("aria-busy")).toBe("false");
+    expect(target.attributes("title")).toContain("服务程序");
+    expect(wrapper.get(".proxy-test-status").text()).toContain("服务程序");
+    await target.trigger("click");
+    expect(api.testDelay).not.toHaveBeenCalled();
+    groups[0]!.runtimeKey = "run-1";
+    await wrapper.vm.refresh();
+    await flushPromises();
+    expect(target.attributes("disabled")).toBeUndefined();
+    await target.trigger("click");
+    await flushPromises();
+    expect(target.text()).toBe("182 ms");
+  });
+
   it("最多同时测试五个节点，逐个显示结果和排队进度", async () => {
     const { api, tags } = fixture(8);
     const requests = tags.map(() => deferred<ProxyDelayResult>());
@@ -102,11 +146,13 @@ describe("真实节点延迟", () => {
       { type: "selector", tag: "主组", outbounds: ["节点 1"] }, { type: "trojan", tag: "节点 1", latency: 35 }
     ] } });
     expect(wrapper.get(".proxy-latency").text()).toBe("未测速");
+    expect(wrapper.get(".proxy-latency").attributes("title")).toContain("启动核心后可测速");
     expect(wrapper.get(".proxy-selector-actions button").attributes("disabled")).toBeDefined();
     await wrapper.get(".proxy-latency").trigger("click");
     expect(api.testDelay).not.toHaveBeenCalled();
     await wrapper.setProps({ running: true, busy: true });
     expect(api.list).not.toHaveBeenCalled();
+    expect(wrapper.get(".proxy-latency").attributes("title")).toContain("核心状态变更中");
   });
 
   it("控制接口故障停止排队，不假报节点超时，也不发出成功提示", async () => {
