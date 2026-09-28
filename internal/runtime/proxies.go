@@ -12,6 +12,7 @@ import (
 	"slices"
 	"sort"
 	"strings"
+	"time"
 	"unicode"
 	"unicode/utf8"
 )
@@ -25,15 +26,17 @@ var (
 )
 
 type ProxyMember struct {
-	Tag  string `json:"tag"`
-	Type string `json:"type"`
+	Tag     string             `json:"tag"`
+	Type    string             `json:"type"`
+	History *ProxyDelayHistory `json:"history,omitempty"`
 }
 
 type ProxyGroup struct {
-	Tag      string        `json:"tag"`
-	Type     string        `json:"type"`
-	Selected string        `json:"selected"`
-	Members  []ProxyMember `json:"members"`
+	Tag        string        `json:"tag"`
+	Type       string        `json:"type"`
+	Selected   string        `json:"selected"`
+	Members    []ProxyMember `json:"members"`
+	RuntimeKey string        `json:"runtimeKey"`
 }
 
 type ProxySelection struct {
@@ -42,14 +45,32 @@ type ProxySelection struct {
 }
 
 type clashProxy struct {
-	Type string   `json:"type"`
-	Now  string   `json:"now"`
-	All  []string `json:"all"`
+	Type    string   `json:"type"`
+	Now     string   `json:"now"`
+	All     []string `json:"all"`
+	History []struct {
+		Time  time.Time `json:"time"`
+		Delay int       `json:"delay"`
+	} `json:"history"`
 }
 
-// ProxyGroups exposes only runtime group membership and selection. The
+func (p clashProxy) latestDelay() *ProxyDelayHistory {
+	var latest *ProxyDelayHistory
+	for _, history := range p.History {
+		if !history.Time.IsZero() && history.Delay > 0 && history.Delay <= 65535 && (latest == nil || history.Time.After(latest.TestedAt)) {
+			latest = &ProxyDelayHistory{Delay: history.Delay, TestedAt: history.Time}
+		}
+	}
+	return latest
+}
+
+// ProxyGroups exposes runtime membership, selection and measured history. The
 // controller's synthetic GLOBAL/Fallback entry is not a selectable outbound.
 func (s *Service) ProxyGroups(ctx context.Context) ([]ProxyGroup, error) {
+	before, err := s.proxyRuntime(ctx)
+	if err != nil {
+		return nil, err
+	}
 	var snapshot struct {
 		Proxies map[string]clashProxy `json:"proxies"`
 	}
@@ -58,6 +79,9 @@ func (s *Service) ProxyGroups(ctx context.Context) ([]ProxyGroup, error) {
 	}
 	if snapshot.Proxies == nil {
 		return nil, ErrControllerUnavailable
+	}
+	if err := s.checkProxyRuntime(ctx, before); err != nil {
+		return nil, err
 	}
 	// sing-box's synthetic GLOBAL lists outbounds in configuration order.
 	order := append([]string(nil), snapshot.Proxies["GLOBAL"].All...)
@@ -75,9 +99,10 @@ func (s *Service) ProxyGroups(ctx context.Context) ([]ProxyGroup, error) {
 			continue
 		}
 		seen[tag] = true
-		group := ProxyGroup{Tag: tag, Type: proxy.Type, Selected: proxy.Now, Members: make([]ProxyMember, 0, len(proxy.All))}
+		group := ProxyGroup{Tag: tag, Type: proxy.Type, Selected: proxy.Now, Members: make([]ProxyMember, 0, len(proxy.All)), RuntimeKey: before}
 		for _, member := range proxy.All {
-			group.Members = append(group.Members, ProxyMember{Tag: member, Type: snapshot.Proxies[member].Type})
+			node := snapshot.Proxies[member]
+			group.Members = append(group.Members, ProxyMember{Tag: member, Type: node.Type, History: node.latestDelay()})
 		}
 		groups = append(groups, group)
 	}

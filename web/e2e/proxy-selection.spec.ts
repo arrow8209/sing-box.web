@@ -12,6 +12,9 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
   let writes = 0;
   let mode = "rule";
   let failModeWrite = false;
+  let timeoutDelay = false;
+  const delayCalls: string[] = [];
+  const history = new Map<string, Array<{ time: string; delay: number }>>();
   const browserErrors: string[] = [];
   page.on("pageerror", (error) => browserErrors.push(error.message));
   const controller = createServer(async (request, response) => {
@@ -19,7 +22,8 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
       response.writeHead(401).end();
       return;
     }
-    const path = new URL(request.url!, "http://127.0.0.1").pathname;
+    const requestURL = new URL(request.url!, "http://127.0.0.1");
+    const path = requestURL.pathname;
     if (path === "/connections") {
       response.setHeader("Content-Type", "application/json");
       response.end(JSON.stringify({ memory: 32 * 1024 * 1024, uploadTotal: 0, downloadTotal: 0, connections: [] }));
@@ -37,6 +41,26 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
         response.end(JSON.stringify({ mode, "mode-list": ["rule", "global", "direct"] }));
       }
       return;
+    }
+    if (path.startsWith("/proxies/")) {
+      const delay = path.endsWith("/delay");
+      const node = decodeURIComponent(path.slice("/proxies/".length, delay ? -"/delay".length : undefined));
+      if ([first, target].includes(node)) {
+        response.setHeader("Content-Type", "application/json");
+        if (!delay) { response.end(JSON.stringify({ type: "Direct", history: history.get(node) ?? [] })); return; }
+        expect(requestURL.searchParams.get("url")).toBe("https://www.gstatic.com/generate_204");
+        expect(requestURL.searchParams.get("timeout")).toBe("5000");
+        delayCalls.push(node);
+        if (timeoutDelay && node === target) {
+          history.delete(node);
+          response.writeHead(504).end(JSON.stringify({ message: "Timeout" }));
+        } else {
+          const measured = node === target ? 217 : 136;
+          history.set(node, [{ time: new Date().toISOString(), delay: measured }]);
+          response.end(JSON.stringify({ delay: measured }));
+        }
+        return;
+      }
     }
     if (path !== "/proxies" && decodeURIComponent(path.slice("/proxies/".length)) !== tag) {
       response.writeHead(404).end();
@@ -59,8 +83,8 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
       GLOBAL: { type: "Fallback", now: tag, all: [tag, "自动选择", first, target] },
       [tag]: group,
       "自动选择": { type: "URLTest", now: target, all: [first, target] },
-      [first]: { type: "Direct" },
-      [target]: { type: "Direct" }
+      [first]: { type: "Direct", history: history.get(first) ?? [] },
+      [target]: { type: "Direct", history: history.get(target) ?? [] }
     } } : group));
   });
   await new Promise<void>((resolve) => controller.listen(0, "127.0.0.1", resolve));
@@ -139,6 +163,26 @@ test("节点与模式切换经服务端送达核心，刷新保持选择且失�
     await expect(firstButton).toHaveAttribute("aria-pressed", "false");
     const draftAfterSwitch = await page.request.get(`/api/v1/profiles/${profileId}/draft`);
     expect(draftAfterSwitch.headers().etag).toBe(saved.headers().etag);
+
+    const runtimeGroups = await (await page.request.get("/api/v1/runtime/proxy-groups")).json() as Array<{ runtimeKey: string }>;
+    expect((await page.request.post("/api/v1/runtime/proxies/delay", { data: { tag: target, runtimeKey: runtimeGroups[0]!.runtimeKey } })).status()).toBe(403);
+    expect(delayCalls).toHaveLength(0);
+    const targetDelay = main.getByRole("button", { name: `测试 ${target} 延迟`, exact: true });
+    await targetDelay.click();
+    await expect(targetDelay).toHaveText("217 ms");
+    await expect(page.locator('[data-proxy-group-tag="自动选择"]').getByRole("button", { name: `测试 ${target} 延迟`, exact: true })).toHaveText("217 ms");
+    expect(delayCalls).toEqual([target]);
+    expect(writes).toBe(1);
+    await page.reload();
+    await expect(targetDelay).toHaveText("217 ms");
+    timeoutDelay = true;
+    delayCalls.length = 0;
+    await page.getByRole("button", { name: "全部测速", exact: true }).click();
+    await expect(targetDelay).toHaveText("超时");
+    await expect(main.getByRole("button", { name: `测试 ${first} 延迟`, exact: true })).toHaveText("136 ms");
+    expect(delayCalls.sort()).toEqual([first, target].sort());
+    expect((await page.request.get(`/api/v1/profiles/${profileId}/draft`)).headers().etag).toBe(saved.headers().etag);
+    timeoutDelay = false;
 
     // An unapplied draft can no longer replace the running group's members.
     const changedDraft = await page.request.put(`/api/v1/profiles/${profileId}/draft`, {

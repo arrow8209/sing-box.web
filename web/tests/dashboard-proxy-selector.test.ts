@@ -1,7 +1,7 @@
 import { enableAutoUnmount, flushPromises, mount } from "@vue/test-utils";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import DashboardProxySelector from "@/features/dashboard/DashboardProxySelector.vue";
-import type { ProxySelection, RuntimeProxyGroup } from "@/features/dashboard/api";
+import type { ProxyDelayResult, ProxySelection, RuntimeProxyGroup } from "@/features/dashboard/api";
 import { outboundOrderFromDraft } from "@/features/dashboard/proxy-groups";
 import type { Draft } from "@/features/profiles/types";
 
@@ -19,11 +19,14 @@ const testOutbounds = [
 
 function createApi() {
   let groups: RuntimeProxyGroup[] = [
-    { tag: "主策略组", type: "Selector", selected: "香港 01", members: [{ tag: "香港 01", type: "AnyTLS" }, { tag: "新加坡 01", type: "AnyTLS" }, { tag: "拦截", type: "Reject" }] },
-    { tag: "备用策略组", type: "Selector", selected: "新加坡 01", members: [{ tag: "新加坡 01", type: "AnyTLS" }, { tag: "日本 01", type: "AnyTLS" }] }
+    { tag: "主策略组", type: "Selector", runtimeKey: "run-1", selected: "香港 01", members: [{ tag: "香港 01", type: "AnyTLS" }, { tag: "新加坡 01", type: "AnyTLS" }, { tag: "拦截", type: "Reject" }] },
+    { tag: "备用策略组", type: "Selector", runtimeKey: "run-1", selected: "新加坡 01", members: [{ tag: "新加坡 01", type: "AnyTLS" }, { tag: "日本 01", type: "AnyTLS" }] }
   ];
   return {
     list: vi.fn(async () => structuredClone(groups)),
+    testDelay: vi.fn(async (tag: string, runtimeKey: string, _signal: AbortSignal): Promise<ProxyDelayResult> => ({
+      tag, runtimeKey, status: "ok", delay: 237, testedAt: new Date().toISOString()
+    })),
     select: vi.fn(async (tag: string, selected: string): Promise<ProxySelection> => {
       groups = groups.map((group) => group.tag === tag ? { ...group, selected } : group);
       return { tag, selected };
@@ -53,10 +56,10 @@ describe("仪表盘节点选择", () => {
     expect(order.slice(0, 3)).toEqual(["主选择", "备用组", "自动组"]);
     expect(outboundOrderFromDraft({ ...draft, schemaVersion: 1 })).toEqual(outbounds.map((item) => item.tag));
 
-    const api = { list: vi.fn(async (): Promise<RuntimeProxyGroup[]> => [
-      { tag: "备用组", type: "Selector", selected: "节点二", members: [{ tag: "节点二", type: "Vless" }, { tag: "节点一", type: "Trojan" }] },
-      { tag: "自动组", type: "URLTest", selected: "节点一", members: [{ tag: "节点一", type: "Trojan" }] },
-      { tag: "主选择", type: "Selector", selected: "节点二", members: [{ tag: "节点二", type: "Vless" }, { tag: "节点一", type: "Trojan" }] }
+    const api = { ...createApi(), list: vi.fn(async (): Promise<RuntimeProxyGroup[]> => [
+      { tag: "备用组", type: "Selector", runtimeKey: "run-1", selected: "节点二", members: [{ tag: "节点二", type: "Vless" }, { tag: "节点一", type: "Trojan" }] },
+      { tag: "自动组", type: "URLTest", runtimeKey: "run-1", selected: "节点一", members: [{ tag: "节点一", type: "Trojan" }] },
+      { tag: "主选择", type: "Selector", runtimeKey: "run-1", selected: "节点二", members: [{ tag: "节点二", type: "Vless" }, { tag: "节点一", type: "Trojan" }] }
     ]), select: vi.fn(async (tag: string, selected: string) => ({ tag, selected })) };
     const wrapper = mount(DashboardProxySelector, { props: { outbounds, outboundOrder: order, running: false, api } });
     const groupTags = () => wrapper.findAll(".proxy-group").map((group) => group.attributes("data-proxy-group-tag"));
@@ -118,76 +121,75 @@ describe("仪表盘节点选择", () => {
     expect(wrapper.text()).not.toContain("nas-ss");
   });
 
-  it("单节点测速不切换选中项，只同步同一节点在各策略组中的结果", async () => {
-    vi.useFakeTimers();
-    const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api: createApi() } });
+  it("单节点测速使用核心返回值并同步同一节点，不切换选中项", async () => {
+    const api = createApi();
+    let finish!: (value: ProxyDelayResult) => void;
+    api.testDelay.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api } });
     await flushPromises();
     const main = wrapper.get('[data-proxy-group-tag="主策略组"]');
-    const first = main.get('[data-proxy-member-tag="香港 01"]');
     const target = main.get('[data-proxy-member-tag="新加坡 01"]');
-    const other = wrapper.get('[data-proxy-member-tag="日本 01"]');
     const shared = wrapper.get('[data-proxy-group-tag="备用策略组"] [data-proxy-member-tag="新加坡 01"]');
-
     await target.get(".proxy-latency").trigger("click");
     expect(target.get(".proxy-latency").text()).toBe("测速中");
     expect(shared.get(".proxy-latency").text()).toBe("测速中");
-    expect(first.get(".proxy-latency").text()).toBe("未测速");
-    expect(other.get(".proxy-latency").text()).toBe("未测速");
-    expect(first.get(".proxy-node-select").attributes("aria-pressed")).toBe("true");
-    expect(target.get(".proxy-node-select").attributes("aria-pressed")).toBe("false");
-    expect(wrapper.emitted("notice")).toBeUndefined();
-
-    await vi.advanceTimersByTimeAsync(700);
-    expect(target.get(".proxy-latency").text()).toMatch(/^\d+ ms$/);
-    expect(shared.get(".proxy-latency").text()).toBe(target.get(".proxy-latency").text());
-    expect(first.get(".proxy-latency").text()).toBe("未测速");
-    expect(other.get(".proxy-latency").text()).toBe("未测速");
-    expect(wrapper.emitted("notice")).toEqual([["新加坡 01 延迟已刷新。"]]);
-
-    await target.get(".proxy-node-select").trigger("click");
+    expect(api.testDelay).toHaveBeenCalledWith("新加坡 01", "run-1", expect.any(AbortSignal));
+    expect(main.get('[aria-label="选择 香港 01"]').attributes("aria-pressed")).toBe("true");
+    finish({ tag: "新加坡 01", runtimeKey: "run-1", status: "ok", delay: 319, testedAt: "2026-09-28T02:00:00Z" });
     await flushPromises();
-    expect(target.get(".proxy-node-select").attributes("aria-pressed")).toBe("true");
-    expect(first.get(".proxy-node-select").attributes("aria-pressed")).toBe("false");
-    await target.get(".proxy-latency").trigger("click");
-    expect(target.get(".proxy-latency").text()).toBe("测速中");
+    expect(target.get(".proxy-latency").text()).toBe("319 ms");
+    expect(shared.get(".proxy-latency").text()).toBe("319 ms");
+    expect(target.get(".proxy-latency").attributes("title")).toContain("最近测试");
+    expect(wrapper.text()).toContain("最近测速成功 1 个");
+    expect(api.select).not.toHaveBeenCalled();
+    expect(wrapper.emitted("notice")).toEqual([["新加坡 01测速完成：成功 1，超时 0，失败 0。"]]);
   });
 
-  it("策略组和全部测速只更新对应节点，并跳过不适用的出站", async () => {
-    vi.useFakeTimers();
-    const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api: createApi() } });
+  it("策略组和全部测速去重节点，并分别展示超时和失败", async () => {
+    const api = createApi();
+    api.testDelay.mockImplementation(async (tag, runtimeKey) => ({
+      tag, runtimeKey, status: tag === "香港 01" ? "timeout" : tag === "新加坡 01" ? "failed" : "ok",
+      ...(tag === "日本 01" ? { delay: 159 } : {}), testedAt: "2026-09-28T03:00:00Z"
+    }));
+    const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api } });
     await flushPromises();
-    const other = wrapper.get('[data-proxy-member-tag="日本 01"]');
-    const blocked = wrapper.get('[data-proxy-member-tag="拦截"]');
-
     await wrapper.get('[aria-label="测试 主策略组 延迟"]').trigger("click");
-    expect(other.get(".proxy-latency").text()).toBe("未测速");
-    expect(blocked.get(".proxy-latency").text()).toBe("不适用");
-    expect(blocked.find("button.proxy-latency").exists()).toBe(false);
-    await vi.advanceTimersByTimeAsync(700);
-    expect(other.get(".proxy-latency").text()).toBe("未测速");
-
+    await flushPromises();
+    expect(api.testDelay.mock.calls.map(([tag]) => tag)).toEqual(["香港 01", "新加坡 01"]);
+    expect(wrapper.get('[data-proxy-member-tag="日本 01"] .proxy-latency').text()).toBe("未测速");
+    api.testDelay.mockClear();
     await wrapper.get(".proxy-selector-actions button").trigger("click");
-    expect(other.get(".proxy-latency").text()).toBe("测速中");
-    await vi.advanceTimersByTimeAsync(700);
-    for (const button of wrapper.findAll("button.proxy-latency")) {
-      expect(button.text()).toMatch(/^\d+ ms$/);
-    }
-    expect(blocked.get(".proxy-latency").text()).toBe("不适用");
+    await flushPromises();
+    expect(api.testDelay.mock.calls.map(([tag]) => tag)).toEqual(["香港 01", "新加坡 01", "日本 01"]);
+    expect(wrapper.get('[data-proxy-member-tag="香港 01"] .proxy-latency').text()).toBe("超时");
+    expect(wrapper.get('[data-proxy-member-tag="新加坡 01"] .proxy-latency').text()).toBe("失败");
+    expect(wrapper.get('[data-proxy-member-tag="日本 01"] .proxy-latency').text()).toBe("159 ms");
+    expect(wrapper.get('[data-proxy-member-tag="拦截"] .proxy-latency').text()).toBe("不适用");
+    expect(wrapper.emitted("notice")?.at(-1)).toEqual(["全部节点测速完成：成功 1，超时 1，失败 1。"]);
   });
 
-  it("切换配置或离开页面时取消未完成的测速", async () => {
-    vi.useFakeTimers();
-    const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api: createApi() } });
+  it("运行配置变化或离开页面取消请求并忽略旧结果", async () => {
+    const api = createApi();
+    let finish!: (value: ProxyDelayResult) => void;
+    api.testDelay.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+    const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api, runtimeKey: "old" } });
     await flushPromises();
     await wrapper.get("button.proxy-latency").trigger("click");
-    await wrapper.setProps({ outbounds: testOutbounds.map((outbound) => ({ ...outbound })) });
-    await vi.advanceTimersByTimeAsync(700);
+    const firstSignal = api.testDelay.mock.calls[0]![2];
+    await wrapper.setProps({ runtimeKey: "new" });
+    await flushPromises();
+    expect(firstSignal.aborted).toBe(true);
+    finish({ tag: "香港 01", runtimeKey: "run-1", status: "ok", delay: 88, testedAt: new Date().toISOString() });
+    await flushPromises();
     expect(wrapper.get("button.proxy-latency").text()).toBe("未测速");
     expect(wrapper.emitted("notice")).toBeUndefined();
-
+    api.testDelay.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
     await wrapper.get("button.proxy-latency").trigger("click");
+    const secondSignal = api.testDelay.mock.calls[1]![2];
     wrapper.unmount();
-    expect(vi.getTimerCount()).toBe(0);
+    expect(secondSignal.aborted).toBe(true);
+    finish({ tag: "香港 01", runtimeKey: "run-1", status: "ok", delay: 90, testedAt: new Date().toISOString() });
+    await flushPromises();
     expect(wrapper.emitted("notice")).toBeUndefined();
   });
 
@@ -260,7 +262,7 @@ describe("仪表盘节点选择", () => {
     const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api, runtimeKey: "old" } });
     await flushPromises();
     await wrapper.get('[data-proxy-group-tag="主策略组"] [aria-label="选择 新加坡 01"]').trigger("click");
-    api.list.mockResolvedValue([{ tag: "主策略组", type: "Selector", selected: "新运行节点", members: [{ tag: "新运行节点", type: "Trojan" }] }]);
+    api.list.mockResolvedValue([{ tag: "主策略组", type: "Selector", runtimeKey: "run-1", selected: "新运行节点", members: [{ tag: "新运行节点", type: "Trojan" }] }]);
     await wrapper.setProps({ runtimeKey: "new" });
     await flushPromises();
     finishSwitch({ tag: "主策略组", selected: "新加坡 01" });
@@ -272,7 +274,7 @@ describe("仪表盘节点选择", () => {
 
   it("URLTest 只显示核心选择；核心停止或读取失败时不能切换", async () => {
     const api = createApi();
-    api.list.mockResolvedValue([{ tag: "自动选择", type: "URLTest", selected: "新加坡 01", members: [{ tag: "香港 01", type: "AnyTLS" }, { tag: "新加坡 01", type: "AnyTLS" }] }]);
+    api.list.mockResolvedValue([{ tag: "自动选择", type: "URLTest", runtimeKey: "run-1", selected: "新加坡 01", members: [{ tag: "香港 01", type: "AnyTLS" }, { tag: "新加坡 01", type: "AnyTLS" }] }]);
     const wrapper = mount(DashboardProxySelector, { props: { outbounds: testOutbounds, api } });
     await flushPromises();
     expect(wrapper.get('[aria-label="选择 新加坡 01"]').attributes("aria-pressed")).toBe("true");

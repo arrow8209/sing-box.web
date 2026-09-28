@@ -227,7 +227,7 @@ onBeforeUnmount(() => {
       <DashboardRouteMode ref="routeModeControl" :running="core.status.value?.state === 'running' && !core.error.value" :busy="Boolean(coreTransitioning)" :runtime-key="proxyRuntimeKey" @notice="showNotice" />
 
       <p v-if="!running && serverResolution" class="candidate-source" role="status">{{ candidateError || (stoppedCandidate ? '以下为选定档案的待运行候选；核心尚未运行' : '正在读取选定档案的待运行候选') }}</p>
-      <DashboardProxySelector ref="proxySelector" class="dashboard-proxy" :outbounds="dashboardOutbounds" :outbound-order="dashboardOutboundOrder" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running'" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
+      <DashboardProxySelector ref="proxySelector" class="dashboard-proxy" :outbounds="dashboardOutbounds" :outbound-order="dashboardOutboundOrder" :editor-state="dashboardOutboundEditorState" :loading="!core.status.value || (!running && serverResolution && !stoppedCandidate && !candidateError)" :running="core.status.value?.state === 'running' && !core.error.value" :busy="Boolean(coreTransitioning)" :runtime-key="proxyRuntimeKey" @notice="showNotice" @error="showNotice($event, 'error')" />
     </div>
 
     <AppToast v-if="notice" :message="notice" :tone="noticeTone" />

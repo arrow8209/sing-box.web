@@ -46,9 +46,11 @@ type httpDoer interface {
 // Service reads only the currently applied config directory and talks to the
 // loopback Clash API. Draft controller settings never affect runtime access.
 type Service struct {
-	layout paths.Layout
-	core   statusSource
-	http   httpDoer
+	layout     paths.Layout
+	core       statusSource
+	http       httpDoer
+	delayHTTP  httpDoer
+	delaySlots chan struct{}
 }
 
 type controllerSettings struct {
@@ -66,12 +68,17 @@ func NewService(layout paths.Layout, status statusSource) *Service {
 		IdleConnTimeout:       30 * time.Second,
 		ResponseHeaderTimeout: 3 * time.Second,
 	}
-	return NewServiceWithClient(layout, status, &http.Client{Transport: transport, Timeout: 5 * time.Second})
+	service := NewServiceWithClient(layout, status, &http.Client{Transport: transport, Timeout: 5 * time.Second})
+	delayTransport := transport.Clone()
+	delayTransport.ResponseHeaderTimeout = 6 * time.Second
+	delayTransport.MaxIdleConnsPerHost = maximumDelayConcurrency
+	service.delayHTTP = &http.Client{Transport: delayTransport, Timeout: 7 * time.Second}
+	return service
 }
 
 // NewServiceWithClient keeps controller transport deterministic in tests.
 func NewServiceWithClient(layout paths.Layout, status statusSource, client httpDoer) *Service {
-	return &Service{layout: layout, core: status, http: client}
+	return &Service{layout: layout, core: status, http: client, delayHTTP: client, delaySlots: make(chan struct{}, maximumDelayConcurrency)}
 }
 
 func (s *Service) Connections(ctx context.Context) (ConnectionsSnapshot, error) {
@@ -145,7 +152,14 @@ func (s *Service) close(ctx context.Context, path string) error {
 }
 
 func (s *Service) request(ctx context.Context, method, escapedPath string, body io.Reader) (*http.Response, error) {
-	if s == nil || s.core == nil || s.http == nil {
+	if s == nil {
+		return nil, ErrControllerUnavailable
+	}
+	return s.requestWithClient(ctx, s.http, method, escapedPath, body)
+}
+
+func (s *Service) requestWithClient(ctx context.Context, client httpDoer, method, escapedPath string, body io.Reader) (*http.Response, error) {
+	if s == nil || s.core == nil || client == nil {
 		return nil, ErrControllerUnavailable
 	}
 	if s.core.Status(ctx).State != core.ProcessRunning {
@@ -167,7 +181,7 @@ func (s *Service) request(ctx context.Context, method, escapedPath string, body 
 	if settings.secret != "" {
 		request.Header.Set("Authorization", "Bearer "+settings.secret)
 	}
-	response, err := s.http.Do(request)
+	response, err := client.Do(request)
 	if err != nil {
 		return nil, fmt.Errorf("%w: request failed", ErrControllerUnavailable)
 	}

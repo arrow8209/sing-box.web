@@ -273,11 +273,14 @@ func TestRouterAuthenticatesRuntimeAndRequiresCSRFWrites(t *testing.T) {
 		{method: http.MethodGet, session: "ok", want: http.StatusNoContent},
 		{method: http.MethodDelete, session: "ok", want: http.StatusForbidden},
 		{method: http.MethodDelete, session: "ok", csrf: "ok", want: http.StatusNoContent},
+		{method: http.MethodPost, want: http.StatusUnauthorized},
+		{method: http.MethodPost, session: "ok", want: http.StatusForbidden},
+		{method: http.MethodPost, session: "ok", csrf: "ok", want: http.StatusNoContent},
 		{method: http.MethodPut, want: http.StatusUnauthorized},
 		{method: http.MethodPut, session: "ok", want: http.StatusForbidden},
 		{method: http.MethodPut, session: "ok", csrf: "ok", want: http.StatusNoContent},
 	} {
-		for _, path := range []string{"/api/v1/runtime/connections/connection-1", "/api/v1/runtime/proxy-groups", "/api/v1/runtime/mode", "/api/v1/runtime/metrics"} {
+		for _, path := range []string{"/api/v1/runtime/connections/connection-1", "/api/v1/runtime/proxy-groups", "/api/v1/runtime/proxies/delay", "/api/v1/runtime/mode", "/api/v1/runtime/metrics"} {
 			request := httptest.NewRequest(test.method, path, nil)
 			request.Header.Set("X-Test-Session", test.session)
 			request.Header.Set("X-Test-CSRF", test.csrf)

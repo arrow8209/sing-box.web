@@ -76,8 +76,8 @@ function configuredNetwork(config: OutboundConfig | undefined): string {
 }
 
 function configuredLatency(config: OutboundConfig | undefined): number | null | undefined {
-  if (config?.type === "block") return null;
-  return typeof config?.latency === "number" && Number.isFinite(config.latency) ? config.latency : undefined;
+  // A draft is never a source of measured latency.
+  return config?.type === "block" || config?.type === "dns" ? null : undefined;
 }
 
 /** Match the outbound editor's v2 reference order, then retain raw-only items. */

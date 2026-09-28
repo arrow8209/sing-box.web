@@ -11,6 +11,7 @@ import (
 
 const connectionsPath = "/api/v1/runtime/connections"
 const proxyGroupsPath = "/api/v1/runtime/proxy-groups"
+const proxyDelayPath = "/api/v1/runtime/proxies/delay"
 const modePath = "/api/v1/runtime/mode"
 const metricsPath = "/api/v1/runtime/metrics"
 
@@ -45,6 +46,25 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == proxyGroupsPath {
 		h.proxyGroups(w, r)
+		return
+	}
+	if r.URL.Path == proxyDelayPath {
+		if r.Method != http.MethodPost {
+			httpapi.MethodNotAllowed(w, http.MethodPost)
+			return
+		}
+		var input ProxyDelayRequest
+		if err := httpapi.DecodeJSON(w, r, &input, 16<<10); err != nil {
+			apierror.WriteError(w, err)
+			return
+		}
+		result, err := h.service.TestProxyDelay(r.Context(), input)
+		if err != nil {
+			writeServiceError(w, err)
+			return
+		}
+		w.Header().Set("Cache-Control", "no-store")
+		httpapi.WriteJSON(w, http.StatusOK, result)
 		return
 	}
 	if r.URL.Path == connectionsPath {
@@ -95,6 +115,7 @@ func (h *Handler) proxyGroups(w http.ResponseWriter, r *http.Request) {
 			writeServiceError(w, err)
 			return
 		}
+		w.Header().Set("Cache-Control", "no-store")
 		httpapi.WriteJSON(w, http.StatusOK, groups)
 	case http.MethodPut:
 		var input ProxySelection
@@ -139,6 +160,14 @@ func (h *Handler) mode(w http.ResponseWriter, r *http.Request) {
 
 func writeServiceError(w http.ResponseWriter, err error) {
 	switch {
+	case errors.Is(err, ErrInvalidProxyDelay):
+		apierror.Write(w, http.StatusBadRequest, apierror.Error{Code: "invalid_proxy_delay", Message: "测速节点或运行配置标识无效"})
+	case errors.Is(err, ErrProxyDelayUnsupported):
+		apierror.Write(w, http.StatusBadRequest, apierror.Error{Code: "proxy_delay_unsupported", Message: "此出站不支持单节点测速，请测试策略组中的实际节点"})
+	case errors.Is(err, ErrProxyDelayBusy):
+		apierror.Write(w, http.StatusTooManyRequests, apierror.Error{Code: "proxy_delay_busy", Message: "已有 5 个测速请求正在执行，请稍后重试"})
+	case errors.Is(err, ErrProxyRuntimeChanged):
+		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "proxy_runtime_changed", Message: "核心或应用配置已变化，请刷新节点后重新测速"})
 	case errors.Is(err, ErrCoreNotRunning):
 		apierror.Write(w, http.StatusConflict, apierror.Error{Code: "core_not_running", Message: "sing-box 核心当前未运行"})
 	case errors.Is(err, ErrControllerNotConfigured):

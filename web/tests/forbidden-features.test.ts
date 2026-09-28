@@ -20,10 +20,10 @@ describe("未开放功能守卫", () => {
     }
   });
 
-  it("禁止功能文案只允许出现在运行能力说明与仪表盘原型中", () => {
+  it("运行功能文案只允许出现在运行能力说明与仪表盘实现中", () => {
     const sources = readAllSourceFiles(sourceRoot);
     for (const source of sources) {
-      if (["RuntimeUnavailableView.vue", "DashboardView.vue", "DashboardProxySelector.vue"].some((name) => source.path.endsWith(name))) continue;
+      if (["RuntimeUnavailableView.vue", "DashboardView.vue", "DashboardProxySelector.vue", "use-proxy-delay.ts"].some((name) => source.path.endsWith(name))) continue;
       for (const value of ["导出配置", "复制完整配置", "测速", "切换模式"]) expect(source.content).not.toContain(value);
     }
   });
