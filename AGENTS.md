@@ -1,5 +1,7 @@
 # Repository Guidelines
 
+本文件统一维护 `sing-box.arrow.web` 的项目约定与持久记忆；项目专属内容保存在这里，不写入全局 `~/.codex/MEMORY.md`。
+
 ## Project Structure & Module Organization
 
 The application is a Go local service plus a Vue SPA under `web/`. Go commands live in `cmd/singbox-web`; packages are in `internal/`; built SPA assets are embedded from `internal/webui/assets/`. Browser tests and their isolated harness live in `web/e2e/` and `e2e/harness/`. Product and architecture decisions are documented in `docs/`, including `docs/reference-schema-v2.md` and `docs/plans/2026-09-24-reference-resolution-acceptance.md`. Keep `README.md` aligned with user-facing setup changes. `data/`, `config/`, `dist/`, `Release/`, `node_modules/`, and `*.log` are generated or runtime-only and must not be committed.
@@ -37,7 +39,7 @@ The SPA has an npm install step and must be built through `scripts/build.sh` bef
 - 发布产物固定输出并保留在 `dist/`，文件名包含版本号：`dist/singbox-web-v<version>`。
 - `Release/` 是由用户自行维护的最终运行目录。本项目发布只负责更新版本并生成、验证 `dist/` 产物；发布时不操作 `Release/`，也不管理其中的运行服务。用户自行处理部署和运行，正式运行的 `data/` 和 `config/` 位于 `Release/` 下。
 - 每次发布前必须更新并递增版本号，不得复用上一发布版本号。任何代码修改后重新发布（包括小修复）都必须增加版本号，不得用修改后的代码覆盖已发布的同版本产物。用户未指定目标版本时，默认递增补丁版本号。
-- 本项目同步更新 `web/package.json` 和 `web/package-lock.json` 中的版本，并保持产物文件名一致。可用 `npm --prefix web version patch --no-git-tag-version` 更新版本后再构建；正式发布使用 `VERSION` 时也必须与版本文件保持一致。
+- 版本默认读取 `web/package.json`；发布时同步更新 `web/package.json` 和 `web/package-lock.json` 中的版本，并保持产物文件名一致。可用 `npm --prefix web version patch --no-git-tag-version` 更新版本后再构建；正式发布使用 `VERSION` 时也必须与版本文件保持一致。
 
 ## 任务范围与发布完成条件
 
