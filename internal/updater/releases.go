@@ -9,8 +9,11 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 )
+
+const releaseCacheDuration = 5 * time.Minute
 
 type releaseDocument struct {
 	TagName    string  `json:"tag_name"`
@@ -32,16 +35,31 @@ func (e *ReleaseRateLimitError) Error() string {
 	return fmt.Sprintf("GitHub API 请求次数已达上限，请在 %s 后重试", e.RetryAt.Local().Format("2006-01-02 15:04:05 Z07:00"))
 }
 
-// ReleaseClient always requests the official latest-release endpoint.  The
-// optional policy exists only to make the fixed endpoint testable in-process.
+// ReleaseClient shares verified metadata from the official latest-release
+// endpoint between version checks and downloads for a short period.
 type ReleaseClient struct {
-	client *http.Client
-	arch   string
+	client      *http.Client
+	arch        string
+	githubToken string
+	clock       func() time.Time
+	mu          sync.Mutex
+	cached      Release
+	cacheUntil  time.Time
+	inFlight    *releaseLookup
+}
+
+type releaseLookup struct {
+	done           chan struct{}
+	release        Release
+	err            error
+	callerCanceled bool
 }
 
 type ReleaseClientPolicy struct {
-	Transport http.RoundTripper
-	Arch      string
+	Transport   http.RoundTripper
+	Arch        string
+	GitHubToken string
+	Clock       func() time.Time
 }
 
 func NewReleaseClient(policies ...ReleaseClientPolicy) *ReleaseClient {
@@ -53,7 +71,21 @@ func NewReleaseClient(policies ...ReleaseClientPolicy) *ReleaseClient {
 	if arch == "" {
 		arch = runtime.GOARCH
 	}
-	return &ReleaseClient{client: newHTTPClient(policy.Transport, totalDownloadTimeout), arch: arch}
+	clock := policy.Clock
+	if clock == nil {
+		clock = time.Now
+	}
+	client := newHTTPClient(policy.Transport, totalDownloadTimeout)
+	checkRedirect := client.CheckRedirect
+	client.CheckRedirect = func(request *http.Request, via []*http.Request) error {
+		if !strings.EqualFold(request.URL.Host, "api.github.com") {
+			request.Header.Del("Authorization")
+		}
+		return checkRedirect(request, via)
+	}
+	return &ReleaseClient{
+		client: client, arch: arch, githubToken: strings.TrimSpace(policy.GitHubToken), clock: clock,
+	}
 }
 
 func ReleaseClientPolicyForTest(transport http.RoundTripper, arch string) ReleaseClientPolicy {
@@ -61,6 +93,48 @@ func ReleaseClientPolicyForTest(transport http.RoundTripper, arch string) Releas
 }
 
 func (c *ReleaseClient) LatestStable(ctx context.Context) (Release, error) {
+	for {
+		if err := ctx.Err(); err != nil {
+			return Release{}, err
+		}
+		c.mu.Lock()
+		if c.clock().Before(c.cacheUntil) {
+			release := c.cached
+			c.mu.Unlock()
+			return release, nil
+		}
+		if pending := c.inFlight; pending != nil {
+			c.mu.Unlock()
+			select {
+			case <-ctx.Done():
+				return Release{}, ctx.Err()
+			case <-pending.done:
+				// A cancelled caller must not prevent other callers from retrying.
+				if pending.callerCanceled {
+					continue
+				}
+				return pending.release, pending.err
+			}
+		}
+		pending := &releaseLookup{done: make(chan struct{})}
+		c.inFlight = pending
+		c.mu.Unlock()
+
+		pending.release, pending.err = c.fetchLatestStable(ctx)
+		pending.callerCanceled = pending.err != nil && ctx.Err() != nil
+		c.mu.Lock()
+		if pending.err == nil {
+			c.cached = pending.release
+			c.cacheUntil = c.clock().Add(releaseCacheDuration)
+		}
+		c.inFlight = nil
+		close(pending.done)
+		c.mu.Unlock()
+		return pending.release, pending.err
+	}
+}
+
+func (c *ReleaseClient) fetchLatestStable(ctx context.Context) (Release, error) {
 	if err := validateOfficialURLString(latestReleaseURL); err != nil {
 		return Release{}, err
 	}
@@ -69,6 +143,9 @@ func (c *ReleaseClient) LatestStable(ctx context.Context) (Release, error) {
 		return Release{}, err
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
+	if c.githubToken != "" {
+		request.Header.Set("Authorization", "Bearer "+c.githubToken)
+	}
 	response, err := c.client.Do(request)
 	if err != nil {
 		return Release{}, fmt.Errorf("获取官方核心版本失败: %w", err)

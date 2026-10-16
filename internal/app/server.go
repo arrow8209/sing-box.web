@@ -301,7 +301,9 @@ func NewServer(workDir string, deps Dependencies) (*Server, error) {
 	}
 	updateService := updater.NewService(
 		layout,
-		updater.NewReleaseClient(updater.ReleaseClientPolicy{Transport: downloadTransport}),
+		updater.NewReleaseClient(updater.ReleaseClientPolicy{
+			Transport: downloadTransport, GitHubToken: os.Getenv("SINGBOX_WEB_GITHUB_TOKEN"), Clock: clock,
+		}),
 		updater.NewFetcher(layout, updater.FetcherPolicy{Transport: downloadTransport}),
 		coreManager,
 		coreStore,
