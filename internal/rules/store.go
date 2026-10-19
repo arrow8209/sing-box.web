@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strings"
 	"sync"
 	"time"
 
@@ -37,10 +38,7 @@ func OpenStore(file string, layout paths.Layout, clock func() time.Time) (*Store
 		clock = time.Now
 	}
 	if _, err := os.Stat(file); err == nil {
-		if err := ValidateManagedState(file, layout); err != nil {
-			return nil, err
-		}
-		if err := migrateRemoteSources(file, layout); err != nil {
+		if err := migrateResources(file, layout); err != nil {
 			return nil, err
 		}
 	} else if !os.IsNotExist(err) {
@@ -49,15 +47,16 @@ func OpenStore(file string, layout paths.Layout, clock func() time.Time) (*Store
 	return &Store{file: file, layout: layout, clock: clock}, nil
 }
 
-// migrateRemoteSources preserves resource IDs and references while dropping
-// obsolete Source payloads. The Binary resource is downloaded again on demand.
-func migrateRemoteSources(file string, layout paths.Layout) error {
-	data, err := storage.ReadJSON[document](file)
+// migrateResources persists portable paths and drops obsolete remote Source
+// payloads, preserving resource IDs and references. Legacy absolute paths are
+// only used to recognize the old format; all file operations use this layout.
+func migrateResources(file string, layout paths.Layout) error {
+	data, legacyPaths, err := readDocument(file, layout)
 	if err != nil {
 		return err
 	}
 	obsolete := make(map[string]struct{})
-	changed := false
+	changed := legacyPaths
 	for index := range data.Resources {
 		resource := &data.Resources[index]
 		if effectiveSourceType(resource.SourceType) != SourceRemote {
@@ -85,7 +84,20 @@ func migrateRemoteSources(file string, layout paths.Layout) error {
 		if err := validateDocument(data, layout); err != nil {
 			return err
 		}
-		if err := storage.WriteJSON(file, data, 0o600); err != nil {
+		if legacyPaths {
+			original, err := os.ReadFile(file)
+			if err != nil {
+				return err
+			}
+			id, err := randomID(rand.Reader)
+			if err != nil {
+				return err
+			}
+			if err := storage.WriteFile(file+".before-relative-paths-"+id+".bak", original, 0o600); err != nil {
+				return fmt.Errorf("备份旧规则资源路径失败: %w", err)
+			}
+		}
+		if err := writeDocument(file, data, layout); err != nil {
 			return err
 		}
 	}
@@ -99,14 +111,44 @@ func migrateRemoteSources(file string, layout paths.Layout) error {
 
 // ValidateManagedState performs the read-only rule-resource startup gate.
 func ValidateManagedState(file string, layout paths.Layout) error {
-	document, err := storage.ReadJSON[document](file)
+	_, _, err := readDocument(file, layout)
+	return err
+}
+
+// readDocument resolves persisted paths for runtime use without consulting the
+// old location or changing the file. The startup gate uses this same reader.
+func readDocument(file string, layout paths.Layout) (document, bool, error) {
+	data, err := storage.ReadJSON[document](file)
 	if err != nil {
+		return document{}, false, err
+	}
+	if err := validateDocument(data, layout); err != nil {
+		return document{}, false, &storage.CorruptFileError{Path: file, Err: err}
+	}
+	legacyPaths := false
+	for index := range data.Resources {
+		resource := &data.Resources[index]
+		absolute, relative, _ := layout.RuleSetPath(resource.ID, extension(resource.Format))
+		legacyPaths = legacyPaths || resource.LocalPath != relative
+		resource.LocalPath = absolute
+	}
+	return data, legacyPaths, nil
+}
+
+// writeDocument keeps runtime absolute paths out of the managed JSON. Copy the
+// resource slice so callers can keep using its resolved paths after a save.
+func writeDocument(file string, data document, layout paths.Layout) error {
+	if err := validateDocument(data, layout); err != nil {
 		return err
 	}
-	if err := validateDocument(document, layout); err != nil {
-		return &storage.CorruptFileError{Path: file, Err: err}
+	resources := make([]Resource, len(data.Resources))
+	copy(resources, data.Resources)
+	for index := range resources {
+		resource := &resources[index]
+		_, relative, _ := layout.RuleSetPath(resource.ID, extension(resource.Format))
+		resource.LocalPath = relative
 	}
-	return nil
+	return storage.WriteJSON(file, document{Resources: resources}, 0o600)
 }
 
 func validateDocument(data document, layout paths.Layout) error {
@@ -156,11 +198,17 @@ func validateDocument(data document, layout paths.Layout) error {
 		default:
 			return fmt.Errorf("resources[%d].sourceType 无效", index)
 		}
-		derived, _, err := layout.RuleSetPath(resource.ID, extension(resource.Format))
+		_, relative, err := layout.RuleSetPath(resource.ID, extension(resource.Format))
 		if err != nil {
 			return fmt.Errorf("resources[%d].id 派生的规则路径无效", index)
 		}
-		if filepath.Clean(resource.LocalPath) != filepath.Clean(derived) {
+		// Only canonical relative paths or the exact fixed suffix of a legacy
+		// absolute path are accepted. Never resolve traversal or use its root.
+		path := resource.LocalPath
+		legacy := filepath.IsAbs(path) && filepath.Clean(path) == path &&
+			!strings.ContainsRune(path, '\x00') &&
+			strings.HasSuffix(path, string(filepath.Separator)+filepath.FromSlash(relative))
+		if path != relative && !legacy {
 			return fmt.Errorf("resources[%d].localPath 不是固定派生路径", index)
 		}
 	}
@@ -179,12 +227,9 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 	data := document{Resources: []Resource{}}
 	if _, err := os.Stat(s.file); err == nil {
 		var readErr error
-		data, readErr = storage.ReadJSON[document](s.file)
+		data, _, readErr = readDocument(s.file, s.layout)
 		if readErr != nil {
 			return nil, readErr
-		}
-		if validateErr := validateDocument(data, s.layout); validateErr != nil {
-			return nil, &storage.CorruptFileError{Path: s.file, Err: validateErr}
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
@@ -222,10 +267,7 @@ func (s *Store) EnsureTemplateResources(ctx context.Context, templates []Resourc
 		changed = true
 	}
 	if changed || os.IsNotExist(statErr(s.file)) {
-		if err := validateDocument(data, s.layout); err != nil {
-			return nil, err
-		}
-		if err := storage.WriteJSON(s.file, data, 0o600); err != nil {
+		if err := writeDocument(s.file, data, s.layout); err != nil {
 			return nil, err
 		}
 	}
@@ -252,12 +294,9 @@ func (s *Store) list() ([]Resource, error) {
 	data := document{Resources: []Resource{}}
 	if _, err := os.Stat(s.file); err == nil {
 		var readErr error
-		data, readErr = storage.ReadJSON[document](s.file)
+		data, _, readErr = readDocument(s.file, s.layout)
 		if readErr != nil {
 			return nil, readErr
-		}
-		if err := validateDocument(data, s.layout); err != nil {
-			return nil, &storage.CorruptFileError{Path: s.file, Err: err}
 		}
 	} else if !os.IsNotExist(err) {
 		return nil, err
@@ -277,8 +316,5 @@ func (s *Store) write(resources []Resource) error {
 	for index := range data.Resources {
 		data.Resources[index].SourceType = effectiveSourceType(data.Resources[index].SourceType)
 	}
-	if err := validateDocument(data, s.layout); err != nil {
-		return err
-	}
-	return storage.WriteJSON(s.file, data, 0o600)
+	return writeDocument(s.file, data, s.layout)
 }

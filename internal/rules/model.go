@@ -37,6 +37,8 @@ type ResourceTemplate struct {
 	UpdateInterval string `json:"updateInterval"`
 }
 
+// Resource is runtime metadata. LocalPath is resolved against the current
+// working directory; Store persists only its fixed relative form.
 type Resource struct {
 	ID             string     `json:"id"`
 	TemplateKey    string     `json:"templateKey,omitempty"`

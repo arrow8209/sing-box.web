@@ -54,6 +54,30 @@ func TestGenerateOmitsMissingSchemaAndUnsupportedModules(t *testing.T) {
 	}
 }
 
+func TestGeneratedRulePathsAndDigestSurviveWorkingDirectoryMove(t *testing.T) {
+	draft := profile.Draft{Config: map[string]json.RawMessage{"route": json.RawMessage(`{}`)}, Bindings: []profile.RuleBinding{{ResourceID: resourceA, Tag: "portable", Enabled: true}}}
+	snapshot := rules.Snapshot{
+		Resources: map[string]rules.Resource{resourceA: {ID: resourceA, Format: rules.FormatBinary, LocalPath: "/old/workdir/data/rulesets/" + resourceA + ".srs"}},
+		Digests:   map[string]string{resourceA: strings.Repeat("a", 64)},
+	}
+	before, err := NewGenerator().Generate(context.Background(), draft, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	resource := snapshot.Resources[resourceA]
+	resource.LocalPath = "/new/workdir/data/rulesets/" + resourceA + ".srs"
+	snapshot.Resources[resourceA] = resource
+	after, err := NewGenerator().Generate(context.Background(), draft, snapshot)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if before.Digest != after.Digest || !equalFiles(before.Files, after.Files) {
+		t.Fatal("working directory changed generated files or their digest")
+	}
+	assertFileContains(t, after.Files, "80-route.json", `"path": "data/rulesets/`+resourceA+`.srs"`)
+	assertNoFileContains(t, after.Files, "/old/workdir", "/new/workdir")
+}
+
 func TestGenerateCanonicalizesObjectKeyOrderWithoutLosingNumbers(t *testing.T) {
 	first := draftWithModule("log", `{"future":{"z":1,"a":9007199254740993},"level":"info"}`)
 	second := draftWithModule("log", `{"level":"info","future":{"a":9007199254740993,"z":1}}`)

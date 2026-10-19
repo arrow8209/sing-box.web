@@ -3,14 +3,18 @@ package app
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 
 	"singbox-web/internal/auth"
 	"singbox-web/internal/paths"
+	"singbox-web/internal/rules"
 	"singbox-web/internal/storage"
 )
 
@@ -164,6 +168,105 @@ func TestNewServerCompletesReadOnlyGatesBeforeProfileRepair(t *testing.T) {
 	}
 	if !bytes.Equal(after, profiles) {
 		t.Fatalf("profiles changed before core gate: %s", after)
+	}
+}
+
+func TestNewServerStartsAfterWorkingDirectoryMove(t *testing.T) {
+	for _, legacy := range []bool{false, true} {
+		name := "relative paths"
+		if legacy {
+			name = "legacy absolute paths"
+		}
+		t.Run(name, func(t *testing.T) {
+			layout, err := paths.Resolve(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := auth.NewStore(layout.AuthFile, nil).SetPassword([]byte("correct horse battery staple")); err != nil {
+				t.Fatal(err)
+			}
+			id := strings.Repeat("e", 32)
+			absolute, relative, err := layout.RuleSetPath(id, ".json")
+			if err != nil {
+				t.Fatal(err)
+			}
+			payload := []byte(`{"version":3,"rules":[{"domain_suffix":["example.test"]}]}`)
+			if err := storage.WriteFile(absolute, payload, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			now := time.Unix(1, 0).UTC()
+			resource := rules.Resource{ID: id, SourceType: rules.SourceManual, Name: "manual", Format: rules.FormatSource, LocalPath: relative, LastSuccessAt: &now, LastDigest: fmt.Sprintf("%x", sha256.Sum256(payload))}
+			if legacy {
+				resource.LocalPath = absolute
+			}
+			data := struct {
+				Resources []rules.Resource `json:"resources"`
+			}{Resources: []rules.Resource{resource}}
+			if err := storage.WriteJSON(layout.RulesFile, data, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			movedDir := filepath.Join(t.TempDir(), "moved")
+			if err := os.Rename(layout.WorkDir, movedDir); err != nil {
+				t.Fatal(err)
+			}
+			server, err := NewServer(movedDir, Dependencies{ListenAddress: "127.0.0.1:0"})
+			if err != nil {
+				t.Fatalf("moved server did not start: %v", err)
+			}
+			defer server.Close(context.Background())
+			persisted, err := storage.ReadJSON[struct {
+				Resources []rules.Resource `json:"resources"`
+			}](server.layout.RulesFile)
+			if err != nil || len(persisted.Resources) != 1 || persisted.Resources[0].LocalPath != relative || persisted.Resources[0].LastDigest != resource.LastDigest {
+				t.Fatalf("persisted=%+v err=%v", persisted, err)
+			}
+			movedPayload, err := os.ReadFile(filepath.Join(server.layout.RuleSetsDir, id+".json"))
+			if err != nil || !bytes.Equal(movedPayload, payload) {
+				t.Fatalf("manual rules changed: %q err=%v", movedPayload, err)
+			}
+		})
+	}
+}
+
+func TestNewServerCompletesReadOnlyGatesBeforeRulePathMigration(t *testing.T) {
+	for _, test := range []struct {
+		name     string
+		target   func(paths.Layout) string
+		contents string
+	}{
+		{name: "core", target: func(layout paths.Layout) string { return layout.CoreFile }, contents: "{"},
+		{name: "settings", target: func(layout paths.Layout) string { return layout.SettingsFile }, contents: `{"version":1,"proxyUrl":"socks5://127.0.0.1:1080"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			layout, err := paths.Resolve(t.TempDir())
+			if err != nil {
+				t.Fatal(err)
+			}
+			if err := auth.NewStore(layout.AuthFile, nil).SetPassword([]byte("correct horse battery staple")); err != nil {
+				t.Fatal(err)
+			}
+			id := strings.Repeat("f", 32)
+			legacy := []byte(`{"resources":[{"id":"` + id + `","name":"legacy","url":"https://example.test/cn.srs","format":"binary","updateInterval":"","disabled":false,"localPath":"/old/workdir/data/rulesets/` + id + `.srs"}]}`)
+			if err := storage.WriteFile(layout.RulesFile, legacy, 0o600); err != nil {
+				t.Fatal(err)
+			}
+			target := test.target(layout)
+			if err := storage.WriteFile(target, []byte(test.contents), 0o600); err != nil {
+				t.Fatal(err)
+			}
+			_, err = NewServer(layout.WorkDir, Dependencies{ListenAddress: "127.0.0.1:0"})
+			if err == nil || !strings.Contains(err.Error(), target) {
+				t.Fatalf("err=%v want corrupt file %q", err, target)
+			}
+			after, err := os.ReadFile(layout.RulesFile)
+			if err != nil || !bytes.Equal(after, legacy) {
+				t.Fatalf("rules changed before gates completed: %q err=%v", after, err)
+			}
+			backups, err := filepath.Glob(layout.RulesFile + ".before-relative-paths-*.bak")
+			if err != nil || len(backups) != 0 {
+				t.Fatalf("backup created before gates completed: %v err=%v", backups, err)
+			}
+		})
 	}
 }
 
