@@ -16,3 +16,7 @@ data/
 config/
 config.check-failed/
 config.staging-*/
+
+# 私有测试配置与认证凭据
+mesl/
+github.key.info
